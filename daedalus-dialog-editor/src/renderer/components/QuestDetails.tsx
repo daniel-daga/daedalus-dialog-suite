@@ -32,6 +32,7 @@ import { useNavigation } from '../hooks/useNavigation';
 import { analyzeQuest, getQuestReferences, buildQuestDiary, implicitQuestSource, type QuestDiaryItem, type QuestDiaryState } from '../quest/domain';
 import { buildQuestStages, stageNameCollision, stageVariableName, type QuestStageItem } from '../quest/domain/questStages';
 import { useProjectStore } from '../store/projectStore';
+import { openDirtyFileReason } from '../store/fileStore';
 import { questNameFromTitle, topicBaseName } from '../utils/questLogFiles';
 import { saveDiaryEntryText, upgradeImplicitQuest } from './questDiarySave';
 
@@ -157,6 +158,8 @@ const QuestDetails: React.FC<QuestDetailsProps> = ({ semanticModel, questName })
               (variable) => variable.name.toUpperCase() === stage.variable.toUpperCase()
           );
           if (!declaration?.filePath || !declaration.range) throw new Error(`No declaration was found for ${stage.variable}`);
+          const reason = openDirtyFileReason(declaration.filePath);
+          if (reason) throw new Error(reason);
           await deleteVariable(declaration.filePath, declaration.range);
       });
   };

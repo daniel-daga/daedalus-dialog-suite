@@ -1071,3 +1071,14 @@ export const useFileStore = create<FileStore>()(immer((set, get) => ({
     });
   },
 })));
+
+/**
+ * Why a write to `filePath` would be undone by an open buffer, or null when it
+ * will stick. A write that rewrites the file from disk and leaves the open
+ * model alone is lost on that file's next save if the buffer is dirty, so the
+ * callers refuse instead.
+ */
+export const openDirtyFileReason = (filePath: string): string | null =>
+  useFileStore.getState().openFiles.get(filePath)?.isDirty
+    ? `${filePath} is open with unsaved changes. Save or close it first.`
+    : null;
