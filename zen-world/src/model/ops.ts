@@ -358,6 +358,34 @@ export interface MoveWaypoint {
 }
 
 /**
+ * A turn of one waypoint — its *direction*, which is the thing a waypoint has
+ * instead of an orientation (#423).
+ *
+ * Stands on exactly `MoveWaypoint`'s address and earns it the same way: a turn
+ * writes one field of one point and inserts, deletes and reorders nothing, so
+ * the enumeration the op was made against is the one it is applied against. The
+ * name guards it for `MoveWaypoint`'s reason too — a stale index always
+ * resolves to *a* waypoint, and would turn the wrong one.
+ *
+ * The sides are direction vectors rather than a rotation, because every op in
+ * this set is a pair of values: a turn then inverts by the plain swap, and undo
+ * keeps no matrix to unwrap. A zero vector means the waypoint faces nowhere —
+ * retail's own default for an unset direction — and is restored exactly as it
+ * is on undo.
+ */
+export interface TurnWaypoint {
+  op: 'TurnWaypoint';
+  /** The index into the point list `getWaynet` emits. */
+  waypoint: number;
+  /** The name that index had when the op was made — checked, never resolved. */
+  name: string;
+  /** The direction it faced, three components. */
+  from: ZenPosition;
+  /** The direction it faces after. */
+  to: ZenPosition;
+}
+
+/**
  * The rename of one waypoint (§16.7, W1).
  *
  * Stands on exactly the address a move does — the index into `getWaynet`'s
@@ -588,13 +616,13 @@ export interface RestoreVob {
 
 export type WorldOp =
   MoveVob | RotateVob | SetVobProp | SetVobClassProp | AddVob | ReparentVob
-  | MoveWaypoint | RenameWaypoint | AddWaypoint | SetWaypointEdge | DeleteWaypoint
+  | MoveWaypoint | TurnWaypoint | RenameWaypoint | AddWaypoint | SetWaypointEdge | DeleteWaypoint
   | DeleteVob | RestoreVob;
 
 /** The ops that write the waynet rather than a VOB — what `isWaynetOp` narrows
  *  to, and the only ops `applyOps` has no column for. */
 export type WaynetOp =
-  MoveWaypoint | RenameWaypoint | AddWaypoint | SetWaypointEdge | DeleteWaypoint;
+  MoveWaypoint | TurnWaypoint | RenameWaypoint | AddWaypoint | SetWaypointEdge | DeleteWaypoint;
 
 /**
  * The tail of every dispatch over `WorldOp`.
@@ -650,9 +678,9 @@ export function isStructuralOp(
  * cannot undo it.
  */
 export function isWaynetOp(op: WorldOp): op is WaynetOp {
-  return op.op === 'MoveWaypoint' || op.op === 'RenameWaypoint'
-    || op.op === 'AddWaypoint' || op.op === 'SetWaypointEdge'
-    || op.op === 'DeleteWaypoint';
+  return op.op === 'MoveWaypoint' || op.op === 'TurnWaypoint'
+    || op.op === 'RenameWaypoint' || op.op === 'AddWaypoint'
+    || op.op === 'SetWaypointEdge' || op.op === 'DeleteWaypoint';
 }
 
 export function renumbersPaths(op: WorldOp): boolean {
@@ -967,6 +995,35 @@ export function renameWaypoint(
   }
 
   return { op: 'RenameWaypoint', waypoint, from: names[waypoint], to };
+}
+
+/**
+ * A turn of one waypoint — `moveWaypoint`'s twin, reading the direction column
+ * where that one reads the positions.
+ *
+ * Takes the payload's own columns for the same reason: there is no waynet
+ * reader, and `from` has to be read where the op is made rather than out of the
+ * world at apply time. Nothing is checked about `to`: the direction is whatever
+ * the gizmo turned the old one into, and the format requires nothing of it.
+ */
+export function turnWaypoint(
+  directions: Float32Array,
+  names: readonly string[],
+  waypoint: number,
+  to: ZenPosition,
+): TurnWaypoint {
+  if (waypoint < 0 || waypoint >= names.length) {
+    throw new RangeError(`no waypoint ${waypoint} in the waynet`);
+  }
+
+  const at = waypoint * 3;
+  return {
+    op: 'TurnWaypoint',
+    waypoint,
+    name: names[waypoint],
+    from: [directions[at], directions[at + 1], directions[at + 2]],
+    to,
+  };
 }
 
 /**
@@ -2449,6 +2506,11 @@ export function invertOp(op: WorldOp): WorldOp {
   if (op.op === 'MoveWaypoint') {
     return { ...op, from: op.to, to: op.from };
   }
+  if (op.op === 'TurnWaypoint') {
+    // The plain swap, like the move: the two sides are the direction it had and
+    // the one it was given, and nothing else about the waypoint changes.
+    return { ...op, from: op.to, to: op.from };
+  }
   if (op.op === 'RenameWaypoint') {
     // `from` is the guard as well as the origin, so the swap moves the guard
     // too — which is exactly right: undoing a rename addresses the waypoint by
@@ -2532,6 +2594,10 @@ export interface OpBinding {
    *  guard, not the address: the binding refuses a mismatch rather than moving
    *  whichever waypoint the index now names. */
   setWaypointPosition(waypoint: number, name: string, to: ZenPosition): void;
+  /** Turns the waypoint at `waypoint` to face `to`, guarded by `name` the same
+   *  way. It writes the stored direction and nothing else — no rotation is
+   *  derived from it, and a zero vector is legal (an unset direction). */
+  setWaypointDirection(waypoint: number, name: string, to: ZenPosition): void;
   /** Renames the waypoint at `waypoint`, guarded by `name` the same way. It
    *  refuses an empty name and one another waypoint already carries — the two
    *  refusals the point list can see and this package cannot. */
@@ -2625,6 +2691,13 @@ function writeOp(binding: OpBinding, op: WorldOp, direction: 'to' | 'from'): voi
   }
   if (op.op === 'MoveWaypoint') {
     binding.setWaypointPosition(op.waypoint, op.name, op[direction]);
+    return;
+  }
+  if (op.op === 'TurnWaypoint') {
+    // The same guard and the same one-field write as the move: the binding
+    // compares the name and refuses a mismatch rather than turning whichever
+    // waypoint the index now names.
+    binding.setWaypointDirection(op.waypoint, op.name, op[direction]);
     return;
   }
   if (op.op === 'RenameWaypoint') {
@@ -2903,6 +2976,33 @@ export function applyWaypointNames(
       throw new RangeError(`no waypoint ${op.waypoint} in the waynet`);
     }
     names[op.waypoint] = op.to;
+    touched.push(op.waypoint);
+  }
+
+  return touched;
+}
+
+/**
+ * Apply turn ops to the payload's own directions column, and answer which
+ * waypoints turned.
+ *
+ * In place, like `applyWaypointPositions` and unlike the names: the arrows the
+ * overlay draws are built from this column (`WaynetOverlay.rebuildArrows`), so
+ * writing it is writing what is on screen once the layer uploads again.
+ */
+export function applyWaypointDirections(
+  directions: Float32Array, ops: readonly TurnWaypoint[],
+): number[] {
+  const touched: number[] = [];
+
+  for (const op of ops) {
+    const at = op.waypoint * 3;
+    if (at < 0 || at + 2 >= directions.length) {
+      throw new RangeError(`no waypoint ${op.waypoint} in the waynet`);
+    }
+    directions[at] = op.to[0];
+    directions[at + 1] = op.to[1];
+    directions[at + 2] = op.to[2];
     touched.push(op.waypoint);
   }
 

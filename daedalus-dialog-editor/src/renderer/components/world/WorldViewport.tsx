@@ -94,6 +94,10 @@ declare global {
       /** The payload index of the waypoint with this name, or -1 — what a
        *  spec needs to call `pickWaypoint` for a named point. */
       waypointIndex: (name: string) => number;
+      /** Where the named waypoint faces, in ZenGin space, as the overlay is
+       *  drawing it — or null when no waynet is loaded or the name is not in it.
+       *  What a spec reads to see a turn without a GPU (#423). */
+      waypointDirection: (name: string) => [number, number, number] | null;
       /** The stops the routine overlay draws, as the waynet spells them, or
        *  null while it draws none (npc-editor.md §6). */
       routineStops: () => string[] | null;
@@ -382,6 +386,14 @@ export interface WorldViewportProps {
     from: [number, number, number],
     to: [number, number, number],
   ) => void;
+  /** A finished waypoint turn — the direction it faced and the one the ring gave
+   *  it (#423). The overlay's own directions column has already been written by
+   *  the live preview, so `from` is what the op needs and `to` is where it is. */
+  onTurnWaypoint: (
+    waypoint: number,
+    from: [number, number, number],
+    to: [number, number, number],
+  ) => void;
   /**
    * The surface is mounted but off screen — `MainLayout` keeps it that way so
    * its geometry survives a navigate-away (`docs/refactoring-targets.md` §8).
@@ -532,7 +544,7 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
   selectedExtent = null,
   lightPreview = false,
   scatterRadius, onScatterStroke,
-  onSelectWaypoint, onMoveWaypoint, paused = false, routineDraft = null,
+  onSelectWaypoint, onMoveWaypoint, onTurnWaypoint, paused = false, routineDraft = null,
 }, ref) => {
   const hostRef = useRef<HTMLDivElement | null>(null);
   // The overlay is built and torn down independently of the scene, so asking
@@ -655,6 +667,8 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
   vobIndexRef.current = vobIndex;
   const onMoveWaypointRef = useRef(onMoveWaypoint);
   onMoveWaypointRef.current = onMoveWaypoint;
+  const onTurnWaypointRef = useRef(onTurnWaypoint);
+  onTurnWaypointRef.current = onTurnWaypoint;
   // Read by the drag, which happens outside React's render path — changing the
   // step must not rebuild the scene, and must apply to the drag already in hand.
   const snapGridRef = useRef(snapGrid);
@@ -899,6 +913,7 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
       onRotate: (delta) => onRotateRef.current(delta),
       membersOf: (vobs) => membersOfRef.current?.(vobs) ?? vobs.map((vob) => ({ vob, root: vob })),
       onMoveWaypoint: (waypoint, from, to) => onMoveWaypointRef.current(waypoint, from, to),
+      onTurnWaypoint: (waypoint, from, to) => onTurnWaypointRef.current(waypoint, from, to),
     });
     gizmoRef.current = gizmo;
 
@@ -1298,6 +1313,13 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
       pickWaypoint: (waypoint) => onSelectWaypointRef.current(waypoint),
       waypointIndex: (name) => waynetRef.current?.names
         .findIndex((each) => each.toUpperCase() === name.toUpperCase()) ?? -1,
+      waypointDirection: (name) => {
+        const waynet = waynetRef.current;
+        const at = waynet?.names.findIndex((each) => each.toUpperCase() === name.toUpperCase()) ?? -1;
+        if (waynet === null || at < 0) return null;
+        const directions = new Float32Array(waynet.directions);
+        return [directions[at * 3], directions[at * 3 + 1], directions[at * 3 + 2]];
+      },
       routineStops: () => (routineOverlayRef.current ? [...routineOverlayRef.current.drawn] : null),
       spawnMarkers: () => {
         const overlay = spawnOverlayRef.current;
@@ -1681,13 +1703,22 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
     const world = sceneRef.current;
     if (world === null || appliedOps === null) return;
 
-    // The World surface has already written the waynet payload — which is this
-    // buffer — through `applyWaypointPositions`. All that is left is the upload,
-    // and putting the gizmo back on the waypoint if it was the one that moved:
-    // an undo of a waypoint drag otherwise leaves it floating where the
-    // waypoint used to be.
+    // A commit's waynet ops have already been written into the payload by the
+    // World surface (`applyWaypointPositions`/`applyWaypointDirections`), and
+    // writing them again is the same values — but a *refused* op never reaches
+    // that path, and the gizmo's live preview wrote its `to` straight into the
+    // overlay. So the two waypoint writes are done here as well, which is what
+    // makes the reversal of a refusal actually put the point back. The upload
+    // is theirs either way, and the gizmo goes back on the waypoint if it was
+    // the one that moved: an undo of a waypoint drag otherwise leaves it
+    // floating where the waypoint used to be.
     if (appliedOps.some(isWaynetOp)) {
-      overlayRef.current?.refresh();
+      const overlay = overlayRef.current;
+      for (const op of appliedOps) {
+        if (op.op === 'MoveWaypoint') overlay?.setPosition(op.waypoint, op.to);
+        else if (op.op === 'TurnWaypoint') overlay?.setDirection(op.waypoint, op.to);
+      }
+      overlay?.refresh();
       // The markers copy the waypoint positions rather than drawing the payload
       // itself, so a moved waypoint leaves them behind without this.
       spawnOverlayRef.current?.refresh();

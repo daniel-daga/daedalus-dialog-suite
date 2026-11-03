@@ -27,7 +27,7 @@ import type { WorldOp } from 'zen-world';
 import { useWorldEditPipeline } from '../src/renderer/components/world/hooks/useWorldEditPipeline';
 import { useWorldStore } from '../src/renderer/store/worldStore';
 import {
-  SUMMARY, MOVE, WAYPOINT_MOVE, WAYPOINT_WAS, WAYPOINT_TO,
+  SUMMARY, MOVE, WAYPOINT_MOVE, WAYPOINT_TURN, WAYPOINT_FACING, WAYPOINT_TURNED, WAYPOINT_WAS, WAYPOINT_TO,
   makeWorldEditorApi, vobIndex, waynetPayload,
 } from './worldFixtures';
 
@@ -390,8 +390,21 @@ describe('useWorldEditPipeline — the waynet half of the projection', () => {
     expect([...positions.slice(3, 6)]).not.toEqual(WAYPOINT_WAS);
   });
 
-  test('a rename replaces the names and keeps the same positions buffer', async () => {
-    // Nothing draws a name and the panel that shows one is React, so the list is
+  test('a turn is written into the directions column the facing arrows are built from', async () => {
+    // The other half of the same projection, and the one #423 needs: the overlay
+    // builds each arrow from this column, so writing it in place and uploading
+    // is what turns the point on screen. Undo comes through here too, as the
+    // same op with its sides swapped.
+    const payload = waynetPayload();
+    const { result } = mount(payload);
+    await act(async () => { await result.current.commitOps([WAYPOINT_TURN]); });
+
+    const directions = new Float32Array(payload.directions);
+    expect([...directions.slice(3, 6)]).toEqual(WAYPOINT_TURNED);
+    expect([...directions.slice(3, 6)]).not.toEqual(WAYPOINT_FACING);
+  });
+
+  test('a rename replaces the names and keeps the same positions buffer', async () => {    // Nothing draws a name and the panel that shows one is React, so the list is
     // replaced rather than mutated.
     const payload = waynetPayload();
     const { result } = mount(payload);

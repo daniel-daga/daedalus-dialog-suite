@@ -322,6 +322,27 @@ export class WaynetOverlay {
     this.refresh();
   }
 
+  /** The direction a waypoint faces, ZenGin space — the heading of its arrow. A
+   *  zero vector means it faces nowhere, which the overlay draws nothing for. */
+  directionOf(waypoint: number): [number, number, number] {
+    const at = this.at(waypoint);
+    return [this.directions[at], this.directions[at + 1], this.directions[at + 2]];
+  }
+
+  /**
+   * Draw a waypoint turned — the rotate gizmo's live preview (§423).
+   *
+   * The arrow is built from this column rather than from the payload, so this is
+   * the whole of the preview; `refresh` is what makes it redraw.
+   */
+  setDirection(waypoint: number, to: readonly [number, number, number]): void {
+    const at = this.at(waypoint);
+    this.directions[at] = to[0];
+    this.directions[at + 1] = to[1];
+    this.directions[at + 2] = to[2];
+    this.refresh();
+  }
+
   /**
    * Upload the positions again, after something outside wrote them.
    *

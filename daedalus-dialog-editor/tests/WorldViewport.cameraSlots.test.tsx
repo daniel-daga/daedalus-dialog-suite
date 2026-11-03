@@ -73,6 +73,8 @@ function props(bbox: number[]) {
     snapAngle: 0,
     onSelectWaypoint: () => {},
     onMoveWaypoint: () => {},
+
+    onTurnWaypoint: () => {},
   };
 }
 

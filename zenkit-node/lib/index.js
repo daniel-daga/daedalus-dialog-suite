@@ -81,7 +81,7 @@ function reparentVob(handle, ...rest) {
 // The waynet mutators need the same wrapper and nothing else, so they are
 // wrapped by name rather than hand-written six more times.
 const waynetMutators = Object.fromEntries(
-  ['setWaypointPosition', 'setWaypointName', 'addWaypoint', 'removeWaypoint',
+  ['setWaypointPosition', 'setWaypointDirection', 'setWaypointName', 'addWaypoint', 'removeWaypoint',
     'insertWaypoint', 'addWaypointEdge', 'removeWaypointEdge'].map((name) => [name, (handle, ...rest) => {
     const result = addon[name](handle, ...rest);
     markMutated(handle);

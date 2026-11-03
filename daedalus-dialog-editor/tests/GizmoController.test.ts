@@ -68,7 +68,14 @@ function harness({
   snapAngle = 0,
   positions = { 1: [100, 0, 0], 2: [300, 0, 0] } as Record<number, [number, number, number]>,
   rotations = {} as Record<number, ZenRotation>,
-  waypoints = { 7: [50, 60, 70] as [number, number, number] },
+  waypoints = {
+    7: [50, 60, 70] as [number, number, number],
+    8: [50, 60, 70] as [number, number, number],
+  },
+  waypointDirections = {
+    7: [1, 0, 0] as [number, number, number],
+    8: [0, 0, 0] as [number, number, number],
+  },
   membersOf = undefined as GizmoControllerOptions['membersOf'],
 } = {}) {
   const world = fakeWorld(positions, rotations);
@@ -77,11 +84,16 @@ function harness({
   const translated: [number, number, number][] = [];
   const rotated: ZenRotation[] = [];
   const waypointMoves: Array<[number, [number, number, number], [number, number, number]]> = [];
+  const waypointTurns: Array<[number, [number, number, number], [number, number, number]]> = [];
 
   const overlay = {
     positionOf: (waypoint: number) => waypoints[waypoint as keyof typeof waypoints],
     setPosition: (waypoint: number, at: [number, number, number]) => {
       (waypoints as Record<number, [number, number, number]>)[waypoint] = at;
+    },
+    directionOf: (waypoint: number) => waypointDirections[waypoint as keyof typeof waypointDirections],
+    setDirection: (waypoint: number, to: [number, number, number]) => {
+      (waypointDirections as Record<number, [number, number, number]>)[waypoint] = to;
     },
   } as unknown as WaynetOverlay;
 
@@ -99,10 +111,14 @@ function harness({
     onTranslate: (delta) => { translated.push(delta); },
     onRotate: (delta) => { rotated.push(delta); },
     onMoveWaypoint: (waypoint, from, to) => { waypointMoves.push([waypoint, from, to]); },
+    onTurnWaypoint: (waypoint, from, to) => { waypointTurns.push([waypoint, from, to]); },
     membersOf,
   });
 
-  return { gizmo, world, scene, controls, translated, rotated, waypointMoves, waypoints };
+  return {
+    gizmo, world, scene, controls, translated, rotated, waypointMoves, waypointTurns,
+    waypoints, waypointDirections,
+  };
 }
 
 describe('GizmoController', () => {
@@ -355,19 +371,68 @@ describe('GizmoController', () => {
     expect(translated).toEqual([]);
   });
 
-  it('keeps the waypoint on translate however the mode is switched', () => {
-    // `MoveWaypoint` is the only waynet op there is, so a rotate ring here
-    // would turn something the world would never be told about. The VOBs' own
-    // mode survives the detour.
-    const { gizmo, waypointMoves } = harness({ mode: 'translate' });
+  it('gives a waypoint the rotate ring, and the ring turns its direction', () => {
+    // #423: a waypoint has no orientation but it does have a facing, and the
+    // ring writes it. +X turned a quarter about +Y faces -Z, in ZenGin's own
+    // basis.
+    const { gizmo, waypointMoves, waypointTurns } = harness({ mode: 'translate' });
 
     gizmo.attachWaypoint(7);
     gizmo.setMode('rotate');
-    gizmo.dragTo([50, 90, 70]);
+    gizmo.turnBy([0, 1, 0], Math.PI / 2);
 
-    expect(waypointMoves).toHaveLength(1);
+    expect(waypointTurns).toHaveLength(1);
+    const [waypoint, from, to] = waypointTurns[0];
+    expect(waypoint).toBe(7);
+    expect(from).toEqual([1, 0, 0]);
+    [0, 0, -1].forEach((value, axis) => expect(to[axis]).toBeCloseTo(value, 6));
+    // A turn is the direction and nothing else: the point itself did not move.
+    expect(waypointMoves).toEqual([]);
+  });
 
+  it('draws the turned arrow as the ring turns it', () => {
+    const { gizmo, waypointDirections } = harness({ mode: 'rotate' });
+
+    gizmo.attachWaypoint(7);
+    gizmo.turnBy([0, 1, 0], Math.PI / 2);
+
+    expect(waypointDirections[7][2]).toBeCloseTo(-1, 6);
+  });
+
+  it('turns a waypoint that faced nowhere from +Z, so its first turn is not a no-op', () => {
+    // Retail stores (0, 0, 0) for an unset direction, and a zero vector turned
+    // is still zero — the ring would do nothing at all. `from` stays the zero,
+    // so undoing the turn puts it back.
+    const { gizmo, waypointTurns } = harness({ mode: 'rotate' });
+
+    gizmo.attachWaypoint(8);
+    gizmo.turnBy([0, 1, 0], Math.PI / 2);
+
+    expect(waypointTurns).toHaveLength(1);
+    const [waypoint, from, to] = waypointTurns[0];
+    expect(waypoint).toBe(8);
+    expect(from).toEqual([0, 0, 0]);
+    [1, 0, 0].forEach((value, axis) => expect(to[axis]).toBeCloseTo(value, 6));
+  });
+
+  it('commits nothing for a turn about the waypoint\'s own facing', () => {
+    // A waypoint turned about the direction it already faces is where it was,
+    // and an op for it would undo nothing.
+    const { gizmo, waypointTurns } = harness({ mode: 'rotate' });
+
+    gizmo.attachWaypoint(7);
+    gizmo.turnBy([1, 0, 0], Math.PI / 2);
+
+    expect(waypointTurns).toEqual([]);
+  });
+
+  it('keeps the VOBs\' own mode after a detour through a waypoint', () => {
+    const { gizmo } = harness({ mode: 'translate' });
+
+    gizmo.attachWaypoint(7);
+    gizmo.setMode('rotate');
     gizmo.attach([1, 2]);
+
     expect(gizmo.position()).toEqual([300, 0, 0]);
   });
 
@@ -404,6 +469,6 @@ describe('GizmoController', () => {
     const { gizmo } = harness();
 
     expect(() => gizmo.dragTo([0, 0, 0])).toThrow('nothing is selected');
-    expect(() => gizmo.turnBy([0, 1, 0], 1)).toThrow('no VOB is selected');
+    expect(() => gizmo.turnBy([0, 1, 0], 1)).toThrow('nothing is selected');
   });
 });

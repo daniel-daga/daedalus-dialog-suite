@@ -545,6 +545,19 @@ export function setWaypointPosition(
   handle: WorldHandle, waypoint: number, name: string, position: readonly [number, number, number],
 ): void;
 /**
+ * Turn the waypoint at `waypoint` in `getWaynet`'s point list, by writing its
+ * stored `direction` (§423).
+ *
+ * The same address and the same name guard as `setWaypointPosition`, for the
+ * same reason, and it is the **only** call that writes a direction — the move
+ * leaves it alone. Nothing is required of the vector beyond finiteness: the
+ * format says nothing about its length, and (0, 0, 0) is a legal stored
+ * direction meaning "unset", which is what an undone first turn restores.
+ */
+export function setWaypointDirection(
+  handle: WorldHandle, waypoint: number, name: string, direction: readonly [number, number, number],
+): void;
+/**
  * Rename the waypoint at `waypoint` in `getWaynet`'s point list.
  *
  * The same address and the same guard as `setWaypointPosition`, for the same

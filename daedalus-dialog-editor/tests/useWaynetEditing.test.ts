@@ -5,9 +5,9 @@
  * coupling to the edit core: it needs the payload, the selection and
  * `commitOps`, and nothing else).
  *
- * The hook owns six edits (move, rename, add, join, unjoin, delete) and five
- * derivations (neighbours, spawns, the join resolver, the suggested name, the
- * known names). What each owes its caller is asserted here rather than through
+ * The hook owns seven edits (move, turn, rename, add, join, unjoin, delete) and
+ * five derivations (neighbours, spawns, the join resolver, the suggested name,
+ * the known names). What each owes its caller is asserted here rather than through
  * the surface, which is what made these unreachable before.
  */
 
@@ -80,6 +80,26 @@ describe('useWaynetEditing — the six edits', () => {
     expect(ops[0].op).toBe('MoveWaypoint');
   });
 
+  test('a turn commits one op carrying the facing it had and the one it was given', () => {
+    // #423. `from` is put back into the column before the op is built for the
+    // same reason a move does it: the live preview has already written `to`
+    // into the overlay's directions, which is the payload's own buffer.
+    const { result, commitOps } = mount();
+    act(() => { result.current.turnWaypointTo(1, [0, 0, 1], [1, 0, 0]); });
+
+    const [ops] = commitOps.mock.calls[0] as [Array<Record<string, unknown>>];
+    expect(ops).toEqual([{
+      op: 'TurnWaypoint', waypoint: 1, name: 'WP_MIDDLE',
+      from: [0, 0, 1], to: [1, 0, 0],
+    }]);
+  });
+
+  test('a turn with no waynet loaded is a no-op rather than a throw', () => {
+    const { result, commitOps } = mount({ waynet: null });
+    act(() => { result.current.turnWaypointTo(0, [0, 0, 1], [1, 0, 0]); });
+    expect(commitOps).not.toHaveBeenCalled();
+  });
+
   test('a rename commits one rename op', () => {
     const { result, commitOps } = mount();
     act(() => { result.current.renameWaypointTo(1, 'WP_RENAMED'); });
@@ -146,6 +166,7 @@ describe('useWaynetEditing — the six edits', () => {
     const { result, commitOps } = mount({ waynet: null });
     act(() => {
       result.current.moveWaypointTo(0, [0, 0, 0], [1, 1, 1]);
+      result.current.turnWaypointTo(0, [0, 0, 1], [1, 0, 0]);
       result.current.renameWaypointTo(0, 'X');
       result.current.addWaypointAt('X', [0, 0, 0]);
       result.current.joinWaypointTo(1);

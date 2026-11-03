@@ -216,6 +216,90 @@ test.describe('World surface', () => {
     await expect.poll(async () => (await arrow()).offset).toBeGreaterThan(1);
     expect(shaderErrors).toEqual([]);
   });
+  test('the rotate ring turns a waypoint\'s facing and commits it (#423)', async ({ page }) => {
+    // The one way to turn a waypoint, driven through the same three events a
+    // real drag fires: `TransformControls`' pointer-to-rotation maths is what
+    // `turnGizmo` stands in for, and everything below it — the preview, the op,
+    // the IPC, the panel — is the app's own.
+    await openWorldView(page);
+    await expect(page.getByTestId('world-open')).toBeVisible();
+    await page.evaluate(async (fixturePath) => {
+      const { SUMMARY, vobIndex } = await import(/* @vite-ignore */ fixturePath);
+      const bbox = [-400, -100, -400, 400, 100, 400];
+      const window_ = window as unknown as { editorAPI: Record<string, unknown>; __ops: unknown[][] };
+      const api = window_.editorAPI;
+      window_.__ops = [];
+      api.listWorlds = async () => [{ path: SUMMARY.worldPath, name: 'NewWorld.zen', source: 'C:/Gothic', isDefault: false }];
+      api.openWorld = async () => ({
+        ...SUMMARY, bbox, assetSources: [],
+        vobIndex: vobIndex([[0, 0, 0]], 'zCVob', undefined, ['BARREL'], ['']),
+      });
+      api.getWorldMesh = async () => ({ groups: [], bbox });
+      api.getWorldVisuals = async () => ({ visuals: [], decals: { groups: [], count: 0 }, stats: {
+        visualsSeen: 0, visualsResolved: 0, vobsPlaced: 0, instancedDrawGroups: 0,
+        levelCompos: 0, unresolvedByType: {}, unresolved: [],
+      } });
+      api.getWorldWaynet = async () => ({
+        count: 1, names: ['WP_FACE'], positions: new Float32Array(3).buffer,
+        directions: new Float32Array([1, 0, 0]).buffer,
+        waterDepths: new Int32Array(1).buffer, flags: new Uint32Array(1).buffer,
+        edgeCount: 0, edges: new Uint32Array().buffer, danglingEdges: 0,
+      });
+      api.getWorldHistoryDepth = async () => ({ undo: 0, redo: 0 });
+      api.getWorldPortalFindings = async () => [];
+      api.getVobFolders = async () => ({ folders: [] });
+      api.applyWorldOps = async (ops: unknown[]) => { window_.__ops.push(ops); };
+    }, `/@fs${resolve(__dirname, '../worldFixtures.ts')}`);
+    await page.getByTestId('world-open').click();
+    await page.getByTestId('world-picker-entry-NewWorld.zen').click();
+    await expect(page.getByTestId('world-viewport')).toBeVisible();
+    await page.getByRole('button', { name: 'Waynet', exact: true }).click();
+
+    await page.getByTestId('world-gizmo-rotate').click();
+    await page.evaluate(() => {
+      const probe = (window as unknown as { __worldViewport: {
+        pickWaypoint: (waypoint: number) => void; waypointIndex: (name: string) => number;
+      } }).__worldViewport;
+      probe.pickWaypoint(probe.waypointIndex('WP_FACE'));
+    });
+    // A quarter turn about +Y: the waypoint faced +X and now faces -Z.
+    await page.evaluate(() => {
+      (window as unknown as { __worldViewport: {
+        turnGizmo: (axis: number[], radians: number) => void;
+      } }).__worldViewport.turnGizmo([0, 1, 0], Math.PI / 2);
+    });
+
+    const ops = await page.evaluate(() => {
+      const window_ = window as unknown as { __ops: Array<Array<Record<string, unknown>>> };
+      return window_.__ops;
+    });
+    expect(ops).toHaveLength(1);
+    expect(ops[0][0]).toMatchObject({ op: 'TurnWaypoint', waypoint: 0, name: 'WP_FACE', from: [1, 0, 0] });
+    const turned = ops[0][0].to as number[];
+    expect(turned[0]).toBeCloseTo(0, 6);
+    expect(turned[2]).toBeCloseTo(-1, 6);
+
+    // The committed turn reached the column the arrow is drawn from, which is
+    // what a second ring reads its origin out of — so the second op's `from` is
+    // the first op's `to`, and the arrow really did turn on screen.
+    await expect.poll(() => page.evaluate(() => {
+      const probe = (window as unknown as { __worldViewport: {
+        waypointDirection: (name: string) => number[] | null;
+      } }).__worldViewport;
+      return probe.waypointDirection('WP_FACE')?.[2] ?? 0;
+    })).toBeCloseTo(-1, 6);
+
+    await page.evaluate(() => {
+      (window as unknown as { __worldViewport: {
+        turnGizmo: (axis: number[], radians: number) => void;
+      } }).__worldViewport.turnGizmo([0, 1, 0], Math.PI / 2);
+    });
+    await expect.poll(() => page.evaluate(() => {
+      const window_ = window as unknown as { __ops: Array<Array<Record<string, unknown>>> };
+      const from = window_.__ops[1]?.[0]?.from as number[] | undefined;
+      return from?.[2] ?? 0;
+    })).toBeCloseTo(-1, 6);
+  });
   test('marker distance and wall occlusion are independent view options', async ({ page }) => {
     await openWorldView(page);
     await expect(page.getByTestId('world-open')).toBeVisible();

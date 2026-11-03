@@ -21,6 +21,10 @@ import type { EditorAPI } from '../src/renderer/types/global';
  *  it to — shared so a shortcuts-style test can compute the same op. */
 export const WAYPOINT_WAS: [number, number, number] = [1000, 0, 1000];
 export const WAYPOINT_TO: [number, number, number] = [1400, 50, 900];
+/** Waypoint 1's facing in `waynetPayload()`, and the turn stub's destination —
+ *  a quarter turn about +Y, which is what #423's ring writes. */
+export const WAYPOINT_FACING: [number, number, number] = [0, 0, 1];
+export const WAYPOINT_TURNED: [number, number, number] = [1, 0, 0];
 
 /**
  * A three-waypoint waynet, in the shape `getWaynet` emits it.
@@ -156,6 +160,12 @@ export const MOVE: Extract<WorldOp, { op: 'MoveVob' }> = {
 /** The op a drag of waypoint 1 has to become. */
 export const WAYPOINT_MOVE: WorldOp = {
   op: 'MoveWaypoint', waypoint: 1, name: 'WP_MIDDLE', from: WAYPOINT_WAS, to: WAYPOINT_TO,
+};
+
+/** The op the rotate ring on waypoint 1 has to become (#423) — its facing in
+ *  `waynetPayload()` and a quarter turn about +Y. */
+export const WAYPOINT_TURN: WorldOp = {
+  op: 'TurnWaypoint', waypoint: 1, name: 'WP_MIDDLE', from: WAYPOINT_FACING, to: WAYPOINT_TURNED,
 };
 
 /**

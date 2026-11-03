@@ -116,6 +116,8 @@ function props(overrides: Record<string, unknown> = {}) {
     snapAngle: 0,
     onSelectWaypoint: () => {},
     onMoveWaypoint: () => {},
+
+    onTurnWaypoint: () => {},
     ...overrides,
   };
 }

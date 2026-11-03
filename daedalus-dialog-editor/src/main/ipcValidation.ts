@@ -827,6 +827,7 @@ export function assertApplyOpsRequest(request: unknown): asserts request is { op
       && op.op !== 'SetVobClassProp' && op.op !== 'AddVob' && op.op !== 'ReparentVob'
       && op.op !== 'MoveWaypoint' && op.op !== 'RenameWaypoint' && op.op !== 'AddWaypoint'
       && op.op !== 'SetWaypointEdge' && op.op !== 'DeleteWaypoint'
+      && op.op !== 'TurnWaypoint'
       && op.op !== 'DeleteVob') {
       // **`RestoreVob` is deliberately not on that list**, and it gets its own
       // message rather than "unknown op": it is a real op that this boundary
@@ -848,7 +849,11 @@ export function assertApplyOpsRequest(request: unknown): asserts request is { op
     // below sits after `vob` and could afford to, because a reparent still has
     // one; put this one there and the op is refused with a message about a
     // field it has no business having.
-    if (op.op === 'MoveWaypoint') {
+    //
+    // A turn shares the branch because it shares the shape: the same waypoint,
+    // the same name guard, and two three-number sides — a position on the move
+    // and a direction on the turn (#423).
+    if (op.op === 'MoveWaypoint' || op.op === 'TurnWaypoint') {
       if (typeof op.waypoint !== 'number' || !Number.isInteger(op.waypoint) || op.waypoint < 0) {
         throw new Error('Invalid op: waypoint must be a non-negative integer');
       }

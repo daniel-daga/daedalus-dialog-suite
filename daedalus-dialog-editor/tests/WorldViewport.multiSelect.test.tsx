@@ -116,6 +116,8 @@ function props(onPick: (...args: Pick) => void) {
     snapAngle: 0,
     onSelectWaypoint: () => {},
     onMoveWaypoint: () => {},
+
+    onTurnWaypoint: () => {},
   };
 }
 

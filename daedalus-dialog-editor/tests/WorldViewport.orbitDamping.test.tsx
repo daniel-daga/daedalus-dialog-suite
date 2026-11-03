@@ -86,6 +86,8 @@ const PROPS = {
   snapAngle: 0,
   onSelectWaypoint: () => {},
   onMoveWaypoint: () => {},
+
+  onTurnWaypoint: () => {},
   paused: false,
 };
 

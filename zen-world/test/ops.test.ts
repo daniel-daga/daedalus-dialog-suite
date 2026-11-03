@@ -23,6 +23,7 @@ import {
   applyOps,
   applyWaypointNames,
   applyWaypointPositions,
+  applyWaypointDirections,
   reparentVob,
   reparentVobs,
   landedPaths,
@@ -44,6 +45,7 @@ import {
   isWaynetOp,
   moveVob,
   moveWaypoint,
+  turnWaypoint,
   renameWaypoint,
   addWaypoint,
   connectWaypoints,
@@ -72,6 +74,7 @@ import {
   type ReadProps,
   type SetVobClassProp,
   type MoveWaypoint,
+  type TurnWaypoint,
   type RenameWaypoint,
   type AddWaypoint,
   type SetWaypointEdge,
@@ -459,6 +462,7 @@ describe('a rotate op', () => {
       restoreVob: () => { throw new Error('not a restore'); },
       reparentVob: () => { throw new Error('not a reparent'); },
       setWaypointPosition: () => { throw new Error('not a waypoint move'); },
+      setWaypointDirection: () => { throw new Error('not a waypoint turn'); },
       setWaypointName: () => { throw new Error('not a waypoint rename'); },
     };
 
@@ -486,6 +490,7 @@ describe('a rotate op', () => {
       restoreVob: () => { throw new Error('not a restore'); },
       reparentVob: () => { throw new Error('not a reparent'); },
       setWaypointPosition: () => { throw new Error('not a waypoint move'); },
+      setWaypointDirection: () => { throw new Error('not a waypoint turn'); },
       setWaypointName: () => { throw new Error('not a waypoint rename'); },
     };
     const rotate = rotateVob(reader(), 1, QUARTER_Y, BOUNDS);
@@ -1087,6 +1092,7 @@ describe('a class-property op', () => {
       restoreVob: () => { throw new Error('not a restore'); },
       reparentVob: () => { throw new Error('not a reparent'); },
       setWaypointPosition: () => { throw new Error('not a waypoint move'); },
+      setWaypointDirection: () => { throw new Error('not a waypoint turn'); },
       setWaypointName: () => { throw new Error('not a waypoint rename'); },
     };
     const op = setVobClassProp(reader(), 1, { instance: 'ITMW_1H_SWORD_01' }, { instance: 'ITMI_GOLD' });
@@ -1120,6 +1126,7 @@ describe('a class-property op', () => {
       restoreVob: () => { throw new Error('not a restore'); },
       reparentVob: () => { throw new Error('not a reparent'); },
       setWaypointPosition: () => { throw new Error('not a waypoint move'); },
+      setWaypointDirection: () => { throw new Error('not a waypoint turn'); },
       setWaypointName: () => { throw new Error('not a waypoint rename'); },
     };
 
@@ -1260,6 +1267,7 @@ describe('an add op', () => {
       restoreVob: () => { throw new Error('not a restore'); },
       reparentVob: () => { throw new Error('not a reparent'); },
       setWaypointPosition: () => { throw new Error('not a waypoint move'); },
+      setWaypointDirection: () => { throw new Error('not a waypoint turn'); },
       setWaypointName: () => { throw new Error('not a waypoint rename'); },
     };
     const move: WorldOp = { op: 'MoveVob', vob: 0, path: '0', from: [0, 0, 0], to: [1, 1, 1] };
@@ -1289,6 +1297,7 @@ describe('an add op', () => {
       restoreVob: () => { throw new Error('not a restore'); },
       reparentVob: () => { throw new Error('not a reparent'); },
       setWaypointPosition: () => { throw new Error('not a waypoint move'); },
+      setWaypointDirection: () => { throw new Error('not a waypoint turn'); },
       setWaypointName: () => { throw new Error('not a waypoint rename'); },
     };
     const op = addVob(reader(), SPEC, 0);
@@ -1319,6 +1328,7 @@ describe('an add op', () => {
       restoreVob: () => { throw new Error('not a restore'); },
       reparentVob: () => { throw new Error('not a reparent'); },
       setWaypointPosition: () => { throw new Error('not a waypoint move'); },
+      setWaypointDirection: () => { throw new Error('not a waypoint turn'); },
       setWaypointName: () => { throw new Error('not a waypoint rename'); },
     };
     const item: NewVob = {
@@ -1347,6 +1357,7 @@ describe('an add op', () => {
       restoreVob: () => { throw new Error('not a restore'); },
       reparentVob: () => { throw new Error('not a reparent'); },
       setWaypointPosition: () => { throw new Error('not a waypoint move'); },
+      setWaypointDirection: () => { throw new Error('not a waypoint turn'); },
       setWaypointName: () => { throw new Error('not a waypoint rename'); },
     };
     const op = addVob(reader(), SPEC);
@@ -1374,6 +1385,7 @@ describe('an add op', () => {
       restoreVob: () => { throw new Error('not a restore'); },
       reparentVob: () => { throw new Error('not a reparent'); },
       setWaypointPosition: () => { throw new Error('not a waypoint move'); },
+      setWaypointDirection: () => { throw new Error('not a waypoint turn'); },
       setWaypointName: () => { throw new Error('not a waypoint rename'); },
     };
 
@@ -1396,6 +1408,7 @@ describe('an add op', () => {
       restoreVob: () => { throw new Error('not a restore'); },
       reparentVob: () => { throw new Error('not a reparent'); },
       setWaypointPosition: () => { throw new Error('not a waypoint move'); },
+      setWaypointDirection: () => { throw new Error('not a waypoint turn'); },
       setWaypointName: () => { throw new Error('not a waypoint rename'); },
     };
 
@@ -1619,6 +1632,7 @@ describe('a selection duplicated as one batch', () => {
       restoreVob: () => { throw new Error('not a restore'); },
       reparentVob: () => { throw new Error('not a reparent'); },
       setWaypointPosition: () => { throw new Error('not a waypoint move'); },
+      setWaypointDirection: () => { throw new Error('not a waypoint turn'); },
       setWaypointName: () => { throw new Error('not a waypoint rename'); },
     };
 
@@ -1647,6 +1661,7 @@ describe('a selection duplicated as one batch', () => {
       restoreVob: () => { throw new Error('not a restore'); },
       reparentVob: () => { throw new Error('not a reparent'); },
       setWaypointPosition: () => { throw new Error('not a waypoint move'); },
+      setWaypointDirection: () => { throw new Error('not a waypoint turn'); },
       setWaypointName: () => { throw new Error('not a waypoint rename'); },
     };
     const live = reader();
@@ -1936,6 +1951,7 @@ describe('a duplicate that carries the subtree', () => {
       restoreVob: () => { throw new Error('not a restore'); },
       reparentVob: () => { throw new Error('not a reparent'); },
       setWaypointPosition: () => { throw new Error('not a waypoint move'); },
+      setWaypointDirection: () => { throw new Error('not a waypoint turn'); },
       setWaypointName: () => { throw new Error('not a waypoint rename'); },
     };
 
@@ -1998,6 +2014,7 @@ describe('a duplicate that carries the class properties', () => {
     setVobProp: () => { throw new Error('not a property change'); },
     reparentVob: () => { throw new Error('not a reparent'); },
     setWaypointPosition: () => { throw new Error('not a waypoint move'); },
+    setWaypointDirection: () => { throw new Error('not a waypoint turn'); },
     setWaypointName: () => { throw new Error('not a waypoint rename'); },
   };
 
@@ -2237,6 +2254,7 @@ describe('a delete op', () => {
       restoreVob: (path) => { calls.push(`restore ${path}`); return path; },
       reparentVob: () => { throw new Error('not a reparent'); },
       setWaypointPosition: () => { throw new Error('not a waypoint move'); },
+      setWaypointDirection: () => { throw new Error('not a waypoint turn'); },
       setWaypointName: () => { throw new Error('not a waypoint rename'); },
     };
 
@@ -2264,6 +2282,7 @@ describe('a delete op', () => {
       restoreVob: (path) => { calls.push(`restore ${path}`); return path; },
       reparentVob: () => { throw new Error('not a reparent'); },
       setWaypointPosition: () => { throw new Error('not a waypoint move'); },
+      setWaypointDirection: () => { throw new Error('not a waypoint turn'); },
       setWaypointName: () => { throw new Error('not a waypoint rename'); },
     };
     const op = deleteVob(reader(), 1);
@@ -2298,6 +2317,7 @@ describe('a delete op', () => {
       restoreVob: () => { calls.push('restore'); return '1/7'; },
       reparentVob: () => { throw new Error('not a reparent'); },
       setWaypointPosition: () => { throw new Error('not a waypoint move'); },
+      setWaypointDirection: () => { throw new Error('not a waypoint turn'); },
       setWaypointName: () => { throw new Error('not a waypoint rename'); },
     };
 
@@ -2323,6 +2343,7 @@ describe('a delete op', () => {
       restoreVob: () => { throw new Error('not a restore'); },
       reparentVob: () => { throw new Error('not a reparent'); },
       setWaypointPosition: () => { throw new Error('not a waypoint move'); },
+      setWaypointDirection: () => { throw new Error('not a waypoint turn'); },
       setWaypointName: () => { throw new Error('not a waypoint rename'); },
     };
     const move: WorldOp = { op: 'MoveVob', vob: 0, path: '0', from: [0, 0, 0], to: [1, 1, 1] };
@@ -2364,6 +2385,7 @@ describe('deleting a whole selection (#253)', () => {
     restoreVob: () => { throw new Error('not a restore'); },
     reparentVob: () => { throw new Error('not a reparent'); },
     setWaypointPosition: () => { throw new Error('not a waypoint move'); },
+    setWaypointDirection: () => { throw new Error('not a waypoint turn'); },
     setWaypointName: () => { throw new Error('not a waypoint rename'); },
   });
 
@@ -2575,6 +2597,7 @@ describe('a reparent op', () => {
         return parent === null ? String(slot) : `${parent}/${slot}`;
       },
       setWaypointPosition: () => { throw new Error('not a waypoint move'); },
+      setWaypointDirection: () => { throw new Error('not a waypoint turn'); },
       setWaypointName: () => { throw new Error('not a waypoint rename'); },
     };
     const op = reparentVob(reader(), 2, 1, 0);
@@ -2655,6 +2678,7 @@ describe('a reparent op', () => {
           : `${landedIn}/${destination.indexOf(source)}`;
       },
       setWaypointPosition: () => { throw new Error('not a waypoint move'); },
+      setWaypointDirection: () => { throw new Error('not a waypoint turn'); },
       setWaypointName: () => { throw new Error('not a waypoint rename'); },
     };
     return binding;
@@ -2830,6 +2854,7 @@ describe('a reparent op', () => {
       restoreVob: () => { throw new Error('not a restore'); },
       reparentVob: () => '9/9',
       setWaypointPosition: () => { throw new Error('not a waypoint move'); },
+      setWaypointDirection: () => { throw new Error('not a waypoint turn'); },
       setWaypointName: () => { throw new Error('not a waypoint rename'); },
     };
 
@@ -2874,6 +2899,7 @@ describe('a reparent op', () => {
       insertVob: () => '2', deleteVob: () => {}, reparentVob: () => '0/0/0',
       restoreVob: () => { throw new Error('not a restore'); },
       setWaypointPosition: () => { throw new Error('not a waypoint move'); },
+      setWaypointDirection: () => { throw new Error('not a waypoint turn'); },
       setWaypointName: () => { throw new Error('not a waypoint rename'); },
     };
     const live = reader();
@@ -3057,6 +3083,7 @@ describe('committing ops to the world', () => {
       restoreVob: () => { throw new Error('not a restore'); },
       reparentVob: () => { throw new Error('not a reparent'); },
       setWaypointPosition: () => { throw new Error('not a waypoint move'); },
+      setWaypointDirection: () => { throw new Error('not a waypoint turn'); },
       setWaypointName: () => { throw new Error('not a waypoint rename'); },
     };
     return { binding, calls };
@@ -3112,6 +3139,7 @@ describe('committing ops to the world', () => {
       restoreVob: () => { throw new Error('not a restore'); },
       reparentVob: () => { throw new Error('not a reparent'); },
       setWaypointPosition: () => { throw new Error('not a waypoint move'); },
+      setWaypointDirection: () => { throw new Error('not a waypoint turn'); },
       setWaypointName: () => { throw new Error('not a waypoint rename'); },
     };
     const box: ZenBounds = [0, 0, 0, 1, 1, 1];
@@ -3147,6 +3175,7 @@ describe('committing ops to the world', () => {
       restoreVob: () => { throw new Error('not a restore'); },
       reparentVob: () => { throw new Error('not a reparent'); },
       setWaypointPosition: () => { throw new Error('not a waypoint move'); },
+      setWaypointDirection: () => { throw new Error('not a waypoint turn'); },
       setWaypointName: () => { throw new Error('not a waypoint rename'); },
     };
 
@@ -3199,6 +3228,10 @@ describe('moving a waypoint', () => {
       setWaypointPosition: (waypoint, name, to) => {
         if (name === refuse) throw new Error(`no waypoint ${name}`);
         calls.push(['waypoint', waypoint, name, to]);
+      },
+      setWaypointDirection: (waypoint, name, to) => {
+        if (name === refuse) throw new Error(`no waypoint ${name}`);
+        calls.push(['turn', waypoint, name, to]);
       },
       setWaypointName: (waypoint, name, to) => {
         if (name === refuse) throw new Error(`no waypoint ${name}`);
@@ -3309,6 +3342,88 @@ describe('moving a waypoint', () => {
     expect(() => applyWaypointPositions(column, [op])).toThrow(/3/);
   });
 
+  // #423: a waypoint's facing, which `MoveWaypoint` deliberately leaves alone.
+  // Same address, same guard, different column.
+  describe('a waypoint turn', () => {
+    const directions = () => Float32Array.from([0, 0, 1, 1, 0, 0, 0, 0, 0]);
+
+    it('carries the direction it faced and the one it was given', () => {
+      const op = turnWaypoint(directions(), NAMES, 1, [0, 0, -1]);
+
+      expect(op).toEqual({
+        op: 'TurnWaypoint', waypoint: 1, name: 'WP_FIXTURE_A',
+        from: [1, 0, 0], to: [0, 0, -1],
+      });
+    });
+
+    it('is refused for a waypoint that is not in the payload', () => {
+      expect(() => turnWaypoint(directions(), NAMES, 3, [0, 1, 0])).toThrow(/3/);
+      expect(() => turnWaypoint(directions(), NAMES, -1, [0, 1, 0])).toThrow(/-1/);
+    });
+
+    it('inverts by swapping the two sides, and is its own round trip', () => {
+      const op = turnWaypoint(directions(), NAMES, 2, [0, 0, -1]);
+      const undo = invertOp(op) as TurnWaypoint;
+
+      expect(undo.from).toEqual(op.to);
+      expect(undo.to).toEqual(op.from);
+      expect(undo.name).toBe('WP_FIXTURE_B');
+      expect(invertOp(undo)).toEqual(op);
+    });
+
+    it('reaches the binding as setWaypointDirection, guarding the name', () => {
+      const { binding, calls } = waynetBinding();
+
+      commitOps(binding, [turnWaypoint(directions(), NAMES, 1, [0, 0, -1])]);
+
+      expect(calls).toEqual([['turn', 1, 'WP_FIXTURE_A', [0, 0, -1]]]);
+    });
+
+    it('is unwound by its own inverse when a later op in the batch is refused', () => {
+      const { binding, calls } = waynetBinding('WP_FIXTURE_B');
+      const op = turnWaypoint(directions(), NAMES, 1, [0, 0, -1]);
+
+      expect(() => commitOps(binding, [op, turnWaypoint(directions(), NAMES, 2, [0, 1, 0])]))
+        .toThrow('no waypoint WP_FIXTURE_B');
+
+      // The unwound turn writes back the direction the payload still holds.
+      expect(calls).toEqual([
+        ['turn', 1, 'WP_FIXTURE_A', [0, 0, -1]],
+        ['turn', 1, 'WP_FIXTURE_A', [1, 0, 0]],
+      ]);
+    });
+
+    it('is a waynet op, so the vob columns refuse it by name', () => {
+      const op = turnWaypoint(directions(), NAMES, 1, [0, 0, -1]);
+      const live = createVobReader(vobIndex([{ pos: [1, 2, 3] }]));
+
+      expect(isWaynetOp(op)).toBe(true);
+      expect(isStructuralOp(op)).toBe(false);
+      expect(renumbersPaths(op)).toBe(false);
+      expect(() => applyOps(live, [op])).toThrow(/waynet op/);
+    });
+
+    it('writes the direction column the facing arrows are built from', () => {
+      const column = directions();
+
+      const touched = applyWaypointDirections(column, [
+        turnWaypoint(column, NAMES, 1, [0, 0, -1]),
+        turnWaypoint(column, NAMES, 2, [0, 1, 0]),
+      ]);
+
+      expect(Array.from(column)).toEqual([0, 0, 1, 0, 0, -1, 0, 1, 0]);
+      expect(touched).toEqual([1, 2]);
+    });
+
+    it('refuses to write a direction past the end of that column', () => {
+      const op: TurnWaypoint = {
+        op: 'TurnWaypoint', waypoint: 3, name: 'WP_GONE', from: [1, 0, 0], to: [0, 0, -1],
+      };
+
+      expect(() => applyWaypointDirections(directions(), [op])).toThrow(/3/);
+    });
+  });
+
   it('leaves an unknown op kind refused rather than moving a VOB', () => {
     // The tail of every dispatch used to be `MoveVob`, so an op kind nobody
     // wrote a branch for was silently treated as a move. `WorldOp` is a
@@ -3343,6 +3458,7 @@ describe('renaming a waypoint', () => {
       restoreVob: () => { throw new Error('not a restore'); },
       reparentVob: () => { throw new Error('not a reparent'); },
       setWaypointPosition: () => { throw new Error('not a waypoint move'); },
+      setWaypointDirection: () => { throw new Error('not a waypoint turn'); },
       setWaypointName: (waypoint, name, to) => {
         if (name === refuse) throw new Error(`no waypoint ${name}`);
         calls.push(['rename', waypoint, name, to]);
@@ -3458,6 +3574,7 @@ describe('adding a waypoint', () => {
       restoreVob: () => { throw new Error('not a restore'); },
       reparentVob: () => { throw new Error('not a reparent'); },
       setWaypointPosition: () => { throw new Error('not a waypoint move'); },
+      setWaypointDirection: () => { throw new Error('not a waypoint turn'); },
       setWaypointName: () => { throw new Error('not a waypoint rename'); },
       addWaypoint: (name, to) => {
         calls.push(['add', name, to]);
@@ -3565,6 +3682,7 @@ describe('joining and unjoining two waypoints', () => {
       restoreVob: () => { throw new Error('not a restore'); },
       reparentVob: () => { throw new Error('not a reparent'); },
       setWaypointPosition: () => { throw new Error('not a waypoint move'); },
+      setWaypointDirection: () => { throw new Error('not a waypoint turn'); },
       setWaypointName: () => { throw new Error('not a waypoint rename'); },
       addWaypoint: () => { throw new Error('not a waypoint add'); },
       removeWaypoint: () => { throw new Error('not a waypoint removal'); },
@@ -3699,6 +3817,7 @@ describe('deleting a waypoint', () => {
       restoreVob: () => { throw new Error('not a restore'); },
       reparentVob: () => { throw new Error('not a reparent'); },
       setWaypointPosition: () => { throw new Error('not a waypoint move'); },
+      setWaypointDirection: () => { throw new Error('not a waypoint turn'); },
       setWaypointName: () => { throw new Error('not a waypoint rename'); },
       addWaypoint: () => { throw new Error('not a waypoint add'); },
       removeWaypoint: (waypoint, name, barrier) => {

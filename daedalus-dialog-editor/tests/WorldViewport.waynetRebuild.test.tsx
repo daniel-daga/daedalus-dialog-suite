@@ -171,6 +171,8 @@ function props(visuals: InstancedPayload, payload: WaynetPayload, showWaynet: bo
     hiddenVobs: null,
     onSelectWaypoint: () => {},
     onMoveWaypoint: () => {},
+
+    onTurnWaypoint: () => {},
   };
 }
 

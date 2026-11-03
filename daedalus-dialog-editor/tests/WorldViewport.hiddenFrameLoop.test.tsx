@@ -91,6 +91,8 @@ function props(paused: boolean) {
     snapAngle: 0,
     onSelectWaypoint: () => {},
     onMoveWaypoint: () => {},
+
+    onTurnWaypoint: () => {},
     paused,
   };
 }

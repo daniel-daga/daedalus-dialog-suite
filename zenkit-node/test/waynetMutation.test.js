@@ -838,6 +838,74 @@ test('a restored waypoint survives a save and a reload, edges intact', () => {
   }
 });
 
+// setWaypointDirection (#423) — the waynet's other one-field write. A
+// waypoint's direction is what the rotate gizmo turns, and nothing in this
+// binding wrote it before: `setWaypointPosition` deliberately leaves it alone.
+test('setWaypointDirection turns the waypoint and moves nothing else', () => {
+  const handle = load();
+  const before = waypointsOf(load());
+  const at = indexOf(handle, 'WP_FIXTURE_B');
+
+  zenkit.setWaypointDirection(handle, at, 'WP_FIXTURE_B', [0, 0, -1]);
+
+  const after = waypointsOf(handle);
+  assert.strictEqual(after.length, before.length);
+  after.forEach((point, i) => {
+    const was = before[i];
+    if (point.name === 'WP_FIXTURE_B') {
+      assert.deepStrictEqual(point.direction, [0, 0, -1]);
+      // Everything but the direction, field by field: the position is the field
+      // a turn is most likely to be confused with.
+      assert.deepStrictEqual({ ...point, direction: was.direction }, was);
+    } else {
+      assert.deepStrictEqual(point, was);
+    }
+  });
+});
+
+test('setWaypointDirection refuses an out-of-range index and a stale name, writing nothing', () => {
+  const handle = load();
+  const count = zenkit.getWaynet(handle).names.length;
+  const at = indexOf(handle, 'WP_FIXTURE_B');
+
+  assert.throws(() => zenkit.setWaypointDirection(handle, count, 'WP_FIXTURE_A', [0, 0, -1]), /no waypoint/);
+  assert.throws(() => zenkit.setWaypointDirection(handle, -1, 'WP_FIXTURE_A', [0, 0, -1]), /no waypoint/);
+  assert.throws(
+    () => zenkit.setWaypointDirection(handle, at, 'WP_FIXTURE_C', [0, 0, -1]),
+    /WP_FIXTURE_B.*WP_FIXTURE_C|changed under this op/s
+  );
+  const untouched = waypointsOf(handle).find((point) => point.name === 'WP_FIXTURE_B');
+  assert.notDeepStrictEqual(untouched.direction, [0, 0, -1]);
+});
+
+test('a written direction survives a save and a reload, and a zero one does too', () => {
+  // Zero is legal — it is retail's "unset" — and it is what an undone first turn
+  // has to restore, so the writer must not normalise it away either.
+  const handle = load();
+  const at = indexOf(handle, 'WP_FIXTURE_A');
+  zenkit.setWaypointDirection(handle, at, 'WP_FIXTURE_A', [0, 0, -1]);
+  zenkit.setWaypointDirection(handle, indexOf(handle, 'WP_FIXTURE_B'), 'WP_FIXTURE_B', [0, 0, 0]);
+
+  const saved = path.join(
+    require('node:os').tmpdir(), `zenkit-waynet-turn-${process.pid}.zen`
+  );
+  try {
+    zenkit.saveWorld(handle, saved);
+    const dump = zenkit.normalizeWorld(zenkit.loadWorld(saved, 'g2'));
+
+    assert.deepStrictEqual(
+      dump.waynet.waypoints.find((point) => point.name === 'WP_FIXTURE_A').direction,
+      [0, 0, -1]
+    );
+    assert.deepStrictEqual(
+      dump.waynet.waypoints.find((point) => point.name === 'WP_FIXTURE_B').direction,
+      [0, 0, 0]
+    );
+  } finally {
+    require('node:fs').rmSync(saved, { force: true });
+  }
+});
+
 test('every waynet mutator marks the handle mutated, so container is null', () => {
   // `container` is computed from the archive BYTES the handle was loaded from,
   // so any mutation must clear it — a waynet op no less than a VOB op. Reporting
@@ -845,6 +913,7 @@ test('every waynet mutator marks the handle mutated, so container is null', () =
   // it is the lie `classifyDumps` would then attribute to the writer.
   const cases = [
     ['setWaypointPosition', (h) => zenkit.setWaypointPosition(h, indexOf(h, 'WP_FIXTURE_B'), 'WP_FIXTURE_B', [1, 2, 3])],
+    ['setWaypointDirection', (h) => zenkit.setWaypointDirection(h, indexOf(h, 'WP_FIXTURE_B'), 'WP_FIXTURE_B', [0, 0, -1])],
     ['setWaypointName', (h) => zenkit.setWaypointName(h, indexOf(h, 'WP_FIXTURE_B'), 'WP_FIXTURE_B', 'WP_RENAMED')],
     ['addWaypoint', (h) => zenkit.addWaypoint(h, 'FP_ADDED', [1, 2, 3])],
     ['removeWaypoint', (h) => zenkit.removeWaypoint(h, zenkit.addWaypoint(h, 'FP_ADDED', [1, 2, 3]), 'FP_ADDED', false)],
