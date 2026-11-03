@@ -4,6 +4,11 @@ import * as fileFactsModule from '../src/renderer/problems/domain/fileFacts';
 import { useProblemsStore } from '../src/renderer/store/problemsStore';
 import { useProjectStore } from '../src/renderer/store/projectStore';
 import type { ParsedFileCache } from '../src/renderer/store/projectStore';
+import { useWorldStore } from '../src/renderer/store/worldStore';
+import { initStoreSync } from '../src/renderer/store/storeSync';
+import {
+  MOVE, SUMMARY, WAYPOINT_MOVE, WAYPOINT_TO, WAYPOINT_WAS, waynetPayload,
+} from './worldFixtures';
 
 const model = (overrides: Partial<SemanticModel> = {}): SemanticModel => ({
   dialogs: {},
@@ -178,5 +183,85 @@ describe('problemsStore per-file facts cache', () => {
 
     expect(extractSpy).not.toHaveBeenCalled();
     expect(useProblemsStore.getState().problems).toEqual([]);
+  });
+});
+
+/**
+ * `routine-mob-missing` asks about *positions*, so the world edit that fixes it
+ * is also the thing that has to re-run the scan (#509, world-delta finding 1).
+ * The waynet half of that input is a live view over the payload's buffer,
+ * because `useWorldEditPipeline` writes a committed `MoveWaypoint` into it with
+ * no re-read afterwards.
+ */
+describe('problemsStore re-scan after a world edit', () => {
+  let scanSpy: jest.SpyInstance;
+  let stopSync: () => void;
+
+  const lastScanInput = () => scanSpy.mock.calls[scanSpy.mock.calls.length - 1][0];
+  const scannedWaypoint = (name: string) => lastScanInput().routinePlaces?.waypoints.get(name);
+
+  beforeEach(() => {
+    jest.useFakeTimers();
+    useProblemsStore.getState().clear();
+    seedProject([], [], []);
+    useWorldStore.getState().reset();
+    useWorldStore.getState().openSucceeded(SUMMARY);
+    scanSpy = jest.spyOn(scanProjectModule, 'scanProject');
+    stopSync = initStoreSync();
+  });
+
+  afterEach(() => {
+    stopSync();
+    useWorldStore.getState().reset();
+    useProblemsStore.getState().clear();
+    jest.useRealTimers();
+    jest.restoreAllMocks();
+  });
+
+  it('schedules a scan after a VOB move', () => {
+    useProblemsStore.getState().runScan();
+    expect(scanSpy).toHaveBeenCalledTimes(1);
+
+    useWorldStore.getState().applyEdit([MOVE]);
+    jest.runOnlyPendingTimers();
+
+    expect(scanSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it('schedules a scan after a waypoint move', () => {
+    useWorldStore.getState().waynetLoaded(waynetPayload());
+    useProblemsStore.getState().runScan();
+    jest.runOnlyPendingTimers();
+
+    useWorldStore.getState().applyEdit([WAYPOINT_MOVE]);
+    jest.runOnlyPendingTimers();
+
+    expect(scanSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it('costs one scan for a whole drag, not one per frame', () => {
+    // A commit is one per gesture, and `requestScan` debounces whatever arrives
+    // inside the window: the counter is a trigger, not a scan per bump.
+    useProblemsStore.getState().runScan();
+
+    for (let frame = 0; frame < 5; frame += 1) useWorldStore.getState().applyEdit([MOVE]);
+    jest.advanceTimersByTime(300);
+
+    expect(scanSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it('reads a moved waypoint where it was dragged to, not where the last waynet read left it', () => {
+    const payload = waynetPayload();
+    useWorldStore.getState().waynetLoaded(payload);
+    useProblemsStore.getState().runScan();
+    expect(scannedWaypoint('WP_MIDDLE')).toEqual(WAYPOINT_WAS);
+
+    // What the viewport does with a committed move: write it into the payload's
+    // own buffer, with no re-read of the waynet.
+    new Float32Array(payload.positions).set(WAYPOINT_TO, 3);
+    useWorldStore.getState().applyEdit([WAYPOINT_MOVE]);
+    useProblemsStore.getState().runScan();
+
+    expect(scannedWaypoint('WP_MIDDLE')).toEqual(WAYPOINT_TO);
   });
 });

@@ -35,17 +35,21 @@ import { useWorldStore } from './worldStore';
 
 export function initStoreSync(): () => void {
   /**
-   * A world opening, closing, or gaining/losing/renaming a waypoint changes
-   * which script sites dangle, so the project is re-scanned. `waynetLoaded`
-   * keeps the object identity when a re-read changed no name, which is what
-   * confines this to those events: a gizmo drag and an edge op both re-read
-   * the payload and neither reaches here.
+   * A world opening, closing, gaining/losing/renaming a waypoint, or gaining an
+   * edit changes what the scan would say, so the project is re-scanned.
+   * `waynetLoaded` keeps the object identity when a re-read changed no name,
+   * which confines the name half to those events: a gizmo drag re-reads the
+   * payload and does not reach it. The edit half is `editCount`, because a move
+   * changes no name and `routine-mob-missing` asks about positions — and it is
+   * a counter rather than a payload comparison because `requestScan` debounces,
+   * so a drag's one commit costs one scan.
    */
   const unsubscribeWorld = useWorldStore.subscribe((state, prevState) => {
     // The portal findings arrive once per open and are cleared with the world
     // (level-editor.md §16.20 slice 3); either edge is a re-scan.
     if (state.waynetNames === prevState.waynetNames
-      && state.portalFindings === prevState.portalFindings) return;
+      && state.portalFindings === prevState.portalFindings
+      && state.editCount === prevState.editCount) return;
     useProblemsStore.getState().requestScan();
   });
 

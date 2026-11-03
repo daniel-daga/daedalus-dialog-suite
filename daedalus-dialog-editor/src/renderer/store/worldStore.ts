@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { applyOps, createVobReader, isStructuralOp, isWaynetOp } from 'zen-world';
 import type { PortalFindingsPayload, WaynetPayload, WorldOp, WorldSummary } from '../../shared/worldTypes';
 import type { WorldLocus, WorldWaynetView } from '../problems/domain/types';
-import { mobSchemeOf, type RoutinePlacesView } from '../problems/domain/rules/routineMobMissing';
+import { mobSchemeOf, type RoutinePlacesView, type WaypointPositions } from '../problems/domain/rules/routineMobMissing';
 
 /**
  * World-surface state (level-editor.md §7).
@@ -131,9 +131,16 @@ interface WorldStore {
    * dangling.
    */
   waynetNames: WorldWaynetView | null;
-  /** Each waypoint's position by UPPERCASED name, as of the last waynet read,
-   *  or null while none has been — what `routine-mob-missing` measures from. */
-  waypointPositions: ReadonlyMap<string, readonly [number, number, number]> | null;
+  /**
+   * Each waypoint's position by UPPERCASED name, or null while none has been
+   * read — what `routine-mob-missing` measures from.
+   *
+   * A live view over the payload's `positions` buffer plus a name→index map,
+   * not a map of copied numbers: a committed `MoveWaypoint` is written into
+   * that buffer by the viewport with no re-read, so a copy would judge the
+   * waypoint where it was before the drag (#509).
+   */
+  waypointPositions: WaypointPositions | null;
   /**
    * The portal checks' findings over the open world's mesh, or null while
    * none has been read (level-editor.md §16.20 slice 3). Computed in the
@@ -142,6 +149,14 @@ interface WorldStore {
    * touches the mesh.
    */
   portalFindings: PortalFindingsPayload | null;
+  /**
+   * Bumped by every committed edit — `applyEdit` and `indexRefreshed`, the two
+   * ways an op reaches this projection. `storeSync` watches it: a move changes
+   * no name, and `routine-mob-missing` asks about positions, so the edit itself
+   * is the only signal that its answer changed (#509). `requestScan` debounces,
+   * so a drag costs one scan rather than one per frame.
+   */
+  editCount: number;
   /** A refused edit, or one the *view* could not follow — a failure past the
    *  commit point, which says so rather than claiming a refusal. Deliberately
    *  not `error`/`status: 'error'`, which replaces the whole surface: the world
@@ -239,8 +254,9 @@ const EMPTY = {
   selection: [] as readonly number[],
   selectedWaypoint: null as number | null,
   waynetNames: null as WorldWaynetView | null,
-  waypointPositions: null as ReadonlyMap<string, readonly [number, number, number]> | null,
+  waypointPositions: null as WaypointPositions | null,
   portalFindings: null as PortalFindingsPayload | null,
+  editCount: 0,
   editError: null,
   textureWarning: null as string | null,
   textureWarningDismissed: false,
@@ -395,13 +411,19 @@ export const useWorldStore = create<WorldStore>((set, get) => ({
       return;
     }
 
-    // Kept on every read, a move included, and never a reason to re-scan by
-    // itself: the hint it feeds is cosmetic, and the next scan picks it up.
+    // The buffer itself, not numbers copied out of it: a `MoveWaypoint` is
+    // written here by the viewport and never re-read, so this is what makes the
+    // next scan judge the waypoint where it was dragged to. Kept on every read
+    // and no reason to re-scan by itself.
     const xyz = new Float32Array(payload.positions);
+    const indexOf = new Map(payload.names.map((name, i) => [name.toUpperCase(), i] as const));
     set({
-      waypointPositions: new Map(payload.names.map((name, i) => (
-        [name.toUpperCase(), [xyz[i * 3], xyz[i * 3 + 1], xyz[i * 3 + 2]]]
-      ))),
+      waypointPositions: {
+        get: (name) => {
+          const i = indexOf.get(name);
+          return i === undefined ? undefined : [xyz[i * 3], xyz[i * 3 + 1], xyz[i * 3 + 2]];
+        },
+      },
     });
 
     const pointNameKeys = new Set(payload.names.map((name) => name.toUpperCase()));
@@ -456,7 +478,10 @@ export const useWorldStore = create<WorldStore>((set, get) => ({
     // The waynet overlay's own payload is updated by the World surface, which
     // is the only place that holds one.
     applyOps(createVobReader(summary.vobIndex), ops.filter((op) => !isWaynetOp(op)));
-    if (get().editError !== null) set({ editError: null });
+    // Every edit bumps the count, a waynet-only batch included: it writes no
+    // VOB column but it does move a waypoint, and that is a position the scan
+    // reads. `storeSync` turns this into one debounced re-scan.
+    set({ editCount: get().editCount + 1, editError: null });
   },
 
   // The selection is kept, and whether that is right is the caller's to decide.
@@ -468,19 +493,22 @@ export const useWorldStore = create<WorldStore>((set, get) => ({
   // A structural edit can add or delete a free point without touching the
   // waynet — `AddVob` of a `zCVobSpot` refreshes the index and fires no waynet
   // read at all — so this is the only place that change can be seen. The view
-  // object is kept when the set did not move: its identity is what makes the
-  // Problems scan re-run, and a drag must not cost a project-wide re-scan.
+  // object is kept when the set did not move: only `AddWaypoint`,
+  // `DeleteWaypoint` and `RenameWaypoint` change the set, and every other edit
+  // reaches the scan through the edit count instead (#509).
   indexRefreshed: (summary) => {
+    const editCount = get().editCount + 1;
     const current = get().waynetNames;
-    if (current === null) { set({ summary, editError: null }); return; }
+    if (current === null) { set({ summary, editCount, editError: null }); return; }
 
     const freePointNames = freePointsOf(summary);
     if (sameNames(current.freePointNames, freePointNames)) {
-      set({ summary, editError: null });
+      set({ summary, editCount, editError: null });
       return;
     }
     set({
       summary,
+      editCount,
       editError: null,
       waynetNames: { pointNameKeys: current.pointNameKeys, freePointNames },
     });

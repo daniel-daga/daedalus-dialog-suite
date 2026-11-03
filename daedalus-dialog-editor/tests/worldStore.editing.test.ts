@@ -19,6 +19,7 @@ import { addVob, createVobReader, moveVob, type VobIndex, type WorldOp } from 'z
 import { useWorldStore } from '../src/renderer/store/worldStore';
 import { vobModelOf } from '../src/renderer/world/vobModel';
 import type { WorldSummary } from '../src/shared/worldTypes';
+import { WAYPOINT_TO, waynetPayload } from './worldFixtures';
 
 function vobIndex(positions: Array<[number, number, number]>): VobIndex {
   const count = positions.length;
@@ -347,5 +348,27 @@ describe('the reader the panels share', () => {
 
     expect(stored.vobIndex.positions).toBe(summary.vobIndex.positions);
     expect(createVobReader(stored.vobIndex).position(1)).toEqual([10, 20, 30]);
+  });
+});
+
+describe('the waypoint positions the Problems scan reads', () => {
+  it('reads the payload buffer live, not a copy taken at the last waynet read', () => {
+    // A committed `MoveWaypoint` is written straight into this buffer by the
+    // viewport with no re-read afterwards, so a copied tuple would freeze the
+    // hint at where the waypoint was before the drag (#509).
+    const payload = waynetPayload();
+    useWorldStore.getState().waynetLoaded(payload);
+    expect(useWorldStore.getState().waypointPositions?.get('WP_MIDDLE')).toEqual([1000, 0, 1000]);
+
+    new Float32Array(payload.positions).set(WAYPOINT_TO, 3);
+
+    expect(useWorldStore.getState().waypointPositions?.get('WP_MIDDLE')).toEqual(WAYPOINT_TO);
+  });
+
+  it('answers by name and says nothing for a waypoint the world lacks', () => {
+    useWorldStore.getState().waynetLoaded(waynetPayload());
+
+    expect(useWorldStore.getState().waypointPositions?.get('WP_END')).toEqual([2000, 0, 2000]);
+    expect(useWorldStore.getState().waypointPositions?.get('WP_NOWHERE')).toBeUndefined();
   });
 });
