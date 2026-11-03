@@ -14,6 +14,7 @@ import {
 import SystemUpdateAltIcon from '@mui/icons-material/SystemUpdateAlt';
 import { UpdateCheckResult } from '../types/global';
 import { useFileStore } from '../store/fileStore';
+import { useWorldStore } from '../store/worldStore';
 import { flushAllPendingEdits } from '../utils/pendingEditFlushRegistry';
 
 type UpdateState =
@@ -95,6 +96,15 @@ const UpdateNotification: React.FC<UpdateNotificationProps> = ({ triggerCheck })
         if (!fileState.isDirty || fileState.externalConflict) continue;
         const result = await store.saveFile(filePath);
         if (!result.success) throw new Error(`Could not save ${filePath}, so the update was not installed.`);
+      }
+      // The open world saves through its own channel, as it does on close.
+      if (useWorldStore.getState().hasUnsavedEdits) {
+        try {
+          await window.editorAPI.saveWorld();
+        } catch (err) {
+          throw new Error(`Could not save the world, so the update was not installed: ${err instanceof Error ? err.message : String(err)}`);
+        }
+        useWorldStore.getState().setHasUnsavedEdits(false);
       }
       await window.editorAPI.installUpdate(state.installerPath);
     } catch (err) {

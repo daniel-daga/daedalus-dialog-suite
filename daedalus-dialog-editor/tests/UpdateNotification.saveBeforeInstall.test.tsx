@@ -4,14 +4,17 @@ import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom';
 import UpdateNotification from '../src/renderer/components/UpdateNotification';
 import { useFileStore } from '../src/renderer/store/fileStore';
+import { useWorldStore } from '../src/renderer/store/worldStore';
 
 /**
  * The install exits the process without going through the close guard, so a
  * dirty file has to be written first — otherwise "Install & Restart" quietly
- * discards it (#475).
+ * discards it (#475). The open world owns its own save flow and is lost the
+ * same way (#517).
  */
 describe('UpdateNotification save before install', () => {
   const installUpdate = jest.fn().mockResolvedValue(undefined);
+  const saveWorld = jest.fn().mockResolvedValue(undefined);
 
   const seedFile = (overrides: Record<string, unknown> = {}) => {
     useFileStore.setState({
@@ -31,6 +34,8 @@ describe('UpdateNotification save before install', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     seedFile();
+    saveWorld.mockReset().mockResolvedValue(undefined);
+    useWorldStore.setState({ hasUnsavedEdits: false } as any);
     (window as any).editorAPI = {
       checkForUpdate: jest.fn().mockResolvedValue({
         updateAvailable: true,
@@ -42,6 +47,7 @@ describe('UpdateNotification save before install', () => {
       onDownloadProgress: jest.fn().mockReturnValue(() => {}),
       downloadUpdate: jest.fn().mockResolvedValue('C:/tmp/installer.exe'),
       installUpdate,
+      saveWorld,
     };
   });
 
@@ -75,5 +81,41 @@ describe('UpdateNotification save before install', () => {
     const saveFile = useFileStore.getState().saveFile as jest.Mock;
     await waitFor(() => expect(installUpdate).toHaveBeenCalled());
     expect(saveFile).not.toHaveBeenCalled();
+  });
+
+  test('the unsaved world is saved before the installer runs', async () => {
+    seedFile({ isDirty: false });
+    useWorldStore.setState({ hasUnsavedEdits: true } as any);
+
+    const user = await reachInstallButton();
+    await user.click(await screen.findByRole('button', { name: 'Install & Restart' }));
+
+    await waitFor(() => expect(installUpdate).toHaveBeenCalledWith('C:/tmp/installer.exe'));
+    expect(saveWorld).toHaveBeenCalledTimes(1);
+    expect(saveWorld.mock.invocationCallOrder[0]).toBeLessThan(installUpdate.mock.invocationCallOrder[0]);
+    expect(useWorldStore.getState().hasUnsavedEdits).toBe(false);
+  });
+
+  test('a failed world save stops the install and says why', async () => {
+    seedFile({ isDirty: false });
+    useWorldStore.setState({ hasUnsavedEdits: true } as any);
+    saveWorld.mockRejectedValue(new Error('world writer failed'));
+
+    const user = await reachInstallButton();
+    await user.click(await screen.findByRole('button', { name: 'Install & Restart' }));
+
+    await screen.findByText(/Could not save the world.*world writer failed/);
+    expect(installUpdate).not.toHaveBeenCalled();
+    expect(useWorldStore.getState().hasUnsavedEdits).toBe(true);
+  });
+
+  test('a clean world is not saved', async () => {
+    seedFile({ isDirty: false });
+
+    const user = await reachInstallButton();
+    await user.click(await screen.findByRole('button', { name: 'Install & Restart' }));
+
+    await waitFor(() => expect(installUpdate).toHaveBeenCalled());
+    expect(saveWorld).not.toHaveBeenCalled();
   });
 });
