@@ -3,12 +3,21 @@ import type { LintRule, Problem } from '../types';
 type Vec3 = readonly [number, number, number];
 
 /**
+ * Every waypoint's position by UPPERCASED name, read where it lives rather than
+ * copied: a `MoveWaypoint` is written straight into the buffer this reads, with
+ * no re-read of the waynet afterwards.
+ */
+export interface WaypointPositions {
+  get(name: string): Vec3 | undefined;
+}
+
+/**
  * The open world's places a routine entry is judged against: its waypoints by
  * UPPERCASED name, and every mob with its scheme. Absent when no world is open,
  * which means nothing is known, never that nothing is legal.
  */
 export interface RoutinePlacesView {
-  waypoints: ReadonlyMap<string, Vec3>;
+  waypoints: WaypointPositions;
   mobs: readonly { scheme: string; position: Vec3 }[];
 }
 

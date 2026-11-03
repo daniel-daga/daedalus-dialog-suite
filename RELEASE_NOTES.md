@@ -2,6 +2,7 @@
 
 ## One line per change, newest on top, `- #123: Short description` (120 characters max). A build ships only the lines added since the last one, and CHANGELOG.md keeps them; old lines may be pruned at any time.
 
+- #509: Editing the world re-runs the Problems scan, so a routine hint clears once its bed or waypoint is moved
 - #423: A waypoint's facing turns with the rotate gizmo, and the turn saves with the world
 - #414: The World editor's move gizmo follows the selected VOB's own axes, with a click for world axes
 - #511: A save no longer fails because another program is holding the script for a moment
