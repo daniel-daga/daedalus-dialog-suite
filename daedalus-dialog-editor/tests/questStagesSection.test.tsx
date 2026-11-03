@@ -9,6 +9,7 @@ import SetVariableActionRenderer from '../src/renderer/components/actionRenderer
 import { createAction } from '../src/renderer/components/actionFactory';
 import type { BaseActionRendererProps } from '../src/renderer/components/actionRenderers/types';
 import { useProjectStore } from '../src/renderer/store/projectStore';
+import { useFileStore } from '../src/renderer/store/fileStore';
 import type { DialogAction, SemanticModel } from '../src/renderer/types/global';
 
 const SHEEP_WRITE = {
@@ -52,6 +53,10 @@ const seedStore = (addVariable = jest.fn(), deleteVariable = jest.fn()) => {
 };
 
 describe('the quest page’s Stages section', () => {
+  beforeEach(() => {
+    useFileStore.setState({ openFiles: new Map() } as never);
+  });
+
   test('lists each declared stage with its kind and its derived target', () => {
     seedStore();
     render(<QuestDetails semanticModel={questModel()} questName="TOPIC_VerloreneSchafe" />);
@@ -148,8 +153,7 @@ describe('the quest page’s Stages section', () => {
     expect(deleteVariable).not.toHaveBeenCalled();
   });
 
-  test('deleting refuses while a condition still checks the stage', async () => {
-    const { deleteVariable } = seedStore();
+  test('deleting refuses while a condition still checks the stage', async () => {    const { deleteVariable } = seedStore();
     const model = questModel({
       variables: {
         MIS_VerloreneSchafe: { name: 'MIS_VerloreneSchafe', type: 'int', filePath: 'quests.d' },
@@ -171,6 +175,35 @@ describe('the quest page’s Stages section', () => {
 
     expect(await screen.findByRole('alert')).toHaveTextContent('still checked');
     expect(deleteVariable).not.toHaveBeenCalled();
+  });
+
+  // #487: the delete writes from disk, so an open dirty buffer would save the
+  // declaration back over it. The stage delete goes through the same guard.
+  test('deleting refuses while the declaration file is open with unsaved changes', async () => {
+    const { deleteVariable } = seedStore();
+    useFileStore.setState({
+      openFiles: new Map([['quests.d', { filePath: 'quests.d', isDirty: true }]])
+    } as never);
+    render(<QuestDetails semanticModel={questModel()} questName="TOPIC_VerloreneSchafe" />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Delete STAGE_VerloreneSchafe_Said' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('quests.d is open with unsaved changes');
+    expect(deleteVariable).not.toHaveBeenCalled();
+  });
+
+  test('deleting still removes the declaration while the file is open and clean', async () => {
+    const { deleteVariable } = seedStore();
+    useFileStore.setState({
+      openFiles: new Map([['quests.d', { filePath: 'quests.d', isDirty: false }]])
+    } as never);
+    render(<QuestDetails semanticModel={questModel()} questName="TOPIC_VerloreneSchafe" />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Delete STAGE_VerloreneSchafe_Said' }));
+
+    await waitFor(() =>
+      expect(deleteVariable).toHaveBeenCalledWith('quests.d', { startIndex: 67, endIndex: 102 })
+    );
   });
 });
 
