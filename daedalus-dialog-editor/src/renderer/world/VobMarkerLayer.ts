@@ -321,6 +321,9 @@ export class VobMarkerLayer {
 
     if (this.radius !== 0) {
       this.setHidden(this.hidden);
+      // The compaction saw the same drawn set and flagged nothing, but a moved
+      // marker still has to reach the GPU.
+      if (this.enabled) this.geometry.getAttribute('position').needsUpdate = true;
       return true;
     }
 
@@ -350,26 +353,33 @@ export class VobMarkerLayer {
    */
   setHidden(hidden: Uint8Array | null): void {
     this.hidden = hidden;
+    // Switched off, nothing is drawn from any camera: the range was emptied when
+    // it was switched off, and switching it back on recomputes it.
+    if (!this.enabled && this.drawnVobs.length === 0) return;
     const positions = this.geometry.getAttribute('position');
     const colors = this.geometry.getAttribute('color');
     const shapes = this.geometry.getAttribute('markerShape');
     const positionTarget = positions.array as Float32Array;
     const colorTarget = colors.array as Float32Array;
 
+    let changed = false;
     this.drawnVobs = [];
     for (let slot = 0; slot < this.vobs.length; slot++) {
       const vob = this.vobs[slot];
+      const was = this.drawnAt[slot];
       const distanceSquared = (this.source[slot * 3] - this.camera.x) ** 2
         + (this.source[slot * 3 + 1] - this.camera.y) ** 2
         + (this.source[slot * 3 + 2] - this.camera.z) ** 2;
       if (!this.enabled || (this.radius !== 0 && distanceSquared > this.radius ** 2)
         || (hidden !== null && vob < hidden.length && hidden[vob] !== 0)) {
         this.drawnAt[slot] = -1;
+        if (was !== -1) changed = true;
         continue;
       }
 
       const at = this.drawnVobs.length;
       this.drawnAt[slot] = at;
+      if (was !== at) changed = true;
       positionTarget[at * 3] = this.source[slot * 3];
       positionTarget[at * 3 + 1] = this.source[slot * 3 + 1];
       positionTarget[at * 3 + 2] = this.source[slot * 3 + 2];
@@ -380,15 +390,14 @@ export class VobMarkerLayer {
       this.drawnVobs.push(vob);
     }
 
-    positions.needsUpdate = true;
-    colors.needsUpdate = true;
-    shapes.needsUpdate = true;
+    // `drawnAt` already said whether the drawn set moved: a frame that selects
+    // the same markers wrote the same values again and uploads nothing.
+    if (changed) {
+      positions.needsUpdate = true;
+      colors.needsUpdate = true;
+      shapes.needsUpdate = true;
+    }
     this.geometry.setDrawRange(0, this.drawnVobs.length);
-    // Fitted over the whole attribute rather than the drawn range — `three` has
-    // no range-aware form — so the slots past the range make it loose. Harmless
-    // here and only here: this layer sets `frustumCulled = false`, so nothing
-    // ever tests the sphere. `SpawnOverlay` says the same.
-    this.geometry.computeBoundingSphere();
   }
 
   /**
