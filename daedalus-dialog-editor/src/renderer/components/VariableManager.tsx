@@ -25,6 +25,7 @@ import {
 } from '@mui/material';
 import { Search as SearchIcon, Add as AddIcon, Delete as DeleteIcon } from '@mui/icons-material';
 import { useProjectStore } from '../store/projectStore';
+import { useFileStore } from '../store/fileStore';
 import type { GlobalConstant, GlobalVariable } from '../types/global';
 import VariableCreationDialog from './common/VariableCreationDialog';
 import DeleteConfirmDialog from './common/DeleteConfirmDialog';
@@ -133,6 +134,14 @@ const VariableManager: React.FC = () => {
     const v = pendingDelete;
     setPendingDelete(null);
     if (!v?.filePath || !v.range) {
+      return;
+    }
+
+    // The delete rewrites the file from disk; an open dirty model would save the
+    // declaration back over it, so refuse rather than undo itself minutes later.
+    const openFile = useFileStore.getState().openFiles.get(v.filePath);
+    if (openFile?.isDirty) {
+      setDeleteError(`Cannot delete ${v.name}: ${v.filePath} is open with unsaved changes. Save or close it first.`);
       return;
     }
 
