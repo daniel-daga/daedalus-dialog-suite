@@ -9,7 +9,9 @@ The quest surface is a quest list and a details panel
 pure analysis and graph inference in `quest/domain/`. The details panel is the
 quest's diary (#324): every entry and state change in story order, entries
 edited in place, a jump to each writing dialog, and a one-click upgrade for an
-implicit quest. Its writes go through `components/questDiarySave.ts`. Its "Create New Quest"
+implicit quest. Below the diary sits the same quest's named sub-stages (#325):
+each stage's kind, its derived counter target, a jump to every write and every
+check, and the "declared, never set" / "set, never checked" notes. Its writes go through `components/questDiarySave.ts`. Its "Create New Quest"
 button opens the same create flow as a quest card's "New quest"
 (`RegisterTopicDialog` in create mode, #322): only the title is asked for; the
 `TOPIC_`/`MIS_` names (from `utils/questLogFiles.questNameFromTitle`), chapters
@@ -90,6 +92,28 @@ Two layers remain, with a one-way import direction (UI → domain):
   diary title through the topic its `MIS_` name gives (`MIS_X` → `TOPIC_X`),
   so a quest whose two names differ shows "Not declared" on the card.
 
+- `questStages.ts` — named sub-stages (#325): an author-named flag or counter
+  inside a running quest. A stage is an ordinary int, `STAGE_<QuestBase>_<Name>`,
+  declared beside the quest's `MIS_` through the same `addVariable` call the
+  implicit upgrade makes; declared with no initialiser, because an unset int is
+  0, which is `FALSE`. **The inventory is a prefix scan of the declared globals**
+  — no index, no sidecar — so a stage written in a file the editor never opened
+  is still recognised; the quest a stage belongs to is the longest prefix the
+  project declares a `MIS_` for. A title is sanitised as a quest name is
+  (`questNameFromTitle`), and a name colliding case-insensitively with any
+  declared global is refused, since two stages behind one name would merge
+  silently. Writing is a **Set Stage** action-menu entry producing one
+  `SetVariableAction`: `= TRUE`, `= FALSE` (a reset), or `= STAGE_X_Name + 1`
+  (Daedalus has no compound assignment). Reading is a **Stage** condition card
+  beside Quest State that writes a `VariableCondition` — `== TRUE`, `== FALSE`,
+  `>= N` — never a new condition type, for `questConditions.ts`' reason.
+  Recognition accepts only a *declared* stage on both sides; a `STAGE_`-shaped
+  name nothing declares keeps the plain card and a "Not declared" hint. A
+  counter's target is derived from the largest `N` in its `>= N` / `== N`
+  checks, never declared. A quest with no `MIS_` cannot own stages (the key
+  would move when it is upgraded), rename is refused, and delete refuses while
+  any write or check still names the stage.
+
 - `questDiary.ts` — the quest page as the diary (#324). `buildQuestDiary`
   lists one quest's `B_LogEntry` lines and state changes, through if/else
   branches, with each line's path in its function. A state written twice by
@@ -103,7 +127,9 @@ Two layers remain, with a one-way import direction (UI → domain):
   dialog that starts it; its upgrade appends `var int MIS_X` to the end of the
   file that declares the `TOPIC_` constant, and `withQuestStateAssignments` sets
   `MIS_X` to the same state right after each topic-status line (or a lone mission
-  `Log_CreateTopic`) in a list that does not set it already. A quest with no
+  `Log_CreateTopic`) in a list that does not set it already. The declaration is
+  written **last**, so a save the project refuses leaves the quest untouched and
+  the upgrade still offered (#491). A quest with no
   ending shows "No ending yet", not an error.
 
 The graph node/edge types in `types/questGraph.ts` are editor-owned and carry
