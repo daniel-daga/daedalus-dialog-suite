@@ -333,6 +333,29 @@ describe('assertVisualsRequest', () => {
       expect(() => assertVisualsRequest(bad)).toThrow(/visuals request/i);
     }
   });
+
+  it('accepts the visual to draw an item as, and only as two parallel lists', () => {
+    // #424: the resolved item visuals. A draw-time override and never a write,
+    // but a mismatch between the two lists is a VOB drawn as another's mesh.
+    expect(() => assertVisualsRequest({
+      have: [], visualOverrides: { vobs: [3, 209], visuals: ['ItPl_Blueplant.3DS', 'ItFo_Apple.3DS'] },
+    })).not.toThrow();
+    expect(() => assertVisualsRequest({ have: [], visualOverrides: { vobs: [], visuals: [] } }))
+      .not.toThrow();
+
+    for (const bad of [
+      { vobs: [3], visuals: [] },
+      { vobs: [], visuals: ['ItFo_Apple.3DS'] },
+      { vobs: ['3'], visuals: ['ItFo_Apple.3DS'] },
+      { vobs: [-1], visuals: ['ItFo_Apple.3DS'] },
+      { vobs: [1.5], visuals: ['ItFo_Apple.3DS'] },
+      { vobs: [3], visuals: [42] },
+      { vobs: [3] },
+    ]) {
+      expect(() => assertVisualsRequest({ have: [], visualOverrides: bad }))
+        .toThrow(/visualOverrides/);
+    }
+  });
 });
 
 describe('assertVisualRequest', () => {

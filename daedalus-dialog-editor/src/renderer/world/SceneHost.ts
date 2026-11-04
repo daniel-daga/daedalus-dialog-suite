@@ -75,6 +75,17 @@ export interface SceneHostOptions {
   onTextureFailures: (names: string[]) => void;
 }
 
+/** The VOBs a payload drew as instances — what the marker layer steps over, so
+ *  an `oCItem` the renderer resolved into a mesh (#424) does not keep the pip
+ *  that used to be the only thing there. */
+function placedBy(visuals: InstancedPayload): ReadonlySet<number> {
+  const placed = new Set<number>();
+  for (const visual of visuals.visuals) {
+    for (const vob of new Uint32Array(visual.vobIds)) placed.add(vob);
+  }
+  return placed;
+}
+
 export class SceneHost {
   readonly world: WorldScene;
   readonly picker: VobPicker;
@@ -110,7 +121,7 @@ export class SceneHost {
     // After the visuals, because that is the order the two describe the same
     // world in: the instances are what is drawn, and the markers are what is
     // left over.
-    this.world.setVobMarkers(options.vobIndex);
+    this.world.setVobMarkers(options.vobIndex, placedBy(visuals));
     scene.add(this.world.root);
 
     // Only what is pickable gets a tree, and off the main thread — or, when
@@ -145,7 +156,7 @@ export class SceneHost {
     this.current = visuals;
     this.world.updateInstancedVisuals(visuals);
     this.world.setDecals(visuals.decals);
-    this.world.setVobMarkers(vobIndex);
+    this.world.setVobMarkers(vobIndex, placedBy(visuals));
     this.picker.setInstancedMeshes(
       this.world.instancedMeshes,
       (instanced, instance) => this.world.resolveInstance(instanced, instance),

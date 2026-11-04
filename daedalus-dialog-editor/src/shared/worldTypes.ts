@@ -139,8 +139,41 @@ export interface VfsSearch {
 }
 
 export type WorldWorkerOp =
-  | 'open' | 'mountAssets' | 'worldMesh' | 'visuals' | 'texture' | 'assets' | 'assetSearch' | 'assetResolve' | 'releaseVfs' | 'waynet' | 'portalFindings'
+  | 'open' | 'mountAssets' | 'worldMesh' | 'visuals' | 'itemInstances' | 'texture' | 'assets' | 'assetSearch' | 'assetResolve' | 'releaseVfs' | 'waynet' | 'portalFindings'
   | 'visualBounds' | 'visual' | 'npcBody' | 'vobProps' | 'refreshIndex' | 'applyOps' | 'save' | 'close';
+
+/**
+ * The item instance every `oCItem` VOB in the world names, by flat index
+ * (#424).
+ *
+ * An item stores no visual: the engine reads one off the script instance the
+ * VOB names, so the file says `''` and the columnar index has nothing to draw
+ * the item with. This is the read that fills the gap — the instance, not the
+ * visual, because the visual is in the project's scripts and only the renderer
+ * has those.
+ */
+export interface ItemInstances {
+  vobs: number[];
+  /** Parallel to {@link vobs}: the instance each one names, as the world stores
+   *  it. Resolving one against the project's scripts is case-insensitive. */
+  instances: string[];
+}
+
+/**
+ * The visual a VOB is drawn as where the world names none — flat indices and
+ * the visual each is drawn as, parallel (#424).
+ */
+export interface VisualOverrides {
+  vobs: number[];
+  visuals: string[];
+}
+
+/** What a `visuals` request carries: the visuals the scene already draws, and
+ *  the resolved visual for VOBs the world names none for. */
+export interface VisualsRequest {
+  have: string[];
+  visualOverrides?: VisualOverrides;
+}
 
 /**
  * The portal checks' findings (level-editor.md §16.20 slice 3, §16.22 q1–q3),

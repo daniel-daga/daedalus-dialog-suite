@@ -6,6 +6,8 @@ import { invertOp } from 'zen-world';
 import { WorkerRequestError } from './WorkerRequestError';
 import type {
   DecodedTexture,
+  ItemInstances,
+  VisualOverrides,
   VisualScene,
   InstancedPayload,
   NpcBodyRequest,
@@ -185,9 +187,27 @@ export class WorldService {
   }
 
   /** @param have visuals the renderer already draws: each comes back as
-   *  placements, with `groups: []`. Empty for a cold open. */
-  getInstancedVisuals(have: readonly string[] = []): Promise<InstancedPayload> {
-    return this.requestOnOpenWorld<InstancedPayload>('visuals', { have: [...have] });
+   *  placements, with `groups: []`. Empty for a cold open.
+   *  @param visualOverrides the visual to draw an `oCItem` as, by flat index —
+   *  a draw-time resolution of the project's scripts, never a write (#424). */
+  getInstancedVisuals(
+    have: readonly string[] = [],
+    visualOverrides?: VisualOverrides,
+  ): Promise<InstancedPayload> {
+    return this.requestOnOpenWorld<InstancedPayload>('visuals', {
+      have: [...have],
+      ...(visualOverrides === undefined ? {} : { visualOverrides }),
+    });
+  }
+
+  /**
+   * The item instance every `oCItem` VOB names (#424), by flat index: an item
+   * stores no visual, and the project's scripts are the only place the mesh it
+   * is drawn with exists. Empty for a world with no items, which is also the
+   * zero-cost case — the worker reads no per-class field at all.
+   */
+  getItemInstances(): Promise<ItemInstances> {
+    return this.requestOnOpenWorld<ItemInstances>('itemInstances');
   }
 
   /**

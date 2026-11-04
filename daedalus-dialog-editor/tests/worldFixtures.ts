@@ -184,6 +184,10 @@ export function makeWorldEditorApi() {
     openWorld: jest.fn(),
     getWorldMesh: jest.fn(),
     getWorldVisuals: jest.fn(),
+    // A world whose items the project does not resolve, and one with no items,
+    // are the same answer here: nothing overridden, so a suite that does not
+    // care about #424 draws exactly what it drew before.
+    getWorldItemInstances: jest.fn(async () => ({ vobs: [], instances: [] })),
     getWorldTexture: jest.fn(async () => null),
     listWorldAssets: jest.fn(async () => null),
     // The whole-namespace search behind the browser's filter box (#241).

@@ -15,7 +15,7 @@ import {
 /** `oCMobContainer.contents` is one archive string; retail's longest chest is
  *  under 200 characters. */
 const CONTAINER_CONTENTS_MAX = 4096;
-import type { NpcBodyRequest, WorldOp } from '../shared/worldTypes';
+import type { NpcBodyRequest, VisualsRequest, WorldOp } from '../shared/worldTypes';
 import type { NpcEdit } from 'daedalus-parser/npc-definition';
 import type { RoutineArgIndex } from '../shared/types';
 import { PROJECT_ASSET_SOURCE_LIMITS } from '../shared/projectConfigTypes';
@@ -363,13 +363,25 @@ export function assertTextureRequest(
  * inside the mounted VFS namespace and never reaches the disk, so this shape
  * check is the whole boundary.
  */
-/** The instanced visuals: nothing for a cold open, or the visuals the renderer
- *  already draws, whose geometry the answer then leaves out. */
-export function assertVisualsRequest(request: unknown): asserts request is { have: string[] } | undefined {
+/** The instanced visuals: nothing for a cold open, the visuals the renderer
+ *  already draws, whose geometry the answer then leaves out — and, for an
+ *  `oCItem` the project's scripts resolve (#424), the visual to draw it as
+ *  instead of the empty name the world stores. */
+export function assertVisualsRequest(request: unknown): asserts request is VisualsRequest | undefined {
   if (request === undefined) return;
   if (!isPlainObject(request) || !Array.isArray(request.have)
     || !request.have.every((name) => typeof name === 'string')) {
     throw new Error('Invalid visuals request: expected { have: string[] }');
+  }
+  const overrides = request.visualOverrides;
+  if (overrides === undefined) return;
+  if (!isPlainObject(overrides) || !Array.isArray(overrides.vobs) || !Array.isArray(overrides.visuals)
+    || overrides.vobs.length !== overrides.visuals.length
+    || !overrides.vobs.every((vob) => typeof vob === 'number' && Number.isInteger(vob) && vob >= 0)
+    || !overrides.visuals.every((visual) => typeof visual === 'string')) {
+    throw new Error(
+      'Invalid visuals request: visualOverrides must be { vobs: number[], visuals: string[] } of one length',
+    );
   }
 }
 

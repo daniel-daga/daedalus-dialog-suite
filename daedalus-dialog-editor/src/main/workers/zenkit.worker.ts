@@ -14,6 +14,7 @@ import {
   groupTransferables,
   isStructuralOp,
   isWaynetOp,
+  vobIndexPath,
   visualBounds,
   type MeshChunk,
   type NpcBinding,
@@ -26,8 +27,10 @@ import {
 } from 'zen-world';
 import type {
   ApplyOpsRequest,
+  ItemInstances,
   VisualBoundsRequest,
   VisualRequest,
+  VisualsRequest,
   VobPropsRequest,
   SaveWorldRequest,
   DecodedTexture,
@@ -213,12 +216,22 @@ function takeWorldMesh(): { result: WorldMeshPayload; transfer: ArrayBuffer[] } 
   };
 }
 
-function visuals(payload: { have: string[] }): { result: InstancedPayload; transfer: ArrayBuffer[] } {
+function visuals(payload: VisualsRequest): { result: InstancedPayload; transfer: ArrayBuffer[] } {
   const mounted = mountedVfs();
   if (visualCache?.vfs !== mounted) visualCache = { vfs: mounted, cache: new Map() };
   const { cache } = visualCache;
   const have = new Set(payload.have);
-  const built = phase('visuals', () => buildInstancedVisuals(binding, mounted, index!, { cache, have }));
+  // An `oCItem` names no visual, so the only thing that draws one is the
+  // renderer's resolution of its script instance (#424) — sent back here as
+  // "draw VOB n as this name" and never written to the world.
+  const visualOverrides = payload.visualOverrides === undefined
+    ? undefined
+    : new Map(payload.visualOverrides.vobs.map(
+      (vob, at) => [vob, payload.visualOverrides!.visuals[at]] as const,
+    ));
+  const built = phase('visuals', () => buildInstancedVisuals(
+    binding, mounted, index!, { cache, have, visualOverrides },
+  ));
   // Beside the meshes, not behind an op of its own: both are built from the one
   // index, and a placed or deleted decal has to arrive with the scene the
   // placement rebuilt rather than a round trip later (#249).
@@ -374,6 +387,34 @@ function propsOfVob(payload: VobPropsRequest): { result: unknown; transfer: Arra
 }
 
 /**
+ * The item instance every `oCItem` VOB names (#424), for the renderer to
+ * resolve into a visual.
+ *
+ * One `getVobProps` per item row, in this process — 2,331 rows on retail
+ * NewWorld and 28 ms for all of them, against an IPC round trip each if the
+ * renderer did it over `vobProps`. A world with no `oCItem` reads nothing at
+ * all and answers empty, so the cost is exactly proportional to what the world
+ * holds.
+ */
+function itemInstances(): { result: ItemInstances; transfer: ArrayBuffer[] } {
+  const reader = createVobReader(index!);
+  const vobs: number[] = [];
+  const instances: string[] = [];
+  for (let vob = 0; vob < reader.count; vob++) {
+    if (reader.className(vob) !== 'oCItem') continue;
+    const path = vobIndexPath(reader, vob);
+    if (path === null) continue;
+    // An item with no instance spawns nothing and has no visual to resolve, so
+    // it is left out rather than resolved to a marker with an empty name.
+    const { instance } = zenkit.getVobProps(handle!, path) as { instance?: unknown };
+    if (typeof instance !== 'string' || instance === '') continue;
+    vobs.push(vob);
+    instances.push(instance);
+  }
+  return { result: { vobs, instances }, transfer: [] };
+}
+
+/**
  * An edit (level-editor.md §7, Phase 1b). The world in this thread is the
  * authoritative one; the renderer's index is a projection of it.
  *
@@ -513,7 +554,8 @@ export function run(message: WorldWorkerRequest): { result: unknown; transfer: A
     case 'open': return open(message.payload as ResolvedOpenWorldRequest);
     case 'mountAssets': return mountAssets(message.payload as { assetSources: string[] });
     case 'worldMesh': return takeWorldMesh();
-    case 'visuals': return visuals(message.payload as { have: string[] });
+    case 'visuals': return visuals(message.payload as VisualsRequest);
+    case 'itemInstances': return itemInstances();
     case 'texture': return texture(message.payload as { name: string; maxSize: number });
     case 'assets': return assets(message.payload as { path: string });
     case 'assetSearch': return assetSearch(message.payload as { query: string });

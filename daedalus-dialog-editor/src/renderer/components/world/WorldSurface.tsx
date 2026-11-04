@@ -24,13 +24,14 @@ import {
   type ZenPosition, type ZenRotation,
 } from 'zen-world';
 import type {
-  DiscoveredWorld, InstancedPayload, NpcBodyRequest, WaynetPayload,
+  DiscoveredWorld, InstancedPayload, NpcBodyRequest, VisualOverrides, WaynetPayload,
   WorldMeshPayload, WorldOp,
 } from '../../../shared/worldTypes';
 import { findFreePointVob, primaryVob, useWorldStore, type RoutineRequest } from '../../store/worldStore';
 import { stateOptions, stateReach } from '../../routines/routineSchedule';
 import { useProjectStore } from '../../store/projectStore';
 import { vobModelOf } from '../../world/vobModel';
+import { itemVisualOfSource, visualOverridesOf } from '../../world/itemVisuals';
 import { snapDelta } from '../../world/snapping';
 import { LiveTileContext } from './WorldAssetGrid';
 import { DEFAULT_EXPOSURE, type SelectionStyle } from '../../world/WorldScene';
@@ -259,15 +260,6 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
     catalogProps: assetCatalogProps,
   } = useAssetCatalog();
 
-  // A GMBT compile (#296), then the world's visuals read again: a VOB placed
-  // from a source that was not compiled drew as nothing, and the worker now
-  // resolves it. The browser and the preview re-read on their own, off the
-  // fresh reads `useAssetCatalog` hands out.
-  const compileAssets = useCallback(async () => {
-    await compileAssetCatalog();
-    setVisuals(await window.editorAPI.getWorldVisuals());
-  }, [compileAssetCatalog]);
-
   // The place verb on an asset row or tile (§16.37 row 4). The same arming the
   // preview panel's button does, offered where the pointer already is — and
   // the Place VOB dialog, prefilled, for a placement that wants a name or a
@@ -465,11 +457,44 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
   const itemVisuals = useMemo(() => {
     const visuals = new Map<string, string>();
     for (const [name, item] of Object.entries(items ?? {})) {
-      const match = /\bvisual\s*=\s*"([^"]+)"/i.exec(item.sourceText ?? '');
-      if (match !== null) visuals.set(name.toUpperCase(), match[1]);
+      const visual = itemVisualOfSource(item.sourceText);
+      if (visual !== null) visuals.set(name.toUpperCase(), visual);
     }
     return visuals;
   }, [items]);
+  // Read across the awaits of an open and of an edit's re-read, so through a
+  // ref — the same reason `visualsRef` is one. Nothing renders from it.
+  const itemVisualsRef = useRef(itemVisuals);
+  itemVisualsRef.current = itemVisuals;
+
+  /**
+   * The item VOBs the project resolves, as `vob → visual` — what the scene
+   * draws an `oCItem` as (#424). Empty for a world whose items the project does
+   * not declare, and for one with no items at all.
+   */
+  const visualOverridesRef = useRef<VisualOverrides | undefined>(undefined);
+  const visualOverrides = useCallback(() => visualOverridesRef.current, []);
+  /**
+   * Re-read which VOBs the world's items are, and join them with the project's
+   * item sources. A structural edit renumbers every VOB, so an override map
+   * from before it names the wrong items — this is what the re-read after an
+   * edit calls instead of reusing the last one.
+   */
+  const reloadItemVisuals = useCallback(async (): Promise<VisualOverrides | undefined> => {
+    const instances = await window.editorAPI.getWorldItemInstances();
+    const overrides = visualOverridesOf(instances, itemVisualsRef.current);
+    visualOverridesRef.current = overrides;
+    return overrides;
+  }, []);
+
+  // A GMBT compile (#296), then the world's visuals read again: a VOB placed
+  // from a source that was not compiled drew as nothing, and the worker now
+  // resolves it. The browser and the preview re-read on their own, off the
+  // fresh reads `useAssetCatalog` hands out.
+  const compileAssets = useCallback(async () => {
+    await compileAssetCatalog();
+    setVisuals(await window.editorAPI.getWorldVisuals(undefined, visualOverrides()));
+  }, [compileAssetCatalog, visualOverrides]);
 
   /**
    * Asked before anything replaces a world that has unsaved edits (#334).
@@ -496,6 +521,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
     beginOpen();
     setMesh(null);
     setVisuals(null);
+    visualOverridesRef.current = undefined;
     setTerrainPoint(null);
     // An armed name is a request about *this* open, and a new one answers no
     // question the previous open's Problems scan asked. The same for an
@@ -552,7 +578,12 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
       const mesh = await window.editorAPI.getWorldMesh();
       if (stale()) return false;
       setMesh(mesh);
-      const visuals = await window.editorAPI.getWorldVisuals();
+      // The items first: an `oCItem` stores no visual, so the placements can
+      // only draw one once its script instance is resolved against the project
+      // (#424). A world with no items answers empty and costs nothing.
+      const overrides = await reloadItemVisuals();
+      if (stale()) return false;
+      const visuals = await window.editorAPI.getWorldVisuals(undefined, overrides);
       if (stale()) return false;
       setVisuals(visuals);
     } catch (failure) {
@@ -620,7 +651,8 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
       );
     }
     return true;
-  }, [confirmDiscard, beginOpen, openSucceeded, openFailed, refreshHistoryDepth, setVobFolders, clearClipboard]);
+  }, [confirmDiscard, beginOpen, openSucceeded, openFailed, refreshHistoryDepth, setVobFolders,
+    clearClipboard, reloadItemVisuals]);
 
   /**
    * The world picker (level-editor.md §16.31): the worlds the project's own
@@ -1256,6 +1288,8 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
     setWaynet,
     setVisuals,
     drawnVisuals,
+    visualOverrides,
+    reloadItemVisuals,
     setAppliedOps,
     markEdited,
     forgetClassProps,

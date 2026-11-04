@@ -18,6 +18,7 @@ jest.mock('zenkit-node', () => ({
   saveWorld: jest.fn(),
   deleteVob: jest.fn(),
   extractWorldMesh: jest.fn(),
+  getVobProps: jest.fn(() => ({})),
 }));
 
 // The mesh is the one part of an open this test does not care about, and it is
@@ -33,8 +34,14 @@ jest.mock('zen-world', () => ({
 
 import * as zenkit from 'zenkit-node';
 import { run } from '../src/main/workers/zenkit.worker';
+import { vobIndex } from './worldFixtures';
 
 const vobIndexCalls = () => (zenkit.vobIndex as unknown as jest.Mock).mock.calls.length;
+
+/** A world whose VOBs are exactly `classes`, one position each. */
+const indexOfClasses = (classes: readonly string[]) => vobIndex(
+  classes.map((_, vob) => [vob * 100, 0, 0] as [number, number, number]), classes,
+);
 
 const open = (worldPath: string) => {
   run({
@@ -83,5 +90,41 @@ describe('zenkit worker bookkeeping', () => {
     // Handed out once — a later ask, with no edit in between, reads again.
     summarise('refreshIndex');
     expect(vobIndexCalls()).toBe(afterOpen + 2);
+  });
+});
+
+describe('zenkit worker item instances (#424)', () => {
+  const instances = () => (run({ id: 'items', op: 'itemInstances' } as never) as {
+    result: unknown;
+  }).result;
+
+  it('answers nothing, and reads nothing, for a world with no oCItem', () => {
+    // The cost has to be zero on the worlds that have none: no prop read, no
+    // allocation — the loop finds no row and the answer is empty.
+    (zenkit.vobIndex as unknown as jest.Mock).mockReturnValueOnce(
+      indexOfClasses(['zCVob', 'zCVobSound', 'oCMobInter']),
+    );
+    open('C:/Gothic/Data/Worlds/NEWWORLD.ZEN');
+
+    expect(instances()).toEqual({ vobs: [], instances: [] });
+    expect(zenkit.getVobProps).not.toHaveBeenCalled();
+  });
+
+  it('reads the instance of every oCItem and of nothing else', () => {
+    // An item stores no visual in the file — the engine reads it off the
+    // instance — so this read is what the renderer resolves the mesh from.
+    (zenkit.vobIndex as unknown as jest.Mock).mockReturnValueOnce(
+      indexOfClasses(['oCItem', 'zCVob', 'oCItem']),
+    );
+    (zenkit.getVobProps as unknown as jest.Mock)
+      .mockImplementationOnce(() => ({ instance: 'ITPL_BLUEPLANT' }))
+      .mockImplementationOnce(() => ({ instance: 'ITSC_FIREBOLT' }));
+    open('C:/Gothic/Data/Worlds/NEWWORLD.ZEN');
+
+    expect(instances()).toEqual({
+      vobs: [0, 2],
+      instances: ['ITPL_BLUEPLANT', 'ITSC_FIREBOLT'],
+    });
+    expect(zenkit.getVobProps).toHaveBeenCalledTimes(2);
   });
 });

@@ -81,7 +81,15 @@ contextBridge.exposeInMainWorld('editorAPI', {
   openWorld: (request: { worldPath: string; gameVersion: string; projectFilePath: string }) =>
     ipcRenderer.invoke('world:open', request),
   getWorldMesh: () => ipcRenderer.invoke('world:mesh'),
-  getWorldVisuals: (have?: string[]) => ipcRenderer.invoke('world:visuals', have === undefined ? undefined : { have }),
+  getWorldVisuals: (
+    have?: string[],
+    visualOverrides?: { vobs: number[]; visuals: string[] },
+  ) => ipcRenderer.invoke('world:visuals', have === undefined && visualOverrides === undefined
+    ? undefined
+    : { have: have ?? [], visualOverrides }),
+  // The item instance every `oCItem` VOB names (#424) — what the renderer
+  // joins with the project's item sources to draw an item as its mesh.
+  getWorldItemInstances: () => ipcRenderer.invoke('world:itemInstances'),
   ensureNpcPreviewAssets: () => ipcRenderer.invoke('world:ensureNpcPreviewAssets'),
   listWorldAssets: (path: string) => ipcRenderer.invoke('world:assets', { path }),
   searchWorldAssets: (query: string) => ipcRenderer.invoke('world:assetSearch', { query }),
