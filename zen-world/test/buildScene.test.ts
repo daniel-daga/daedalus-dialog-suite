@@ -377,6 +377,30 @@ describe('zen-world/scene — buildInstancedVisuals', () => {
     expect(built.stats.vobsPlaced).toBe(1);
   });
 
+  test('draws a VOB as the visual the caller resolved for it (#424)', () => {
+    // An `oCItem` stores no visual at all: the engine reads it off the script
+    // instance the VOB names, so every item in a retail world names '' here and
+    // the scene skips it as a marker. The override is the only thing that draws
+    // the item's mesh, and a VOB it does not name is untouched.
+    const b = binding(() => [chunk('A.TGA')]);
+    const built = buildInstancedVisuals(
+      b, VFS,
+      vobIndex([
+        { cls: 'oCItem', visual: '' },
+        { cls: 'oCItem', visual: '' },
+        { cls: 'zCVobSound', visual: '' },
+        { visual: 'BARREL.3DS' },
+      ]),
+      { visualOverrides: new Map([[0, 'ITPL_BLUEPLANT.3DS']]) },
+    );
+
+    expect(b.calls).toEqual(['ITPL_BLUEPLANT.3DS', 'BARREL.3DS']);
+    expect(built.stats.vobsPlaced).toBe(2);
+    const item = built.visuals.find((visual) => visual.name === 'ITPL_BLUEPLANT.3DS')!;
+    expect(Array.from(new Uint32Array(item.vobIds))).toEqual([0]);
+    expect(item.count).toBe(1);
+  });
+
   test('an unresolved visual is counted by type, not thrown', () => {
     // DECAL and PARTICLE_EFFECT are correctly unresolvable — a decal names a
     // texture and a .pfx is a Daedalus instance. Treating that as an error

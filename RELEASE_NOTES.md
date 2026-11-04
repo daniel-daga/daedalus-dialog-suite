@@ -2,6 +2,7 @@
 
 ## One line per change, newest on top, `- #123: Short description` (120 characters max). A build ships only the lines added since the last one, and CHANGELOG.md keeps them; old lines may be pruned at any time.
 
+- #424: Items in the World view draw as their mesh, resolved from the item's script instance
 - #425: Adding a waypoint selects it, and the dialog can place it in front of the camera
 - #423: A waypoint's facing turns with the rotate gizmo, and G drops it to the ground
 - #392: zParserExtender mods open — `META` headers, `test` blocks and `namespace` are preserved as written

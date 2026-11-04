@@ -9,7 +9,7 @@ import {
   renumbersPaths,
   type WorldOp,
 } from 'zen-world';
-import type { InstancedPayload, WaynetPayload } from '../../../../shared/worldTypes';
+import type { InstancedPayload, VisualOverrides, WaynetPayload } from '../../../../shared/worldTypes';
 import { useWorldStore } from '../../../store/worldStore';
 
 export interface WorldEditPipelineInput {
@@ -21,6 +21,12 @@ export interface WorldEditPipelineInput {
   /** The visuals the scene draws now, by name — what a re-read after an edit
    *  can leave the geometry out of, because the scene already holds it. */
   drawnVisuals: () => string[];
+  /** The item VOBs the project resolves, as the last read left them (#424) —
+   *  what a re-read that renumbers nothing draws an `oCItem` as. */
+  visualOverrides: () => VisualOverrides | undefined;
+  /** The same read taken again: a structural edit renumbers every VOB, so the
+   *  override map from before it names the wrong items. */
+  reloadItemVisuals: () => Promise<VisualOverrides | undefined>;
   /**
    * The imperative channel to the viewport and the scene tree — they live
    * outside React's render path and cannot read the index the panels read, so
@@ -84,8 +90,8 @@ export interface WorldEditPipeline {
  * function rather than three lines inside the commit.
  */
 export function useWorldEditPipeline({
-  waynet, setWaynet, setVisuals, drawnVisuals, setAppliedOps, markEdited, forgetClassProps,
-  refreshHistoryDepth, openGeneration,
+  waynet, setWaynet, setVisuals, drawnVisuals, visualOverrides, reloadItemVisuals, setAppliedOps,
+  markEdited, forgetClassProps, refreshHistoryDepth, openGeneration,
 }: WorldEditPipelineInput): WorldEditPipeline {
   const [editRefusals, setEditRefusals] = useState(0);
 
@@ -214,7 +220,7 @@ export function useWorldEditPipeline({
       if (ops.some((op) => op.op === 'SetVobProp' && (op.to.visual !== undefined
         || op.to.decalDimension !== undefined || op.to.decalAlphaWeight !== undefined
         || op.to.decalAlphaFunc !== undefined))) {
-        setVisuals(await window.editorAPI.getWorldVisuals(drawnVisuals()));
+        setVisuals(await window.editorAPI.getWorldVisuals(drawnVisuals(), visualOverrides()));
       }
       return;
     }
@@ -229,8 +235,12 @@ export function useWorldEditPipeline({
     if (ops.some(renumbersPaths)) useWorldStore.getState().selectVob(null);
 
     useWorldStore.getState().indexRefreshed(await window.editorAPI.refreshWorldIndex());
-    setVisuals(await window.editorAPI.getWorldVisuals(drawnVisuals()));
-  }, [waynet, setWaynet, setVisuals, drawnVisuals, setAppliedOps, markEdited, refreshHistoryDepth]);
+    // The items are re-resolved rather than reused: the new enumeration puts an
+    // item on a different flat index than the one the last read recorded, and a
+    // stale map draws one item's mesh on another's position (#424).
+    setVisuals(await window.editorAPI.getWorldVisuals(drawnVisuals(), await reloadItemVisuals()));
+  }, [waynet, setWaynet, setVisuals, drawnVisuals, visualOverrides, reloadItemVisuals,
+    setAppliedOps, markEdited, refreshHistoryDepth]);
 
   /** Shared by Ctrl+Z/Y and the World bar's undo/redo buttons: ask the main
    *  process what it did, and — through the same path a commit takes —

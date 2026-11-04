@@ -1287,6 +1287,28 @@ describe('WorldScene', () => {
     expect(scene.positionOf(5)).toBeNull();
   });
 
+  test('an item drawn as its script instance\'s visual loses the pip (#424)', () => {
+    // An `oCItem` names no visual in the file, so the index alone says "marker"
+    // — and the white dot in the middle of the mesh is the defect. What the
+    // scene is told instead is what the payload actually placed, which the
+    // worker built from the renderer's resolved overrides.
+    const index = vobIndex(
+      [[100, 0, 0], [200, 0, 0]], ['oCItem', 'oCItem'], undefined, undefined, ['', ''],
+    );
+    const scene = new WorldScene();
+    scene.setInstancedVisuals({
+      visuals: [visual({ name: 'ItPl_Blueplant.3DS', vobIds: new Uint32Array([0]).buffer })],
+      decals: NO_DECALS,
+      stats: {} as never,
+    });
+    scene.setVobMarkers(index, new Set([0]));
+
+    expect(scene.positionOf(0)).toEqual([10, 20, 30]);
+    expect(scene.markers!.positionOf(0)).toBeNull();
+    // The item the project did not resolve has no instance and keeps its pip.
+    expect(scene.markers!.positionOf(1)).toEqual([200, 0, 0]);
+  });
+
   test('moving a VOB with no visual moves its marker, and says it is drawn', () => {
     // The whole of the live drag preview for these VOBs: `GizmoController`
     // reads `positionOf` on the press and writes `moveVob` on every frame, and

@@ -33,6 +33,9 @@ import {
 
 const api = makeWorldEditorApi();
 
+/** The item VOBs the project's scripts resolve to a visual (#424). */
+const ITEM_VISUALS = { vobs: [12], visuals: ['ItPl_Blueplant.3DS'] };
+
 const surface = {
   setWaynet: jest.fn(),
   setVisuals: jest.fn(),
@@ -43,6 +46,12 @@ const surface = {
   // What the scene draws now, by name — the geometry an edit's re-read can
   // leave out.
   drawnVisuals: () => ['BARREL.3DS', 'CRATE.3DS'],
+  /** The item overrides the last read left behind — what a re-read that does
+   *  not renumber anything draws with. */
+  visualOverrides: () => ITEM_VISUALS,
+  /** A structural edit renumbers every VOB, so an item's flat index names a
+   *  different one than it did before: the reads are taken again. */
+  reloadItemVisuals: jest.fn(async () => ITEM_VISUALS),
 };
 
 /** The generation `openWorldAt` bumps. Kept out here so a test can open a world
@@ -123,8 +132,11 @@ describe('useWorldEditPipeline — the one door an edit goes through', () => {
     const { result } = mount();
     await act(async () => { await result.current.commitOps([APPEND_ROOT]); });
     expect(api.refreshWorldIndex).toHaveBeenCalled();
-    expect(api.getWorldVisuals).toHaveBeenCalledWith(['BARREL.3DS', 'CRATE.3DS']);
+    expect(api.getWorldVisuals).toHaveBeenCalledWith(['BARREL.3DS', 'CRATE.3DS'], ITEM_VISUALS);
     expect(surface.setVisuals).toHaveBeenCalled();
+    // The items are re-resolved, not reused: a placed item is a new row and
+    // every row after it renumbers, so a stale map draws the wrong meshes.
+    expect(surface.reloadItemVisuals).toHaveBeenCalled();
   });
 
   test('a swapped visual re-reads the placements without being structural', async () => {
@@ -132,9 +144,11 @@ describe('useWorldEditPipeline — the one door an edit goes through', () => {
     // yet — but no VOB came or went and nothing renumbered.
     const { result } = mount();
     await act(async () => { await result.current.commitOps([SWAP_VISUAL]); });
-    expect(api.getWorldVisuals).toHaveBeenCalledWith(['BARREL.3DS', 'CRATE.3DS']);
+    expect(api.getWorldVisuals).toHaveBeenCalledWith(['BARREL.3DS', 'CRATE.3DS'], ITEM_VISUALS);
     expect(surface.setVisuals).toHaveBeenCalled();
     expect(api.refreshWorldIndex).not.toHaveBeenCalled();
+    // Nothing renumbered, so the item reads are the ones already in hand.
+    expect(surface.reloadItemVisuals).not.toHaveBeenCalled();
   });
 
   test.each([
@@ -145,7 +159,7 @@ describe('useWorldEditPipeline — the one door an edit goes through', () => {
     const { result } = mount();
     const op = { op: 'SetVobProp', vob: 1, path: '1', from: { [key]: from }, to: { [key]: to } } as unknown as WorldOp;
     await act(async () => { await result.current.commitOps([op]); });
-    expect(api.getWorldVisuals).toHaveBeenCalledWith(['BARREL.3DS', 'CRATE.3DS']);
+    expect(api.getWorldVisuals).toHaveBeenCalledWith(['BARREL.3DS', 'CRATE.3DS'], ITEM_VISUALS);
     expect(surface.setVisuals).toHaveBeenCalled();
     expect(api.refreshWorldIndex).not.toHaveBeenCalled();
   });

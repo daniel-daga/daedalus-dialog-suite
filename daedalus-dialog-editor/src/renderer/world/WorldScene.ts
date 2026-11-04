@@ -760,17 +760,19 @@ export class WorldScene {
    * none of those callers learns the difference.
    *
    * Taken from the index rather than from a payload, because the index is where
-   * a position exists for a VOB the worker placed nothing for. Called beside
-   * `setInstancedVisuals` and again after each `updateInstancedVisuals`, which
-   * is what gives a placed sound its marker: the layer is replaced whole, the
-   * last hidden mask redrawn over it.
+   * a position exists for a VOB the worker placed nothing for. `placed` is the
+   * one thing the index cannot say: the VOBs the payload drew as instances,
+   * which an `oCItem` becomes once the renderer has resolved its script
+   * instance (#424). Called beside `setInstancedVisuals` and again after each
+   * `updateInstancedVisuals`, which is what gives a placed sound its marker:
+   * the layer is replaced whole, the last hidden mask redrawn over it.
    */
-  setVobMarkers(index: VobIndex): void {
+  setVobMarkers(index: VobIndex, placed?: ReadonlySet<number>): void {
     if (this.markerLayer !== null) {
       this.root.remove(this.markerLayer.markers);
       this.markerLayer.dispose();
     }
-    this.markerLayer = new VobMarkerLayer(index);
+    this.markerLayer = new VobMarkerLayer(index, placed);
     this.markerLayer.setHidden(this.hidden);
     this.root.add(this.markerLayer.markers);
   }

@@ -87,6 +87,24 @@ describe('VobMarkerLayer', () => {
     expect(layer.markers.material).toHaveProperty('size', 14);
     layer.dispose();
   });
+  it('leaves no pip where the payload already draws the VOB', () => {
+    // An `oCItem` names no visual in the file — it is drawn only once the
+    // renderer resolves its script instance (#424). The pip that stood in for
+    // it would be the white dot the issue is about, so the layer takes what the
+    // payload placed. An item whose override did not resolve is in no payload
+    // and keeps its marker, which is the case that must not regress.
+    const index = vobIndex(
+      [[0, 0, 0], [1000, 0, 0], [20, 0, 0]],
+      ['oCItem', 'oCItem', 'zCVobSound'],
+      undefined, undefined, ['', '', ''],
+    );
+    const layer = new VobMarkerLayer(index, new Set([0]));
+
+    expect(layer.positionOf(0)).toBeNull();
+    expect(layer.positionOf(1)).toEqual([1000, 0, 0]);
+    expect(layer.positionOf(2)).toEqual([20, 0, 0]);
+    layer.dispose();
+  });
   it('full visibility picks through walls, but faint and occluded modes do not', () => {
     const layer = new VobMarkerLayer(vobIndex([[0, 0, 0]], 'zCVobLight', undefined, undefined, ['']));
     for (const mode of ['occluded', 'faint'] as const) {

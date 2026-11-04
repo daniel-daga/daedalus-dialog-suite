@@ -1002,8 +1002,11 @@ export function setupIpcHandlers() {
   ipcMain.handle('world:mesh', async () => worldService.getWorldMesh());
   ipcMain.handle('world:visuals', async (_event, request: unknown) => {
     assertVisualsRequest(request);
-    return worldService.getInstancedVisuals(request?.have);
+    return worldService.getInstancedVisuals(request?.have, request?.visualOverrides);
   });
+  // No payload, like `world:waynet`: the worker enumerates the open world's own
+  // `oCItem` rows (#424).
+  ipcMain.handle('world:itemInstances', async () => worldService.getItemInstances());
 
   // The NPC preview needs the project's VFS, not a loaded level. Mount the
   // active project's already-configured sources on demand, without opening the

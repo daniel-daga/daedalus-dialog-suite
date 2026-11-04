@@ -12,6 +12,8 @@ export type {
   WorldSummary,
   WorldMeshPayload,
   InstancedPayload,
+  ItemInstances,
+  VisualOverrides,
   DecodedTexture,
   VfsEntry,
   VfsSearch,
@@ -221,8 +223,13 @@ export interface EditorAPI {
   ensureNpcPreviewAssets: () => Promise<void>;
   getWorldMesh: () => Promise<WorldMeshPayload>;
   /** Every instanced visual. `have` names the ones the scene already draws:
-   *  each comes back as placements only, with `groups: []`. */
-  getWorldVisuals: (have?: string[]) => Promise<InstancedPayload>;
+   *  each comes back as placements only, with `groups: []`. `visualOverrides`
+   *  names the visual to draw an `oCItem` as, where the world stores none
+   *  (#424) — a draw-time resolution, never a write. */
+  getWorldVisuals: (have?: string[], visualOverrides?: VisualOverrides) => Promise<InstancedPayload>;
+  /** The item instance every `oCItem` VOB names, by flat index (#424). Empty
+   *  for a world with no items. */
+  getWorldItemInstances: () => Promise<ItemInstances>;
   getWorldTexture: (name: string, maxSize: number) => Promise<DecodedTexture | null>;
   /** One level of the mounted VFS; null for a missing path and for a file. */
   listWorldAssets: (path: string) => Promise<VfsEntry[] | null>;

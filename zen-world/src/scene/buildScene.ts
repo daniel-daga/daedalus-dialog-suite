@@ -496,6 +496,18 @@ export interface InstancedVisualsOptions {
    * caller's. The stats are the world's either way.
    */
   have?: ReadonlySet<string>;
+  /**
+   * The visual to draw a VOB as, by flat index, for the VOBs the world names
+   * none for (#424).
+   *
+   * An `oCItem` stores no visual: the engine reads it off the script instance
+   * the VOB names, so every item in a retail world has `''` here and would be
+   * left to the markers. The renderer is the only side holding the project's
+   * scripts, which is why the resolution reaches the scene as an argument
+   * rather than being derived beside the index — and why a VOB it does not
+   * name keeps exactly what the index says.
+   */
+  visualOverrides?: ReadonlyMap<number, string>;
 }
 
 /** A group whose buffers are its own, for a cache that must outlive a transfer. */
@@ -532,7 +544,7 @@ export function buildInstancedVisuals(
   const levelCompos = new Set<string>();
 
   for (let vob = 0; vob < index.count; vob++) {
-    const name = index.visuals[visualIndex[vob]];
+    const name = options.visualOverrides?.get(vob) ?? index.visuals[visualIndex[vob]];
     if (name === '') continue;
 
     if (index.classes[classIndex[vob]] === 'zCVobLevelCompo') {

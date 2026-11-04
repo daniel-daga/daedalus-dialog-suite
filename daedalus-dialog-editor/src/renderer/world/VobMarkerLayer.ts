@@ -163,7 +163,7 @@ export class VobMarkerLayer {
   private readonly material: THREE.PointsMaterial;
   private readonly fadedMaterial: THREE.PointsMaterial;
 
-  constructor(index: VobIndex) {
+  constructor(index: VobIndex, placed?: ReadonlySet<number>) {
     const positions = new Float32Array(index.positions);
     const classIndex = new Uint32Array(index.classIndex);
     const visualIndex = new Uint32Array(index.visualIndex);
@@ -171,10 +171,17 @@ export class VobMarkerLayer {
     const visualTypeIndex = new Uint32Array(index.visualTypeIndex);
     const markered: number[] = [];
     for (let vob = 0; vob < index.count; vob++) {
-      // The criterion is "nothing else draws this VOB". An empty name is the
-      // line `buildInstancedVisuals` skips on; the two visual types below are
+      // The criterion is "nothing else draws this VOB", and `placed` is the half
+      // the index cannot answer: an `oCItem` names no visual and is drawn only
+      // once the renderer resolves its script instance (#424), so the index
+      // says marker while a payload is what actually draws it. A pip on top of
+      // that mesh is the white dot the issue is about; an item whose override
+      // did not resolve is in no payload and keeps its marker. The index still
+      // answers for everything else — an empty name is the line
+      // `buildInstancedVisuals` skips on, and the two visual types below are
       // the ones it counts into `unresolvedByType` on every retail world,
       // because a texture and a particle script are not geometry.
+      if (placed?.has(vob) === true) continue;
       const name = index.visuals[visualIndex[vob]];
       if (name !== '' && !UNDRAWABLE_VISUALS.has(index.visualTypes[visualTypeIndex[vob]])) continue;
       markered.push(vob);
