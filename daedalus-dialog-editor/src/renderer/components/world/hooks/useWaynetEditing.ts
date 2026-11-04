@@ -119,6 +119,10 @@ export function useWaynetEditing({
    * holding — the selected waypoint above all — still names what it named
    * before. The waypoint is free and in no edge, which is what makes
    * `WayNet::save` write it at all; joining it to the net is W3.
+   *
+   * It does not select what it appends: that is the edit pipeline's, where the
+   * payload the world answers is in hand, so the selection names a point the
+   * waynet actually has (#425).
    */
   const addWaypointAt = useCallback((name: string, point: [number, number, number]) => {
     if (waynet === null) return;

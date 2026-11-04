@@ -1880,6 +1880,30 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
   } = useInsertNpc({ waynet, commitOps });
 
   /**
+   * G / Shift-G on whatever is selected — the waypoint counterpart of a VOB
+   * drop (#423).
+   *
+   * A waypoint is not a VOB, so `dropVobsToGround` cannot carry it: one raycast
+   * from its own position and one `MoveWaypoint`. Both spellings mean the same
+   * thing here, which is why `mode` is ignored on this side: `rest` and `into`
+   * differ only in which point of a VOB lands — its visual's base or its pivot —
+   * and a waypoint has no visual and no bounds. Its position *is* the point.
+   */
+  const dropSelectionToGround = useCallback((mode: 'rest' | 'into') => {
+    const { selectedWaypoint: waypoint } = useWorldStore.getState();
+    if (waypoint === null) { handleDropToGround(mode); return; }
+    if (waynet === null) return;
+    const positions = new Float32Array(waynet.positions);
+    const from: ZenPosition = [
+      positions[waypoint * 3], positions[waypoint * 3 + 1], positions[waypoint * 3 + 2],
+    ];
+    const hit = viewportRef.current?.raycastDown(from) ?? null;
+    // A miss — over the sky, off the edge of the mesh — leaves it where it is,
+    // exactly as a VOB with no ground under it is left out of the batch.
+    if (hit !== null) moveWaypointTo(waypoint, from, hit.point);
+  }, [waynet, moveWaypointTo, handleDropToGround]);
+
+  /**
    * The overlay, switched on for an action whose result is a waypoint: only
    * the overlay draws one, so a waypoint authored with it off would land
    * invisible and unpickable. Add waypoint and Insert NPC used to hide until
@@ -2032,6 +2056,11 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
   const duplicateWaypointName = addingWaypoint !== null
     && (waynet?.names.includes(addingWaypoint.trim()) ?? false);
 
+  /** The name the dialog would send is unusable. Both ways out of the dialog
+   *  read it, so the two buttons cannot disagree about whether it is addable. */
+  const waypointAddRefused = addingWaypoint === null || addingWaypoint.trim() === ''
+    || duplicateWaypointName;
+
   /**
    * Remove a VOB and its whole subtree.
    *
@@ -2104,8 +2133,8 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
     onCopy: () => void copySelection(),
     onPaste: () => void pasteClipboard(),
     onDuplicate: () => void duplicateSelection(),
-    onRestOnGround: () => handleDropToGround('rest'),
-    onIntoGround: () => handleDropToGround('into'),
+    onRestOnGround: () => dropSelectionToGround('rest'),
+    onIntoGround: () => dropSelectionToGround('into'),
     onRequestDeleteVobs: requestDeleteVobs,
     onRequestDeleteWaypoint: (waypoint, name) => setDeletingWaypoint({ waypoint, name }),
     onDisarm: disarm,
@@ -3062,7 +3091,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
                 not part of the walkable net yet. */}
             It is appended as a free point
             {terrainPoint === null
-              ? ' where you next click the ground'
+              ? ' where you next click the ground, or in front of the camera'
               : ` at ${terrainPoint.map((v) => Math.round(v)).join(', ')}`}, in no edge and
             renumbering nothing.
           </DialogContentText>
@@ -3095,14 +3124,36 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setAddingWaypoint(null)}>Cancel</Button>
+          {/* #425: with no ground picked the confirm only armed a click, which
+              reads as "nothing happened" until the next one lands. The camera
+              point is the viewport's own `pointAhead` — the one a paste lands
+              on — so there is no second projection route to keep in step, and
+              the armed click stays for the user who wants a different spot. */}
+          {terrainPoint === null && (
+            <Button
+              disabled={waypointAddRefused}
+              onClick={() => {
+                const name = addingWaypoint;
+                setAddingWaypoint(null);
+                if (name === null) return;
+                const point = viewportRef.current?.pointAhead(PASTE_REACH) ?? null;
+                // A viewport between scenes answers nothing; that falls back to
+                // the armed click rather than closing on a no-op.
+                if (point === null) setArmed({ kind: 'add-waypoint', name: name.trim() });
+                else addWaypointAt(name.trim(), point);
+              }}
+              data-testid="world-waypoint-add-ahead"
+            >
+              Add in front of camera
+            </Button>
+          )}
           <Button
             variant="contained"
             /* The two refusals the binding makes, made here as well — not
                instead. This side is holding the very list the user is reading,
                so a name they can see is taken is worth refusing before a round
                trip rather than after one. */
-            disabled={addingWaypoint === null || addingWaypoint.trim() === ''
-              || duplicateWaypointName}
+            disabled={waypointAddRefused}
             onClick={() => {
               const name = addingWaypoint;
               setAddingWaypoint(null);

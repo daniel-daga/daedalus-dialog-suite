@@ -2,6 +2,8 @@
 
 ## One line per change, newest on top, `- #123: Short description` (120 characters max). A build ships only the lines added since the last one, and CHANGELOG.md keeps them; old lines may be pruned at any time.
 
+- #425: Adding a waypoint selects it, and the dialog can place it in front of the camera
+- #423: A waypoint's facing turns with the rotate gizmo, and G drops it to the ground
 - #392: zParserExtender mods open — `META` headers, `test` blocks and `namespace` are preserved as written
 - #432: "Else If" is a real action — an "Else If" button chains it, and the file keeps the form it was written in
 - #441: The NPC preview keeps the camera where it was set when a head, body or armour changes
@@ -16,7 +18,6 @@
 - #517: Install & Restart saves the open world first, and refuses to install when that save fails
 - #469: An NPC file added with a new prototype shows up in the NPC list without reopening the project
 - #509: Editing the world re-runs the Problems scan, so a routine hint clears once its bed or waypoint is moved
-- #423: A waypoint's facing turns with the rotate gizmo, and the turn saves with the world
 - #414: The World editor's move gizmo follows the selected VOB's own axes, with a click for world axes
 - #511: A save no longer fails because another program is holding the script for a moment
 - #454: Saving a script a world or NPC preview holds no longer leaves a stray copy beside it

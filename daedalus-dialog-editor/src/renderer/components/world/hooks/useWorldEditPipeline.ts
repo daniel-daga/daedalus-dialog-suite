@@ -175,7 +175,21 @@ export function useWorldEditPipeline({
       // stronger version of the same reason.
       if (ops.some((op) => (op.op === 'AddWaypoint' && op.to === null)
         || op.op === 'DeleteWaypoint')) useWorldStore.getState().selectWaypoint(null);
-      setWaynet(await window.editorAPI.getWorldWaynet());
+      const payload = await window.editorAPI.getWorldWaynet();
+      setWaynet(payload);
+      // An appended waypoint becomes the selection (#425), so its pivot and the
+      // panel follow it rather than the add being a thing that "did nothing".
+      // The index is read out of the payload that just answered instead of
+      // predicted as "one past the end": the world is the authority on where it
+      // landed, and a read that does not hold it selects nothing rather than a
+      // point the waynet has not got. A redo comes through here too and selects
+      // it again; an undo is the removal above, which clears.
+      if (payload !== null) {
+        const appended = ops.find((op): op is Extract<WorldOp, { op: 'AddWaypoint' }> =>
+          op.op === 'AddWaypoint' && op.from === null);
+        const at = appended === undefined ? -1 : payload.names.lastIndexOf(appended.name);
+        if (at >= 0) useWorldStore.getState().selectWaypoint(at);
+      }
     }
 
     setAppliedOps([...ops]);
