@@ -35,7 +35,8 @@ import {
   waypointJumpReason, resolveNpcSpawnSite, expectedWorldNameFor, worldToOpenFor,
 } from './npcWorldJump';
 import NpcVisualPreview from './NpcVisualPreview';
-import { npcAssetSuggestions, type NpcAssetSuggestions } from '../npc/npcAssets';
+import { npcAssetSuggestions } from '../npc/npcAssets';
+import type { VfsEntry } from '../../shared/worldTypes';
 import NpcRoutineSourceDialog, { type NpcRoutineSourceTarget } from './NpcRoutineSourceDialog';
 import RoutineEditorDialog from './RoutineEditor';
 
@@ -255,7 +256,9 @@ const NpcEditorDialog: React.FC<NpcEditorDialogProps> = ({ npcName, filePath, on
   const [saving, setSaving] = useState(false);
   const [routineSource, setRoutineSource] = useState<NpcRoutineSourceTarget | null>(null);
   const [editingRoutine, setEditingRoutine] = useState<string | null>(null);
-  const [assetSuggestions, setAssetSuggestions] = useState<NpcAssetSuggestions>({ headMeshes: [], walkOverlays: [] });
+  const [assetEntries, setAssetEntries] = useState<{ heads: readonly VfsEntry[]; overlays: readonly VfsEntry[] }>({
+    heads: [], overlays: [],
+  });
   const [previewAssetsReady, setPreviewAssetsReady] = useState(false);
   const [previewAssetsError, setPreviewAssetsError] = useState<string | null>(null);
   const parseGeneration = useProjectStore((s) => s.parseGeneration);
@@ -312,13 +315,19 @@ const NpcEditorDialog: React.FC<NpcEditorDialogProps> = ({ npcName, filePath, on
           window.editorAPI.searchWorldAssets('HUM_HEAD_'),
           window.editorAPI.searchWorldAssets('HUMANS_'),
         ]);
-        if (current) setAssetSuggestions(npcAssetSuggestions(heads.matches, overlays.matches));
+        if (current) setAssetEntries({ heads: heads.matches, overlays: overlays.matches });
       } catch {
-        if (current) setAssetSuggestions({ headMeshes: [], walkOverlays: [] });
+        if (current) setAssetEntries({ heads: [], overlays: [] });
       }
     })();
     return () => { current = false; };
   }, []);
+  // #442: male NPCs are not offered the female head meshes — derived rather
+  // than refetched, so flipping the gender updates the list at once.
+  const assetSuggestions = useMemo(
+    () => npcAssetSuggestions(assetEntries.heads, assetEntries.overlays, values.gender),
+    [assetEntries, values.gender],
+  );
   const uncovered = useMemo(
     () => (definition ? uncoveredStatements(definition, categoryOfItem) : []),
     [definition, categoryOfItem],
