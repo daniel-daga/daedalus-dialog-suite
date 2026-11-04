@@ -46,10 +46,15 @@ const NpcVisualPreview: React.FC<NpcVisualPreviewProps> = (
   const [state, setState] = useState<'idle' | 'loading' | 'failed'>('idle');
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
+  // The body that is already drawn stays while the next one assembles: the
+  // canvas is what holds the user's camera, so unmounting it between two heads
+  // would reframe the view they had just set (#441).
   useEffect(() => {
-    setScene(null);
     setState('idle');
-    if (!assetsReady || requestKey === null || assetsError !== null) return;
+    if (!assetsReady || requestKey === null || assetsError !== null) {
+      setScene(null);
+      return;
+    }
     let current = true;
     setState('loading');
     const timer = setTimeout(() => {

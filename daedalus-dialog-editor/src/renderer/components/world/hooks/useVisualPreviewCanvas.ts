@@ -1,10 +1,18 @@
-import { useEffect, type RefObject } from 'react';
+import { useEffect, useRef, type RefObject } from 'react';
 import * as THREE from 'three';
 import type { DecodedTexture, VisualScene } from '../../../../shared/worldTypes';
-import { buildVisualPreview, frameVisual } from '../../../world/VisualPreviewScene';
+import { buildVisualPreview, frameVisual, type VisualPreview } from '../../../world/VisualPreviewScene';
 
 /** The canvas's fallback edge, for a host that has no layout yet. */
 const CANVAS_FALLBACK = 256;
+
+/** What the render loop draws, and whether it owes a frame. */
+interface Stage {
+  preview: VisualPreview | null;
+  /** The bounds the camera framed the first visual with. */
+  bounds: VisualScene['bounds'] | null;
+  dirty: boolean;
+}
 
 /**
  * One visual in an orbitable Three.js scene on `canvasRef`'s canvas — the
@@ -12,6 +20,10 @@ const CANVAS_FALLBACK = 256;
  *
  * `autoRotate` turns it slowly on its own, as Spacer's preview does (#375),
  * until the first hand orbit takes it over.
+ *
+ * The camera, the orbit and the renderer belong to the canvas, not to the
+ * visual (#441): a head, a body or an armour swap rebuilds the meshes and
+ * leaves the view exactly where the user put it.
  */
 export function useVisualPreviewCanvas(
   canvasRef: RefObject<HTMLCanvasElement | null>,
@@ -20,12 +32,14 @@ export function useVisualPreviewCanvas(
   textureSize: number,
   autoRotate = false,
 ): void {
-  // The mesh scene lives exactly as long as the visual it shows. Textures are
-  // fetched after the first frame — an untextured crate at once beats a blank
-  // panel until every map has decoded — and each arrival marks a frame dirty.
+  const stage = useRef<Stage>({ preview: null, bounds: null, dirty: true });
+  // Rebuilt only when the canvas itself comes and goes, which is what the
+  // renderer's GL context is tied to.
+  const hasVisual = visual !== null;
+
   useEffect(() => {
     const canvas = canvasRef.current;
-    if (canvas === null || visual === null) return;
+    if (canvas === null || !hasVisual) return;
 
     let current = true;
     let teardown: (() => void) | null = null;
@@ -35,7 +49,6 @@ export function useVisualPreviewCanvas(
     // same way, by never being loaded until a world is.
     void import('three/examples/jsm/controls/OrbitControls.js').then(({ OrbitControls }) => {
     if (!current) return;
-    const preview = buildVisualPreview(visual);
     const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
     renderer.setPixelRatio(window.devicePixelRatio || 1);
     renderer.setClearColor(0x2b2b2b, 1);
@@ -51,11 +64,10 @@ export function useVisualPreviewCanvas(
     controls.enableDamping = true;
     controls.autoRotate = autoRotate;
     controls.addEventListener('start', () => { controls.autoRotate = false; });
-    controls.target.copy(frameVisual(camera, visual.bounds));
     controls.update();
 
-    let dirty = true;
-    let frame = 0;
+    let framed = false;
+    stage.current.dirty = true;
 
     const size = () => {
       const width = canvas.clientWidth || CANVAS_FALLBACK;
@@ -63,39 +75,38 @@ export function useVisualPreviewCanvas(
       camera.aspect = width / height;
       camera.updateProjectionMatrix();
       renderer.setSize(width, height, false);
-      dirty = true;
+      stage.current.dirty = true;
     };
     size();
     const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(size);
     observer?.observe(canvas);
 
+    let frame = 0;
     const draw = () => {
       if (!current) return;
+      const { preview, bounds } = stage.current;
+      // Framed once, on the first visual this canvas shows. A later one is not
+      // framed even when its bounds are wildly different: the user's view is
+      // the user's view.
+      if (!framed && preview !== null && bounds !== null) {
+        controls.target.copy(frameVisual(camera, bounds));
+        framed = true;
+        stage.current.dirty = true;
+      }
       // `update` is true only while the orbit is moving, damping out or
       // spinning on its own, so a still preview costs no draw.
-      if (controls.update() || dirty) {
-        dirty = false;
-        renderer.render(preview.scene, camera);
+      if (controls.update() || stage.current.dirty) {
+        stage.current.dirty = false;
+        if (preview !== null) renderer.render(preview.scene, camera);
       }
       frame = requestAnimationFrame(draw);
     };
     frame = requestAnimationFrame(draw);
 
-    for (const textureName of preview.pendingTextureNames()) {
-      void loadTexture(textureName, textureSize)
-        .then((texture) => {
-          if (!current || texture === null) return;
-          preview.applyTexture(texture);
-          dirty = true;
-        })
-        .catch(() => { /* an undecodable map leaves that material white */ });
-    }
-
     teardown = () => {
       cancelAnimationFrame(frame);
       observer?.disconnect();
       controls.dispose();
-      preview.dispose();
       renderer.dispose();
       // `dispose` keeps the GL context until the canvas is collected, and each
       // previewed file gets a fresh canvas: clicking through the browser piled
@@ -109,5 +120,32 @@ export function useVisualPreviewCanvas(
       current = false;
       teardown?.();
     };
-  }, [canvasRef, visual, loadTexture, textureSize, autoRotate]);
+  }, [canvasRef, hasVisual, autoRotate]);
+
+  // The meshes live exactly as long as the visual they show. Textures are
+  // fetched after the first frame — an untextured crate at once beats a blank
+  // panel until every map has decoded — and each arrival marks a frame dirty.
+  useEffect(() => {
+    if (visual === null) return;
+    const live = stage.current;
+    const preview = buildVisualPreview(visual);
+    live.preview = preview;
+    live.bounds = visual.bounds;
+    live.dirty = true;
+
+    for (const textureName of preview.pendingTextureNames()) {
+      void loadTexture(textureName, textureSize)
+        .then((texture) => {
+          if (live.preview !== preview || texture === null) return;
+          preview.applyTexture(texture);
+          live.dirty = true;
+        })
+        .catch(() => { /* an undecodable map leaves that material white */ });
+    }
+
+    return () => {
+      if (live.preview === preview) live.preview = null;
+      preview.dispose();
+    };
+  }, [visual, loadTexture, textureSize]);
 }

@@ -86,6 +86,31 @@ describe('NpcVisualPreview', () => {
     expect(screen.getByTestId('npc-preview-notes')).toHaveTextContent('Width assumed normal');
   });
 
+  it('keeps the preview mounted while the next body assembles, so its camera stays put (#441)', async () => {
+    getNpcBody.mockResolvedValue(scene([]));
+    const view = renderPreview();
+    const canvas = await screen.findByTestId('npc-preview-canvas');
+
+    view.rerender(
+      <NpcVisualPreview
+        definition={ONAR}
+        edits={[{
+          op: 'setCall', name: 'B_SetNpcVisual',
+          args: ['self', 'MALE', '"Hum_Head_Bald"', 'Face_N_Weak_Orry', 'BodyTex_N', 'ITAR_Vlk_H'],
+        }]}
+        lookupConstant={lookupConstant}
+        itemSource={itemSource}
+        assetsReady
+        assetsError={null}
+      />,
+    );
+
+    // The old body stands — with the assembling spinner above it — rather than
+    // the canvas leaving the page and taking the user's orbit with it.
+    expect(screen.getByTestId('npc-preview-canvas')).toBe(canvas);
+    expect(screen.getByText('Assembling…')).toBeInTheDocument();
+  });
+
   it('says the body did not resolve when the worker finds nothing', async () => {
     getNpcBody.mockResolvedValue(null);
     renderPreview();
