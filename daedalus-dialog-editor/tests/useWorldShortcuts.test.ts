@@ -36,6 +36,8 @@ const verbs = {
   onCopy: jest.fn(),
   onPaste: jest.fn(),
   onDuplicate: jest.fn(),
+  onRestOnGround: jest.fn(),
+  onIntoGround: jest.fn(),
   onRequestDeleteVobs: jest.fn(),
   onRequestDeleteWaypoint: jest.fn(),
   onDisarm: jest.fn(),
@@ -286,6 +288,35 @@ describe('useWorldShortcuts — Delete picks one of the two confirms', () => {
     bound();
     press('Delete');
     expect(verbs.onRequestDeleteVobs).toHaveBeenCalledWith([1, 2, 5]);
+  });
+});
+
+describe('useWorldShortcuts — G drops what is selected', () => {
+  test('a selected waypoint is dropped even though no VOB is selected', () => {
+    // #423: VOB and waypoint selection are mutually exclusive, so an empty
+    // `selection` is not "nothing to act on" any more.
+    useWorldStore.setState({ selection: [], selectedWaypoint: 1 } as never);
+    bound();
+
+    expect(press('g')).toBe(true);
+    expect(verbs.onRestOnGround).toHaveBeenCalled();
+  });
+
+  test('Shift+G on a waypoint is the same drop, and still two keys', () => {
+    useWorldStore.setState({ selection: [], selectedWaypoint: 1 } as never);
+    bound();
+
+    expect(press('G', { shiftKey: true })).toBe(true);
+    expect(verbs.onIntoGround).toHaveBeenCalled();
+  });
+
+  test('with neither a VOB nor a waypoint selected it stays the browser’s', () => {
+    useWorldStore.setState({ selection: [], selectedWaypoint: null } as never);
+    bound();
+
+    expect(press('g')).toBe(false);
+    expect(verbs.onRestOnGround).not.toHaveBeenCalled();
+    expect(verbs.onIntoGround).not.toHaveBeenCalled();
   });
 });
 

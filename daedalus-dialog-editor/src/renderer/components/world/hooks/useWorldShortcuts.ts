@@ -303,9 +303,14 @@ export function useWorldShortcuts({
 
       // G puts the model's base on the surface; Shift+G retains the original
       // pivot drop for foliage. Both act on the current selection as one edit.
+      // A waypoint is a selection too (#423) — the two are mutually exclusive in
+      // the store, so this is the same "is anything selected" question the
+      // Delete branch asks, and the surface decides what each spelling means
+      // for it (both land the point, since a waypoint has no bounds to keep).
       if (key === 'g' && !event.ctrlKey && !event.metaKey && !event.altKey) {
         if (isTypingOrInPopover(event.target) || dialogOpen) return;
-        if (useWorldStore.getState().selection.length === 0) return;
+        const { selection: currentSelection, selectedWaypoint: currentWaypoint } = useWorldStore.getState();
+        if (currentSelection.length === 0 && currentWaypoint === null) return;
         event.preventDefault();
         if (event.shiftKey) onIntoGround(); else onRestOnGround();
         return;

@@ -2267,9 +2267,14 @@ never reaches `applied`, and without it the arrow would stay turned after a
 refusal the banner says did not happen. Commit writes are idempotent, so doing
 both costs nothing.
 
-Still not done: waypoint **drop-to-ground** (`G`/`Shift-G`, the other half of
-#423) — a waypoint is not a VOB, so it needs its own raycast-and-`MoveWaypoint`
-path, and the per-VOB `dropVobsToGround` batch cannot carry it.
+**Waypoint drop-to-ground** (`G`/`Shift-G`, the other half of #423) landed
+2026-11-04: a waypoint is not a VOB, so `dropVobsToGround`'s batch cannot carry
+it and the surface does its own ray from the waypoint's own position plus one
+`MoveWaypoint`. Both spellings mean the same thing there — `rest` and `into`
+differ only in which point of a VOB lands, and a waypoint has no visual and no
+bounds. Still not wired, and out of that change: the **keyboard** move and turn
+of a waypoint, because `GizmoController.beginNudge` answers false with no VOBs
+under the gizmo and a waypoint is not one; the ring and the drag both work.
 
 `verify-world-edit.js`'s `expectedWaypointMoves` moves from 0 to 1 — the number
 §14.2 said this slice would change — and the driver's waynet comparison was

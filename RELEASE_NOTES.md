@@ -110,3 +110,4 @@
 - #459: Adding a choice or a quest step to an empty if/else branch works
 - #460: The Teach arguments field keeps a typed comma, so another argument can be added
 - #425: Adding a waypoint selects it, and the dialog can place it in front of the camera
+- #423: G drops a selected waypoint to the ground, as it does a VOB

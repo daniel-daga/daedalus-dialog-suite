@@ -8,7 +8,7 @@ import { type WaynetPayload } from '../src/shared/worldTypes';
 import {
   WAYPOINT_MOVE, WAYPOINT_TO, WAYPOINT_TURN, WAYPOINT_TURNED, WAYPOINT_WAS, waynetPayload,
 } from './worldFixtures';
-import { TERRAIN, mockPointAhead, vp } from './worldSurfaceViewportStub';
+import { TERRAIN, mockPointAhead, mockRaycastDown, vp } from './worldSurfaceViewportStub';
 import { PASTE_REACH } from '../src/renderer/components/world/WorldSurface';
 import { api, openWorld } from './worldSurfaceEditingHarness';
 
@@ -736,6 +736,54 @@ describe('a waypoint dragged in the viewport', () => {
       fireEvent.keyDown(window, { key: 'z', ctrlKey: true });
 
       expect(await screen.findByDisplayValue('WP_MIDDLE')).toBeInTheDocument();
+    });
+  });
+
+  describe('dropped to the ground with G (#423)', () => {
+    /** Pick the fixture's waypoint 1, which sits at `WAYPOINT_WAS`. */
+    async function pickWaypoint() {
+      fireEvent.click(screen.getByTestId('stub-pick-waypoint'));
+      await waitFor(() => expect(vp.selectedWaypoint).toBe(1));
+    }
+
+    it('becomes a MoveWaypoint from where it is to the ground under it', async () => {
+      // A waypoint is not a VOB, so `dropVobsToGround` cannot carry it: one
+      // raycast from its own position and one move.
+      await openWithWaynet();
+      await pickWaypoint();
+      mockRaycastDown.mockReturnValueOnce({ point: [1000, -120, 1000], normal: [0, 1, 0] });
+
+      fireEvent.keyDown(window, { key: 'g' });
+
+      await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalledWith([{
+        op: 'MoveWaypoint', waypoint: 1, name: 'WP_MIDDLE',
+        from: WAYPOINT_WAS, to: [1000, -120, 1000],
+      }]));
+      expect(mockRaycastDown).toHaveBeenCalledWith(WAYPOINT_WAS);
+    });
+
+    it('is the same drop with Shift held', async () => {
+      // Shift is "into the ground" for a VOB — keep the pivot rather than the
+      // visual's base — and a waypoint has neither, so both spellings land it.
+      await openWithWaynet();
+      await pickWaypoint();
+      mockRaycastDown.mockReturnValueOnce({ point: [1000, -120, 1000], normal: [0, 1, 0] });
+
+      fireEvent.keyDown(window, { key: 'G', shiftKey: true });
+
+      await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalledWith([
+        expect.objectContaining({ op: 'MoveWaypoint', waypoint: 1 }),
+      ]));
+    });
+
+    it('commits nothing when the ray misses — over the sky, off the mesh', async () => {
+      await openWithWaynet();
+      await pickWaypoint();
+      mockRaycastDown.mockReturnValueOnce(null);
+
+      fireEvent.keyDown(window, { key: 'g' });
+
+      expect(api.applyWorldOps).not.toHaveBeenCalled();
     });
   });
 
