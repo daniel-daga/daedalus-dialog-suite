@@ -57,7 +57,7 @@ const WorldAddControls: React.FC<WorldAddControlsProps> = ({
         </Button>
       </span>
     </Tooltip>
-    <Tooltip title="Add a waypoint… — a free point at the ground point you choose">
+    <Tooltip title="Add a waypoint… — a free point at the ground point you choose, or in front of the camera">
       <span>
         <Button
           size="small"

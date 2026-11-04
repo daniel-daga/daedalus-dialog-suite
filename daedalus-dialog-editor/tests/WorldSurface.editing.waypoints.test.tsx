@@ -8,7 +8,8 @@ import { type WaynetPayload } from '../src/shared/worldTypes';
 import {
   WAYPOINT_MOVE, WAYPOINT_TO, WAYPOINT_TURN, WAYPOINT_TURNED, WAYPOINT_WAS, waynetPayload,
 } from './worldFixtures';
-import { TERRAIN, vp } from './worldSurfaceViewportStub';
+import { TERRAIN, mockPointAhead, vp } from './worldSurfaceViewportStub';
+import { PASTE_REACH } from '../src/renderer/components/world/WorldSurface';
 import { api, openWorld } from './worldSurfaceEditingHarness';
 
 /**
@@ -18,6 +19,21 @@ import { api, openWorld } from './worldSurfaceEditingHarness';
 
 jest.mock('react-virtualized-auto-sizer', () => mockViewportStub.autoSizerStub);
 jest.mock('../src/renderer/components/world/WorldViewport', () => mockViewportStub.viewportStubModule());
+
+/** What the re-read answers after an add landed: four points, the fourth the
+ *  one just appended, so the index the add selected names it. */
+function waynetWithAdded(): WaynetPayload {
+  const base = waynetPayload();
+  return {
+    ...base,
+    count: 4,
+    names: [...base.names, 'FP_ADDED'],
+    positions: new Float32Array([...Array.from(new Float32Array(base.positions)), ...TERRAIN]).buffer,
+    directions: new Float32Array([...Array.from(new Float32Array(base.directions)), 0, 0, 1]).buffer,
+    waterDepths: new Int32Array(4).buffer,
+    flags: new Uint32Array(4).buffer,
+  };
+}
 
 describe('a waypoint dragged in the viewport', () => {
   /**
@@ -760,6 +776,83 @@ describe('a waypoint dragged in the viewport', () => {
       await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalledWith([
         expect.objectContaining({ op: 'AddWaypoint', name: 'FP_NEW_3' }),
       ]));
+    });
+
+    it('is selected once it lands, so the panel and the pivot follow it', async () => {
+      // #425. The add appends, so the index it takes is the one past the end —
+      // and it is taken from the payload the re-read answers, not predicted, so
+      // a read that does not hold the point selects nothing.
+      await openWithWaynet();
+      api.getWorldWaynet.mockResolvedValueOnce(waynetWithAdded() as never);
+
+      await addWaypoint('FP_ADDED');
+
+      await waitFor(() => expect(useWorldStore.getState().selectedWaypoint).toBe(3));
+      expect(await screen.findByDisplayValue('FP_ADDED')).toBeInTheDocument();
+    });
+
+    it('selects nothing when the world refuses the add', async () => {
+      // A refused op never reaches the pipeline, so there is no index to take —
+      // and a gizmo put on one would be standing on a point that is not there.
+      await openWithWaynet();
+      api.applyWorldOps.mockRejectedValueOnce(new Error('a waypoint cannot be named that'));
+
+      await addWaypoint('FP_ADDED');
+
+      expect(await screen.findByTestId('world-edit-error')).toHaveTextContent('named that');
+      expect(useWorldStore.getState().selectedWaypoint).toBeNull();
+    });
+
+    it('offers the camera point beside the armed click, and adds there', async () => {
+      // #425: with no ground picked the confirm only armed a click, which read
+      // as "nothing happened". The camera point is the viewport's own
+      // `pointAhead` — the one a paste lands on — so there is no second
+      // projection route to keep in step. The toolbar is how the dialog is
+      // opened with no point at all.
+      await openWithWaynet();
+      api.getWorldWaynet.mockResolvedValueOnce(waynetWithAdded() as never);
+
+      fireEvent.click(screen.getByTestId('world-add-waypoint-toolbar'));
+      fireEvent.change(screen.getByTestId('world-waypoint-add-name'), {
+        target: { value: 'FP_AHEAD' },
+      });
+      expect(screen.getByTestId('world-waypoint-add-confirm')).toHaveTextContent('Add on next click');
+
+      mockPointAhead.mockReturnValueOnce([500, 10, 700]);
+      fireEvent.click(screen.getByTestId('world-waypoint-add-ahead'));
+
+      await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalledWith([{
+        op: 'AddWaypoint', waypoint: 3, name: 'FP_AHEAD', from: null, to: [500, 10, 700],
+      }]));
+      expect(mockPointAhead).toHaveBeenCalledWith(PASTE_REACH);
+    });
+
+    it('arms the click when the viewport cannot answer a camera point', async () => {
+      // A viewport between a teardown and its rebuild answers null, and the
+      // button must still do something rather than close on a no-op.
+      await openWithWaynet();
+      fireEvent.click(screen.getByTestId('world-add-waypoint-toolbar'));
+      fireEvent.change(screen.getByTestId('world-waypoint-add-name'), {
+        target: { value: 'FP_AHEAD' },
+      });
+
+      mockPointAhead.mockReturnValueOnce(null);
+      fireEvent.click(screen.getByTestId('world-waypoint-add-ahead'));
+
+      expect(await screen.findByTestId('world-terrain-hint')).toHaveTextContent('FP_AHEAD');
+      expect(api.applyWorldOps).not.toHaveBeenCalled();
+    });
+
+    it('offers only the Add button when a ground point was picked', async () => {
+      // The point the user chose is better than one in front of the camera, so
+      // the camera choice is only there when there is no point at all.
+      await openWithWaynet();
+      fireEvent.click(screen.getByTestId('stub-pick-terrain'));
+      act(() => useWorldStore.getState().selectVob(null));
+      fireEvent.click(await screen.findByTestId('world-add-waypoint'));
+
+      expect(screen.getByTestId('world-waypoint-add-confirm')).toHaveTextContent(/^Add$/);
+      expect(screen.queryByTestId('world-waypoint-add-ahead')).not.toBeInTheDocument();
     });
 
     it('closes on confirm and on cancel, and does not reopen itself', async () => {
