@@ -2,6 +2,7 @@
 
 ## One line per change, newest on top, `- #123: Short description` (120 characters max). A build ships only the lines added since the last one, and CHANGELOG.md keeps them; old lines may be pruned at any time.
 
+- #435: A new NPC Knows Dialog condition defaults to the other NPC (the player), not self
 - #515: A .d file with a UTF-8 BOM opens without junk characters on its first line
 - #427: A new NPC lands in the mod's own Story/NPC folder, not the MDK's Monster folder
 - #442: A male NPC's head-mesh suggestions no longer offer the female HUM_HEAD_BABE* meshes

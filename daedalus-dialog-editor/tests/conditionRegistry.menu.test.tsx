@@ -8,7 +8,11 @@ import { describe, test, expect, jest } from '@jest/globals';
 import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 import ConditionEditor from '../src/renderer/components/ConditionEditor';
 import { CONDITION_REGISTRY, getConditionType } from '../src/renderer/components/conditions/conditionRegistry';
-import type { DialogFunction } from '../src/renderer/types/global';
+import {
+  parseConditionExpressionToConditions,
+  serializeConditionsToExpression
+} from '../src/renderer/quest/domain/conditionExpressionCodec';
+import type { DialogCondition, DialogFunction } from '../src/renderer/types/global';
 
 const EMPTY: DialogFunction = { name: 'DIA_Test_Condition', returnType: 'INT', actions: [], conditions: [], calls: [] };
 
@@ -50,5 +54,29 @@ describe('conditionRegistry.menu', () => {
     const { getTypeName: _ignored, ...expected } = CONDITION_REGISTRY[key].createDefault();
     expect(conditions[0]).toEqual(expected);
     cleanup();
+  });
+});
+
+describe('conditionRegistry NpcKnowsInfo default', () => {
+  // The NPC who knows the info is the player in nearly every dialog (#435).
+  test('a new NPC Knows Dialog condition asks about the other NPC, not self', () => {
+    expect(CONDITION_REGISTRY.NpcKnowsInfoCondition.createDefault()).toMatchObject({
+      type: 'NpcKnowsInfoCondition',
+      npc: 'other'
+    });
+  });
+
+  test('the default round-trips through the condition expression codec', () => {
+    const { getTypeName: _ignored, ...condition } = {
+      ...CONDITION_REGISTRY.NpcKnowsInfoCondition.createDefault(),
+      dialogRef: 'DIA_Foo'
+    } as DialogCondition & { getTypeName: () => string };
+
+    const serialized = serializeConditionsToExpression([condition]);
+    expect(serialized).toEqual({ ok: true, expression: 'Npc_KnowsInfo(other, DIA_Foo)' });
+    if (!serialized.ok) return;
+
+    const parsed = parseConditionExpressionToConditions(serialized.expression);
+    expect(parsed.ok && parsed.conditions).toEqual([condition]);
   });
 });

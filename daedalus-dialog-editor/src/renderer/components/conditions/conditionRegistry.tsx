@@ -43,7 +43,7 @@ export const CONDITION_REGISTRY: Record<string, RegistryEntry> = {
     menuLabel: 'NPC Knows Dialog',
     createDefault: () => ({
       type: 'NpcKnowsInfoCondition',
-      npc: 'self',
+      npc: 'other',
       dialogRef: '',
       getTypeName: () => 'NpcKnowsInfoCondition'
     }),
