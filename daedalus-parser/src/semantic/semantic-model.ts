@@ -1265,8 +1265,14 @@ export interface SemanticModel {
   dialogs: { [key: string]: Dialog };
   functions: { [key: string]: DialogFunction };
   declarationOrder?: Array<{
-    type: 'dialog' | 'function' | 'constant' | 'variable' | 'instance' | 'class' | 'prototype';
+    type: 'dialog' | 'function' | 'constant' | 'variable' | 'instance' | 'class' | 'prototype' | 'raw';
     name: string;
+    /**
+     * A `raw` entry's verbatim source — a zParserExtender extension the model
+     * carries without interpreting (#392).
+     */
+    sourceText?: string;
+    leadingComments?: string[];
     /** Blank lines before the declaration and its leading comments, as parsed (#286) */
     blankLinesBefore?: number;
     /**

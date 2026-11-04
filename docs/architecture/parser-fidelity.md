@@ -666,7 +666,18 @@ Checked against ours on 2026-10-10:
 | `\"` escape in a string | no | yes | no, by design (#389) |
 | `^` as xor | no | no | no, removed (#389) |
 | `while`/`break`/`continue` | no | yes | no (#392) |
-| `namespace`, `META` | yes | no | no (#392) |
+| `namespace`, `META` | yes | no | yes, accepted and preserved (#392) |
+| `test NAME { … };` | no | no | yes, accepted and preserved (#392) |
+
+`META { … };`, `test NAME { … };` and `namespace NAME { … };` are
+zParserExtender's Union extension, not the original compiler's syntax. They are
+carried, not modelled: the grammar keeps each block as one node, the model holds
+it as a `raw` declaration-order entry with its verbatim source text, and a save
+writes it back byte for byte. Nothing reads inside one, so a `test` block's
+`INSTANCE` or a `namespace` body's `const` never enters the symbol tables and
+the NPC/quest surfaces never see it. zPE writes `META` entries with or without a
+trailing semicolon, so both parse. `while`/`break`/`continue` remain out — the
+row above is untouched.
 
 The four #389 rows were settled by one rule: accept only what there is
 evidence the game's compiler accepts, since a construct the editor accepts and

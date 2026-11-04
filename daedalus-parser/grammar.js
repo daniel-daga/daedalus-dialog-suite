@@ -20,6 +20,55 @@ module.exports = grammar({
       $.variable_declaration,
       $.class_declaration,
       $.prototype_declaration,
+      $.meta_block,
+      $.test_block,
+      $.namespace_declaration,
+    ),
+
+    // zParserExtender is a Union extension, not the original compiler (#392):
+    // its META header, `test` blocks and namespaces are carried verbatim and
+    // given no meaning. Their bodies hold whatever zPE lets them hold, so they
+    // accept declarations and statements alike, and nothing reads them.
+    // `$._statement` already carries a variable declaration, so it is not
+    // listed again: naming a rule in two branches of one choice is ambiguous.
+    _extension_item: $ => choice(
+      $.instance_declaration,
+      $.instance_forward_declaration,
+      $.function_declaration,
+      $.class_declaration,
+      $.prototype_declaration,
+      $._statement,
+    ),
+
+    // META { Parser = Game; MergeMode = TRUE; }; — zPE writes the entries with
+    // or without the semicolon, so both are accepted.
+    meta_block: $ => seq(
+      alias(/[mM][eE][tT][aA]/, 'META'),
+      '{',
+      repeat(seq(
+        field('name', $.identifier),
+        '=',
+        field('value', $._expression),
+        optional(';'),
+      )),
+      '}',
+      ';',
+    ),
+
+    test_block: $ => seq(
+      alias(/[tT][eE][sS][tT]/, 'test'),
+      field('name', $.identifier),
+      '{',
+      repeat($._extension_item),
+      '}',
+      ';',
+    ),
+
+    namespace_declaration: $ => seq(
+      alias(/[nN][aA][mM][eE][sS][pP][aA][cC][eE]/, 'namespace'),
+      field('name', $.identifier),
+      optional(seq('{', repeat($._extension_item), '}')),
+      ';',
     ),
 
     // Instance declaration: instance DEV_2130_Szmyk (Npc_Default)

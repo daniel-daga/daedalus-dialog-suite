@@ -74,7 +74,10 @@ export class DeclarationVisitor {
               child.type === 'instance_forward_declaration' ||
               child.type === 'variable_declaration' ||
               child.type === 'class_declaration' ||
-              child.type === 'prototype_declaration') {
+              child.type === 'prototype_declaration' ||
+              child.type === 'meta_block' ||
+              child.type === 'test_block' ||
+              child.type === 'namespace_declaration') {
             padSinceLastComment(child.startPosition.row);
             const order = this.semanticModel.declarationOrder;
             const firstEntry = order ? order.length : 0;
@@ -262,6 +265,16 @@ export class DeclarationVisitor {
         this.semanticModel.prototypes[prototype.name] = prototype;
         this.semanticModel.declarationOrder?.push({ type: 'prototype', name: prototype.name });
       }
+      return;
+    } else if (node.type === 'meta_block' || node.type === 'test_block' || node.type === 'namespace_declaration') {
+      // zParserExtender syntax (#392): carried verbatim as a `raw` entry and
+      // given no meaning — no symbol, no order slot anything else can reuse.
+      this.semanticModel.declarationOrder?.push({
+        type: 'raw',
+        name: node.type,
+        sourceText: node.text,
+        leadingComments: [...this.pendingLeadingComments]
+      });
       return;
     }
 
