@@ -58,6 +58,7 @@ const GREEN_FIXTURES = [
   'body-trailing-comment.d',     // #440: a trailing statement comment
   'same-line-declarations.d',    // #440: two declarations on one line
   'property-gaps.d',             // #440: a blank line inside a C_INFO property list
+  'zpe-extensions.d',            // #392: zPE META / test / namespace carried verbatim
 ];
 
 // Token-equal but not byte-identical through the editor path. Each entry names
