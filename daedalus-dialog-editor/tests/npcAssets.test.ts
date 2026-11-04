@@ -13,4 +13,25 @@ describe('NPC VFS asset suggestions', () => {
       walkOverlays: ['humans_mage.mds', 'HUMANS_S1.MDS'],
     });
   });
+
+  const heads = [file('HUM_HEAD_BABE.MMB'), file('HUM_HEAD_BABENEW.MMB'), file('HUM_HEAD_FATBALD.MMB')];
+  const overlays = [file('HUMANS_S1.MDS')];
+
+  it('drops the female head meshes when the NPC is male', () => {
+    expect(npcAssetSuggestions(heads, overlays, 'MALE')).toEqual({
+      headMeshes: ['HUM_HEAD_FATBALD'],
+      walkOverlays: ['HUMANS_S1.MDS'],
+    });
+  });
+
+  it('keeps the female head meshes when the NPC is female', () => {
+    expect(npcAssetSuggestions(heads, overlays, 'FEMALE').headMeshes)
+      .toEqual(['HUM_HEAD_BABE', 'HUM_HEAD_BABENEW', 'HUM_HEAD_FATBALD']);
+  });
+
+  it('keeps every head mesh when the gender is unset', () => {
+    expect(npcAssetSuggestions(heads, overlays, '').headMeshes)
+      .toEqual(['HUM_HEAD_BABE', 'HUM_HEAD_BABENEW', 'HUM_HEAD_FATBALD']);
+    expect(npcAssetSuggestions(heads, overlays).headMeshes).toHaveLength(3);
+  });
 });
