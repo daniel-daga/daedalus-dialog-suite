@@ -36,7 +36,8 @@ const GREEN_FIXTURES = [
   'body-same-line-statements.d', // #440 two statements on one line
   'body-trailing-comment.d',     // #440 a trailing statement comment
   'same-line-declarations.d',    // #440 two declarations on one line
-  'property-gaps.d'              // #440 a blank line inside a C_INFO property list
+  'property-gaps.d',             // #440 a blank line inside a C_INFO property list
+  'zpe-extensions.d'             // #392 zPE META, test blocks and namespace carried verbatim
 ];
 
 // The whole synthetic corpus is now Tier-1 token-clean. New fidelity gaps land
@@ -63,6 +64,7 @@ const BYTE_EXACT_FIXTURES = [
   'body-trailing-comment.d',     // #440
   'same-line-declarations.d',    // #440
   'property-gaps.d',             // #440
+  'zpe-extensions.d',            // #392
   'comments.d'                   // #440 a trailing statement comment and an inline subtitle
 ];
 
@@ -157,7 +159,7 @@ test('--strict fails a corpus holding a file the parser rejects', () => {
   const reportDir = fs.mkdtempSync(path.join(os.tmpdir(), 'corpus-smoke-unparseable-report-'));
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'corpus-smoke-unparseable-'));
   fs.copyFileSync(path.join(corpusDir, 'quoting.d'), path.join(dir, 'quoting.d'));
-  fs.writeFileSync(path.join(dir, 'unparseable.d'), 'namespace Foo {\n  const int A = 1;\n};\n');
+  fs.writeFileSync(path.join(dir, 'unparseable.d'), 'var int A = ;\n');
 
   const { exitCode, details, byName } = runCorpus(dir, reportDir, 'smoke-unparseable');
 

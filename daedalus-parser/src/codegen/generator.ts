@@ -180,6 +180,14 @@ export class SemanticCodeGenerator {
     // or invent content. Clustering / header synthesis remain the fallback for
     // dialogs and functions missing from the order (the leftover loops below).
     for (const declaration of model.declarationOrder || []) {
+      if (declaration.type === 'raw') {
+        // A zParserExtender extension (#392): written back exactly as parsed.
+        const leading = this.renderLeadingComments(declaration.leadingComments);
+        const text = declaration.sourceText ?? '';
+        emitOrdered(leading ? `${leading}\n${text}` : text, false, declaration.blankLinesBefore, declaration.sameLineBefore);
+        continue;
+      }
+
       if (
         declaration.type === 'constant' ||
         declaration.type === 'variable' ||

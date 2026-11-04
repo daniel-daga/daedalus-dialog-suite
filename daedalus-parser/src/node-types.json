@@ -790,6 +790,130 @@
     }
   },
   {
+    "type": "meta_block",
+    "named": true,
+    "fields": {
+      "name": {
+        "multiple": true,
+        "required": false,
+        "types": [
+          {
+            "type": "identifier",
+            "named": true
+          }
+        ]
+      },
+      "value": {
+        "multiple": true,
+        "required": false,
+        "types": [
+          {
+            "type": "array_access",
+            "named": true
+          },
+          {
+            "type": "binary_expression",
+            "named": true
+          },
+          {
+            "type": "boolean",
+            "named": true
+          },
+          {
+            "type": "call_expression",
+            "named": true
+          },
+          {
+            "type": "identifier",
+            "named": true
+          },
+          {
+            "type": "member_access",
+            "named": true
+          },
+          {
+            "type": "number",
+            "named": true
+          },
+          {
+            "type": "parenthesized_expression",
+            "named": true
+          },
+          {
+            "type": "string",
+            "named": true
+          },
+          {
+            "type": "unary_expression",
+            "named": true
+          }
+        ]
+      }
+    }
+  },
+  {
+    "type": "namespace_declaration",
+    "named": true,
+    "fields": {
+      "name": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "identifier",
+            "named": true
+          }
+        ]
+      }
+    },
+    "children": {
+      "multiple": true,
+      "required": false,
+      "types": [
+        {
+          "type": "assignment_statement",
+          "named": true
+        },
+        {
+          "type": "class_declaration",
+          "named": true
+        },
+        {
+          "type": "expression_statement",
+          "named": true
+        },
+        {
+          "type": "function_declaration",
+          "named": true
+        },
+        {
+          "type": "if_statement",
+          "named": true
+        },
+        {
+          "type": "instance_declaration",
+          "named": true
+        },
+        {
+          "type": "instance_forward_declaration",
+          "named": true
+        },
+        {
+          "type": "prototype_declaration",
+          "named": true
+        },
+        {
+          "type": "return_statement",
+          "named": true
+        },
+        {
+          "type": "variable_declaration",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
     "type": "parameter",
     "named": true,
     "fields": {
@@ -969,7 +1093,19 @@
           "named": true
         },
         {
+          "type": "meta_block",
+          "named": true
+        },
+        {
+          "type": "namespace_declaration",
+          "named": true
+        },
+        {
           "type": "prototype_declaration",
+          "named": true
+        },
+        {
+          "type": "test_block",
           "named": true
         },
         {
@@ -1075,6 +1211,68 @@
           }
         ]
       }
+    }
+  },
+  {
+    "type": "test_block",
+    "named": true,
+    "fields": {
+      "name": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "identifier",
+            "named": true
+          }
+        ]
+      }
+    },
+    "children": {
+      "multiple": true,
+      "required": false,
+      "types": [
+        {
+          "type": "assignment_statement",
+          "named": true
+        },
+        {
+          "type": "class_declaration",
+          "named": true
+        },
+        {
+          "type": "expression_statement",
+          "named": true
+        },
+        {
+          "type": "function_declaration",
+          "named": true
+        },
+        {
+          "type": "if_statement",
+          "named": true
+        },
+        {
+          "type": "instance_declaration",
+          "named": true
+        },
+        {
+          "type": "instance_forward_declaration",
+          "named": true
+        },
+        {
+          "type": "prototype_declaration",
+          "named": true
+        },
+        {
+          "type": "return_statement",
+          "named": true
+        },
+        {
+          "type": "variable_declaration",
+          "named": true
+        }
+      ]
     }
   },
   {
@@ -1570,6 +1768,10 @@
     "named": false
   },
   {
+    "type": "META",
+    "named": false
+  },
+  {
     "type": "[",
     "named": false
   },
@@ -1615,6 +1817,10 @@
     "named": false
   },
   {
+    "type": "namespace",
+    "named": false
+  },
+  {
     "type": "number",
     "named": true
   },
@@ -1633,6 +1839,10 @@
   {
     "type": "string",
     "named": true
+  },
+  {
+    "type": "test",
+    "named": false
   },
   {
     "type": "var",

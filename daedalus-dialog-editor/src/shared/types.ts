@@ -851,8 +851,11 @@ export interface SemanticModel {
   dialogs: Record<string, Dialog>;
   functions: Record<string, DialogFunction>;
   declarationOrder?: Array<{
-    type: 'dialog' | 'function' | 'constant' | 'variable' | 'instance' | 'class' | 'prototype';
+    type: 'dialog' | 'function' | 'constant' | 'variable' | 'instance' | 'class' | 'prototype' | 'raw';
     name: string;
+    /** A `raw` entry's verbatim source — zParserExtender syntax the model carries unread (#392). */
+    sourceText?: string;
+    leadingComments?: string[];
     /** Blank lines before the declaration and its leading comments, as parsed (#286) */
     blankLinesBefore?: number;
   }>;
