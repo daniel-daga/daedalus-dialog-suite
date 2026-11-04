@@ -205,6 +205,8 @@ export interface ConditionalAction {
   condition: string;
   thenActions: ActionType[];
   elseActions: ActionType[];
+  /** The lone else action of its parent, written `else if` (#432). */
+  elseIf?: boolean;
 }
 
 /**
