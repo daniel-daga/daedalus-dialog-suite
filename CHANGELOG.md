@@ -4,6 +4,18 @@ What each published Windows build changed, newest first. Build Windows adds a
 build here when it publishes it; write new notes in `RELEASE_NOTES.md`, not here.
 Builds before 31 had no release notes.
 
+## Build 41 — 2026-11-04
+
+- #325: Named quest stages — declare a stage, set it in a dialog, and branch on it with a "Stage" condition card
+- #491: A refused quest upgrade no longer leaves the quest declared but never set
+- #487: A variable delete is refused while its file has unsaved changes, so the next save can't bring it back
+- #518: An expanded choice whose target file is not open is read-only, and says why
+- #517: Install & Restart saves the open world first, and refuses to install when that save fails
+- #469: An NPC file added with a new prototype shows up in the NPC list without reopening the project
+- #509: Editing the world re-runs the Problems scan, so a routine hint clears once its bed or waypoint is moved
+- #423: A waypoint's facing turns with the rotate gizmo, and the turn saves with the world
+- #414: The World editor's move gizmo follows the selected VOB's own axes, with a click for world axes
+
 ## Build 40 — 2026-11-03
 
 - #511: A save no longer fails because another program is holding the script for a moment
