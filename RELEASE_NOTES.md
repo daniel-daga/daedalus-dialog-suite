@@ -2,6 +2,7 @@
 
 ## One line per change, newest on top, `- #123: Short description` (120 characters max). A build ships only the lines added since the last one, and CHANGELOG.md keeps them; old lines may be pruned at any time.
 
+- #432: "Else If" is a real action — an "Else If" button chains it, and the file keeps the form it was written in
 - #441: The NPC preview keeps the camera where it was set when a head, body or armour changes
 - #435: A new NPC Knows Dialog condition defaults to the other NPC (the player), not self
 - #515: A .d file with a UTF-8 BOM opens without junk characters on its first line

@@ -699,7 +699,7 @@ export class LinkingVisitor {
       return null;
     }
 
-    if (alternativeNode && alternativeNode.type !== 'block') {
+    if (alternativeNode && alternativeNode.type !== 'block' && alternativeNode.type !== 'if_statement') {
       return null;
     }
 
@@ -708,9 +708,23 @@ export class LinkingVisitor {
       return null;
     }
 
-    const elseActions = alternativeNode ? this.parseActionsFromBlock(alternativeNode) : [];
-    if (alternativeNode && !elseActions) {
-      return null;
+    let elseActions: DialogAction[];
+    if (!alternativeNode) {
+      elseActions = [];
+    } else if (alternativeNode.type === 'if_statement') {
+      // `else if` (#432): the chained conditional is the else branch's only action.
+      const chained = this.parseConditionalAction(alternativeNode);
+      if (!chained) {
+        return null;
+      }
+      chained.elseIf = true;
+      elseActions = [atLine(chained, alternativeNode)];
+    } else {
+      const parsed = this.parseActionsFromBlock(alternativeNode);
+      if (!parsed) {
+        return null;
+      }
+      elseActions = parsed;
     }
 
     // Parentheses are syntax nodes, not characters to count: strings and

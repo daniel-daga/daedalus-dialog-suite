@@ -478,6 +478,11 @@ export class ConditionalAction implements CodeGeneratable {
   public emptyElse?: boolean;
   /** The source closed the statement without its optional `;` (#395). */
   public unterminated?: boolean;
+  /**
+   * This conditional is the lone `elseActions` entry of its parent and was
+   * written `else if` (#432); generation chains it instead of nesting a block.
+   */
+  public elseIf?: boolean;
 
   constructor(condition: string, thenActions: DialogAction[] = [], elseActions: DialogAction[] = []) {
     this.condition = condition;
@@ -501,10 +506,20 @@ export class ConditionalAction implements CodeGeneratable {
 
     if (this.elseActions.length > 0 || this.emptyElse) {
       lines.push('}');
-      lines.push('else');
-      lines.push('{');
-      lines.push(...this.renderBranch(this.elseActions, indentUnit, options));
-      lines.push(close);
+      const chained = this.elseActions.length === 1
+        && this.elseActions[0].type === 'ConditionalAction'
+        && (this.elseActions[0] as ConditionalAction).elseIf
+        ? this.elseActions[0] as ConditionalAction
+        : undefined;
+      if (chained) {
+        // `else if` (#432): the chained conditional writes its own closing `;`.
+        lines.push(`else ${generateActionCode(chained, { ...options, indentUnit })}`);
+      } else {
+        lines.push('else');
+        lines.push('{');
+        lines.push(...this.renderBranch(this.elseActions, indentUnit, options));
+        lines.push(close);
+      }
     } else {
       lines.push(close);
     }

@@ -19,6 +19,7 @@ import type { ActionTypeId } from '../actionTypes';
 import type { ActionBranchKey } from '../nestedActionUtils';
 import ActionsList from '../ActionsList';
 import ActionTypeMenu from '../common/ActionTypeMenu';
+import { ACTION_TEMPLATES } from '../actionTemplates';
 
 /**
  * Daedalus snippets for common If-block conditions (issue #145: parity with
@@ -83,6 +84,20 @@ const ConditionalActionRenderer: React.FC<BaseActionRendererProps> = ({
   const [templateMenuAnchor, setTemplateMenuAnchor] = useState<HTMLElement | null>(null);
   const [activeBranch, setActiveBranch] = useState<ActionBranchKey>('then');
 
+  // `else if` (#432) is a conditional alone in the else branch carrying the
+  // marker; anything else in the else branch is an else block.
+  const elseIfCandidate = typedAction.elseActions.length === 1
+    && typedAction.elseActions[0].type === 'ConditionalAction'
+    ? typedAction.elseActions[0] as ConditionalAction
+    : undefined;
+  const elseIfChain = elseIfCandidate?.elseIf === true;
+  const canMakeElseIf = typedAction.elseActions.length === 0 || (!!elseIfCandidate && !elseIfChain);
+
+  const makeElseIf = () => {
+    const next = elseIfCandidate ?? (ACTION_TEMPLATES.conditionalAction() as ConditionalAction);
+    handleUpdate({ ...typedAction, elseActions: [{ ...next, elseIf: true }] });
+  };
+
   const insertConditionTemplate = (snippet: string) => {
     const existing = (typedAction.condition || '').trim();
     // `&&` binds tighter than `||`, so an existing or-chain needs parentheses
@@ -94,9 +109,9 @@ const ConditionalActionRenderer: React.FC<BaseActionRendererProps> = ({
   };
 
   const branchSections = useMemo(() => ([
-    { branch: 'then' as const, label: 'If' },
-    { branch: 'else' as const, label: 'Else' }
-  ]), []);
+    { branch: 'then' as const, label: typedAction.elseIf ? 'Then' : 'If' },
+    { branch: 'else' as const, label: elseIfChain ? 'Else If' : 'Else' }
+  ]), [typedAction.elseIf, elseIfChain]);
 
   const openBranchMenu = (event: React.MouseEvent<HTMLElement>, branch: ActionBranchKey) => {
     setActiveBranch(branch);
@@ -210,6 +225,14 @@ const ConditionalActionRenderer: React.FC<BaseActionRendererProps> = ({
                       Add Action
                     </Button>
                   </Box>
+                </Box>
+              )}
+
+              {branch === 'then' && canMakeElseIf && (
+                <Box sx={{ mt: 1 }}>
+                  <Button size="small" startIcon={<AddIcon />} onClick={makeElseIf}>
+                    Else If
+                  </Button>
                 </Box>
               )}
             </Box>

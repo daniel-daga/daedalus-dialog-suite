@@ -460,6 +460,11 @@ export interface ConditionalAction {
   condition: string;
   thenActions: DialogAction[];
   elseActions: DialogAction[];
+  /**
+   * This conditional is the lone `elseActions` entry of its parent and is
+   * written `else if` (#432).
+   */
+  elseIf?: boolean;
 }
 
 /**
