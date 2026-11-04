@@ -146,7 +146,9 @@ parameters a mod need not define, and a copy uses only what the mod does
 and the parser's writer sets `name`, `guild` and `id` and removes
 `daily_routine` (the template's day is its own NPC's). The id offered is one
 past the highest in retail-style names (`BAU_900_Onar` → 901); the file is
-`<instance>.d` in the folder most NPC files live in. The new file goes through
+`<instance>.d` in the folder most NPC files live in, ignoring the MDK's own
+tree — which usually holds the most, and is not the mod's (#427). The new file
+goes through
 the file watcher's `handleFileAdded`, since the watcher suppresses the
 editor's own writes, so it is indexed and gets its EXIT dialog (#141) like a
 dropped-in file. The `Wld_InsertNpc` offer is not part of it: the World
