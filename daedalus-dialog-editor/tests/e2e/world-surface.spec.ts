@@ -51,6 +51,7 @@ test.describe('World surface', () => {
         visualsSeen: 0, visualsResolved: 0, vobsPlaced: 0, instancedDrawGroups: 0,
         levelCompos: 0, unresolvedByType: {}, unresolved: [],
       } });
+      api.getWorldItemInstances = async () => ({ vobs: [], instances: [] });
       api.getVobProps = async () => ({ class: 'zCVob', ...BASE_PROPS });
       api.getWorldPortalFindings = async () => [];
       api.getVobFolders = async () => ({ folders: [] });
@@ -120,6 +121,7 @@ test.describe('World surface', () => {
         visualsSeen: 0, visualsResolved: 0, vobsPlaced: 0, instancedDrawGroups: 0,
         levelCompos: 0, unresolvedByType: {}, unresolved: [],
       } });
+      api.getWorldItemInstances = async () => ({ vobs: [], instances: [] });
       const net = {
         count: 1, names: ['WP_FACE'], positions: new Float32Array(3).buffer,
         directions: new Float32Array([1, 0, 0]).buffer,
@@ -239,6 +241,7 @@ test.describe('World surface', () => {
         visualsSeen: 0, visualsResolved: 0, vobsPlaced: 0, instancedDrawGroups: 0,
         levelCompos: 0, unresolvedByType: {}, unresolved: [],
       } });
+      api.getWorldItemInstances = async () => ({ vobs: [], instances: [] });
       api.getWorldWaynet = async () => ({
         count: 1, names: ['WP_FACE'], positions: new Float32Array(3).buffer,
         directions: new Float32Array([1, 0, 0]).buffer,
