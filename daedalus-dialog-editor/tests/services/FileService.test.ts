@@ -71,6 +71,20 @@ describe('FileService write encoding default', () => {
     expect(buffer.includes(0xe4)).toBe(true);
   });
 
+  it('reads a UTF-8 BOM file without junk on the first line (#515)', async () => {
+    const file = path.join(dir, 'bom.d');
+    // Mixed file: BOM plus one windows-1252 umlaut, which is the case the
+    // detector reads with a legacy table and turns the BOM into junk.
+    const original = '// Bärbel\nvar int test = 1;';
+    await fs.writeFile(file, Buffer.concat([
+      Buffer.from([0xef, 0xbb, 0xbf]),
+      iconv.encode(original, 'windows-1252'),
+    ]));
+
+    const readBack = await service.readFile(file);
+    expect(readBack).toBe(original);
+  });
+
   it('preserves the detected encoding for a previously read file', async () => {
     const file = path.join(dir, 'existing.d');
     await fs.writeFile(file, iconv.encode('UTF-8: 你好 🎉', 'utf8'), 'utf8');

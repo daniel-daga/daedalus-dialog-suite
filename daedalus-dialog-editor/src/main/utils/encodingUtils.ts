@@ -1,5 +1,5 @@
 import * as iconv from 'iconv-lite';
-import { detectSourceEncoding } from 'daedalus-parser/source-encoding';
+import { detectSourceEncoding, stripUtf8Bom } from 'daedalus-parser/source-encoding';
 
 /**
  * Pure encoding detection/decoding shared by FileService (read-before-write)
@@ -22,10 +22,16 @@ export function detectEncoding(buffer: Buffer): string {
 /**
  * Decode a buffer using the detected encoding, returning both the decoded
  * string and the encoding used (so callers can cache it for write-back).
+ *
+ * The BOM bytes are dropped before decoding, exactly as the parser does (#515):
+ * a BOM is not text, and decoding it with a legacy table shows "ï»¿" on line 1.
+ * Neither the detected encoding nor the write path carries a BOM, so a file
+ * that had one is saved back without it — the parser's generate path already
+ * drops it, and the accepted consequence is that the BOM is not restored.
  */
 export function decodeBuffer(buffer: Buffer): { content: string; encoding: string } {
   const encoding = detectEncoding(buffer);
-  return { content: iconv.decode(buffer, encoding), encoding };
+  return { content: iconv.decode(stripUtf8Bom(buffer), encoding), encoding };
 }
 
 /**

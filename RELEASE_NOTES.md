@@ -109,3 +109,4 @@
 - #458: Save-time validation also checks actions nested inside an if/else branch
 - #459: Adding a choice or a quest step to an empty if/else branch works
 - #460: The Teach arguments field keeps a typed comma, so another argument can be added
+- #515: A .d file with a UTF-8 BOM opens without junk characters on its first line
