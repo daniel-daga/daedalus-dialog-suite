@@ -41,11 +41,14 @@ export function proposeNpcId(npcNames: string[]): number {
   return highest + 1;
 }
 
-/** `<instance>.d` in the folder most NPC files live in, else the project folder. */
+/** `<instance>.d` in the folder most NPC files live in, else the project folder.
+ *  The MDK's own NPCs are not the mod's — a copy made there compiles with neither
+ *  (#427), so its tree never counts. */
 export function defaultNpcFilePath(npcFiles: Record<string, string>, instance: string, projectPath: string): string {
   const counts = new Map<string, number>();
   for (const filePath of Object.values(npcFiles)) {
     const dir = getDirectoryName(filePath);
+    if (/(^|\/)_?mdk(\/|$)/i.test(dir)) continue;
     counts.set(dir, (counts.get(dir) ?? 0) + 1);
   }
   let folder = projectPath;

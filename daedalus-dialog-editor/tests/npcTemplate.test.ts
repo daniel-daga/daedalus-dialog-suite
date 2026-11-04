@@ -65,8 +65,26 @@ describe('defaultNpcFilePath', () => {
     expect(defaultNpcFilePath(npcFiles, 'BAU_950_Harald', 'C:/mod')).toBe('C:/mod/Story/NPC/BAU_950_Harald.d');
   });
 
+  test('ignores the MDK tree, even when it holds most of the NPC files (#427)', () => {
+    const npcFiles = {
+      BAU_900_ONAR: 'C:/mod/Scripts/Content/Story/NPC/BAU_900_Onar.d',
+      ORC_1_A: 'C:/mod/Scripts/Content/Story/NPC/ORC_1_A.d',
+      SCAVENGER: 'C:/mod/mdk/Scripts/Content/Story/NPC/Monster/Scavenger.d',
+      WOLF: 'C:/mod/mdk/Scripts/Content/Story/NPC/Monster/Wolf.d',
+      SHADOWBEAST: 'C:/mod/mdk/Scripts/Content/Story/NPC/Monster/Shadowbeast.d'
+    };
+    expect(defaultNpcFilePath(npcFiles, 'BAU_950_Harald', 'C:/mod')).toBe(
+      'C:/mod/Scripts/Content/Story/NPC/BAU_950_Harald.d'
+    );
+  });
+
   test('falls back to the project folder when no NPC file is known', () => {
     expect(defaultNpcFilePath({}, 'BAU_950_Harald', 'C:/mod')).toBe('C:/mod/BAU_950_Harald.d');
+  });
+
+  test('falls back to the project folder when every NPC file is in the MDK tree', () => {
+    const npcFiles = { WOLF: 'C:/mod/_mdk/Scripts/Content/Story/NPC/Monster/Wolf.d' };
+    expect(defaultNpcFilePath(npcFiles, 'BAU_950_Harald', 'C:/mod')).toBe('C:/mod/BAU_950_Harald.d');
   });
 });
 
