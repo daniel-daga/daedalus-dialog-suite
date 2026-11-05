@@ -7,6 +7,8 @@ import type {
 } from '../../shared/worldTypes';
 import { DecalLayer } from './DecalLayer';
 import { HIDDEN_ATTRIBUTE, SELECTED_ATTRIBUTE } from './instanceAttributes';
+import { LocatorRings } from './LocatorRings';
+import type { LocatorItem } from './itemLocator';
 import { VobExtentOverlay } from './VobExtentOverlay';
 import { PortalOutline } from './PortalOutline';
 import { SelectionBox } from './SelectionBox';
@@ -467,6 +469,17 @@ export class WorldScene {
   private decalLayer: DecalLayer | null = null;
 
   /**
+   * The Item Locator's rings (#417) — one per match, drawn through geometry so
+   * an item lost inside a wall or a rock can still be found.
+   *
+   * Attached only while there is something to draw, like the extent wireframe
+   * and the portal outline: the root's children are what the world is made of,
+   * and a permanent empty node in it is one more thing every reader of the
+   * graph has to know to skip.
+   */
+  private readonly locatorRings = new LocatorRings();
+
+  /**
    * How far the selected VOB reaches, when the reach is a radius (architecture §7,
    * #248). One wireframe for the whole scene, because only the selection is
    * ever drawn: 1,237 sound radii at once is a screen of overlapping spheres.
@@ -802,6 +815,31 @@ export class WorldScene {
   hideExtent(): void {
     this.extentOverlay.hide();
     this.root.remove(this.extentOverlay.wireframe);
+  }
+
+  /**
+   * The item VOBs the locator's name and "bad only" filters kept (#417) — every
+   * one of them, whatever its distance; the radius is `setLocatorView`'s.
+   *
+   * Taken as the locator list rather than as the world's item payload because
+   * the display name and the badness are the renderer's answer: the main process
+   * holds no item index (`ipcValidation.ts`), so it could not mark one bad.
+   */
+  setLocatorItems(items: readonly LocatorItem[] | null): void {
+    this.locatorRings.setItems(items ?? []);
+    if (items === null || items.length === 0) this.root.remove(this.locatorRings.points);
+    else if (this.locatorRings.points.parent === null) this.root.add(this.locatorRings.points);
+  }
+
+  /** Draw a ring for every locator match within `radiusCm` of the camera —
+   *  the view half, per frame, exactly as `VobMarkerLayer.setView` is. */
+  setLocatorView(enabled: boolean, camera: readonly [number, number, number], radiusCm: number): void {
+    this.locatorRings.setView(enabled, camera, radiusCm);
+  }
+
+  /** The VOBs the rings are drawn for, in draw order. */
+  get locatorVobs(): readonly number[] {
+    return this.locatorRings.vobs;
   }
 
   /**
@@ -1313,6 +1351,7 @@ export class WorldScene {
     this.extentOverlay.dispose();
     this.portalOutline.dispose();
     this.selectionBox.dispose();
+    this.locatorRings.dispose();
 
     this.geometries = [];
     this.materials = [];

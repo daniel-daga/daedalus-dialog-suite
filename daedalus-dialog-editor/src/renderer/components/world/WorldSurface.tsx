@@ -25,7 +25,7 @@ import {
   type ZenPosition, type ZenRotation,
 } from 'zen-world';
 import type {
-  DiscoveredWorld, InstancedPayload, NpcBodyRequest, VisualOverrides, WaynetPayload,
+  DiscoveredWorld, InstancedPayload, ItemInstances, NpcBodyRequest, VisualOverrides, WaynetPayload,
   WorldMeshPayload, WorldOp,
 } from '../../../shared/worldTypes';
 import { findFreePointVob, primaryVob, useWorldStore, type RoutineRequest } from '../../store/worldStore';
@@ -34,6 +34,7 @@ import { useProjectStore } from '../../store/projectStore';
 import { vobModelOf } from '../../world/vobModel';
 import { itemVisualOfSource, visualOverridesOf } from '../../world/itemVisuals';
 import { itemCatalogueOf } from '../../world/itemCatalogue';
+import { LOCATOR_DEFAULT_RADIUS_M, locatorItemsOf } from '../../world/itemLocator';
 import { snapDelta } from '../../world/snapping';
 import { LiveTileContext } from './WorldAssetGrid';
 import { DEFAULT_EXPOSURE, type SelectionStyle } from '../../world/WorldScene';
@@ -41,6 +42,7 @@ import type { MarkerOcclusion } from '../../world/VobMarkerLayer';
 import WorldViewport, { type GizmoMode, type GizmoSpace, type WorldViewportHandle } from './WorldViewport';
 import WorldSceneTree from './WorldSceneTree';
 import WorldFolderTree from './WorldFolderTree';
+import ItemLocatorPanel from './ItemLocatorPanel';
 import WorldPropertyGrid from './WorldPropertyGrid';
 import WorldAssetBrowser from './WorldAssetBrowser';
 import WorldAssetPreview, { NAME_OF, isPlaceableVisual } from './WorldAssetPreview';
@@ -233,7 +235,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
   // The left panel is the scene *or* the mounted assets, and the right panel
   // follows it: a VOB's properties belong beside the tree, an asset's preview
   // beside the browser.
-  const [panel, setPanel] = useState<'scene' | 'assets' | 'folders'>('scene');
+  const [panel, setPanel] = useState<'scene' | 'assets' | 'folders' | 'locator'>('scene');
   const [selectedAsset, setSelectedAsset] = useState<string | null>(null);
   const {
     panelWidths,
@@ -256,6 +258,12 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
   const [showMarkers, setShowMarkers] = useState(true);
   const [markerDistance, setMarkerDistance] = useState(100);
   const [markerOcclusion, setMarkerOcclusion] = useState<MarkerOcclusion>('occluded');
+  /** Spacer's Item Locator (#417). Off until asked for: its rings are a second
+   *  overlay and a world that opened with them would be a world with a filter
+   *  nobody chose. */
+  const [locator, setLocator] = useState({
+    on: false, radiusM: LOCATOR_DEFAULT_RADIUS_M, badOnly: false, search: '',
+  });
   const {
     listAssets, searchAssets, resolveAssets, resolveAsset, compileAssets: compileAssetCatalog,
     loadTexture, loadVisual, thumbnails, liveTile,
@@ -487,6 +495,34 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
   const itemCatalogue = useMemo(() => itemCatalogueOf(items, itemVisuals), [items, itemVisuals]);
 
   /**
+   * The item VOBs the world holds and the instance each names (#424's payload).
+   *
+   * Held rather than only folded into the visual overrides, because the Item
+   * Locator (#417) needs the instance back out: it is the only place the world
+   * says what an `oCItem` *is*. One payload per open and per structural edit —
+   * the reads `reloadItemVisuals` already makes, so the locator costs no round
+   * trip of its own.
+   */
+  const [worldItemInstances, setWorldItemInstances] = useState<ItemInstances | null>(null);
+
+  /**
+   * The locator's rows: every item VOB the name and "bad only" switches keep,
+   * whatever its distance. The radius is applied in two places over this one
+   * list — the panel against a polled camera, the viewport in its draw loop — so
+   * the picture and the rows cannot disagree about what matched.
+   */
+  const locatorItems = useMemo(
+    () => (summary === null ? [] : locatorItemsOf(
+      worldItemInstances,
+      summary.vobIndex,
+      itemInstances,
+      itemCatalogue,
+      { search: locator.search, badOnly: locator.badOnly },
+    )),
+    [summary, worldItemInstances, itemInstances, itemCatalogue, locator.search, locator.badOnly],
+  );
+
+  /**
    * The item VOBs the project resolves, as `vob → visual` — what the scene
    * draws an `oCItem` as (#424). Empty for a world whose items the project does
    * not declare, and for one with no items at all.
@@ -501,6 +537,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
    */
   const reloadItemVisuals = useCallback(async (): Promise<VisualOverrides | undefined> => {
     const instances = await window.editorAPI.getWorldItemInstances();
+    setWorldItemInstances(instances);
     const overrides = visualOverridesOf(instances, itemVisualsRef.current);
     visualOverridesRef.current = overrides;
     return overrides;
@@ -541,6 +578,9 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
     setMesh(null);
     setVisuals(null);
     visualOverridesRef.current = undefined;
+    // A world's items are not the next world's — the locator would list VOB
+    // indices that belong to the world being replaced.
+    setWorldItemInstances(null);
     setTerrainPoint(null);
     // An armed name is a request about *this* open, and a new one answers no
     // question the previous open's Problems scan asked. The same for an
@@ -2771,13 +2811,19 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
               <Stack direction="row" alignItems="center">
                 <Tabs
                   value={panel}
-                  onChange={(_event, next: 'scene' | 'assets' | 'folders') => setPanel(next)}
+                  onChange={(_event, next: 'scene' | 'assets' | 'folders' | 'locator') => setPanel(next)}
                   variant="fullWidth"
-                  sx={{ flex: 1, minHeight: 32, '& .MuiTab-root': { minHeight: 32, fontSize: 12 } }}
+                  sx={{
+                    flex: 1, minHeight: 32,
+                    // Four tabs in a 200 px panel at its narrowest: without
+                    // `minWidth: 0` the fourth is clipped rather than squeezed.
+                    '& .MuiTab-root': { minHeight: 32, minWidth: 0, fontSize: 12, px: 0.5 },
+                  }}
                 >
                   <Tab value="scene" label="Scene" data-testid="world-panel-scene" />
                   <Tab value="assets" label="Assets" data-testid="world-panel-assets" />
                   <Tab value="folders" label="Folders" data-testid="world-panel-folders" />
+                  <Tab value="locator" label="Locator" data-testid="world-panel-locator" />
                 </Tabs>
                 <Tooltip title="Hide scene panel">
                   <IconButton
@@ -2843,6 +2889,26 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
                   />
                 </Box>
               )}
+              {/* Mounted while it is the visible tab, like Folders. Its own
+                  switches are the mode: a locator that rings every item the
+                  moment a world opens would be a second overlay nobody chose. */}
+              {panel === 'locator' && (
+                <Box sx={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+                  <ItemLocatorPanel
+                    items={locatorItems}
+                    enabled={locator.on}
+                    radiusM={locator.radiusM}
+                    badOnly={locator.badOnly}
+                    search={locator.search}
+                    onToggle={(on) => setLocator((current) => ({ ...current, on }))}
+                    onRadius={(radiusM) => setLocator((current) => ({ ...current, radiusM }))}
+                    onBadOnly={(badOnly) => setLocator((current) => ({ ...current, badOnly }))}
+                    onSearch={(search) => setLocator((current) => ({ ...current, search }))}
+                    getCameraPosition={getCameraPosition}
+                    onFocus={focusVob}
+                  />
+                </Box>
+              )}
             </Box>
             {!leftPanelCollapsed && (
               <PanelSplitter
@@ -2888,6 +2954,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
               showMarkers={showMarkers}
               markerDistance={markerDistance}
               markerOcclusion={markerOcclusion}
+              locator={locator.on ? { items: locatorItems, radiusCm: locator.radiusM * 100 } : null}
               spawns={shownSpawns}
               npcBodyRequests={spawnBodyRequests}
               showSpawns={showSpawns}

@@ -30,6 +30,7 @@ import { GizmoController, type GizmoMode, type GizmoSpace } from '../../world/Gi
 import { NO_PICK } from '../../world/pickIds';
 import { chooseWaypointLabels } from '../../world/waypointLabels';
 import type { MarkerOcclusion } from '../../world/VobMarkerLayer';
+import type { LocatorView } from '../../world/itemLocator';
 import { WaypointLabelLayer } from '../../world/WaypointLabelLayer';
 import {
   attachBlenderNav, frameOn, frameVobs, navFor, pivotAt, type Nav,
@@ -104,6 +105,10 @@ declare global {
       /** The waypoints the spawn layer marks, sorted, or null while it is
        *  hidden. */
       spawnMarkers: () => string[] | null;
+      /** The VOBs the Item Locator is drawing a ring for, in draw order
+       *  (#417) — what the specs read instead of a GPU picture, as they read
+       *  `spawnMarkers` and `waypointDirection`. */
+      locatorVobs: () => number[];
       /** The anchor VOB's 3x3 as drawn, row-major, or null if detached. */
       gizmoRotation: () => number[] | null;
       /** Report a click that hit the world mesh rather than a VOB, at a point in
@@ -167,6 +172,16 @@ export interface WorldViewportProps {
   showMarkers?: boolean;
   markerDistance?: number;
   markerOcclusion?: MarkerOcclusion;
+  /**
+   * Spacer's Item Locator (#417): every `oCItem` VOB the name and "bad only"
+   * switches kept, and the radius around the camera within which a ring is
+   * drawn for it. Null is the locator switched off.
+   *
+   * The radius is applied in the draw loop rather than here, so a half-drawn
+   * ring follows the camera without a React render behind it — the same shape
+   * `markerDistance` takes.
+   */
+  locator?: LocatorView | null;
   /**
    * The project's statically resolvable spawns (§16.19 slice 4). Empty when no
    * script project is open — which means "nothing is known", never "nobody is
@@ -540,7 +555,7 @@ const NO_BODY_REQUESTS: ReadonlyMap<string, NpcBodyRequest> = new Map();
 
 const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(({
   mesh, visuals, vobIndex, bbox, waynet, showWaynet, showMarkers = true, markerDistance = 100,
-  markerOcclusion = 'occluded', spawns, npcBodyRequests = NO_BODY_REQUESTS, showSpawns, routines, spawnTime, spawnState,
+  markerOcclusion = 'occluded', locator = null, spawns, npcBodyRequests = NO_BODY_REQUESTS, showSpawns, routines, spawnTime, spawnState,
   showWaypointNames, loadTexture, onTextureFailures, onCameraSlot, onPick, onVobContextMenu, onCancelArmed,
   selection, onTranslateSelection, gizmoMode, gizmoSpace = 'local', onRotateSelection, membersOf, appliedOps,
   selectedWaypoint, terrainPoint, exposure, hiddenVobs, outlineMode, snapGrid, snapAngle,
@@ -702,6 +717,12 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
   showWaynetRef.current = showWaynet;
   const markerViewRef = useRef({ showMarkers, markerDistance, markerOcclusion });
   markerViewRef.current = { showMarkers, markerDistance, markerOcclusion };
+  // The locator's radius is applied in the draw loop, so the loop needs the
+  // view through a ref for the reason `markerViewRef` has one: a camera replay
+  // must not rebuild the scene.
+  const locatorRef = useRef(locator);
+  locatorRef.current = locator;
+  const locatorItems = locator?.items ?? null;
   // Read from the draw loop, so they are refs rather than dependencies: the
   // loop is built once per world and must not be torn down to change a label.
   const showNamesRef = useRef(showWaypointNames);
@@ -1168,6 +1189,8 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
       const cameraZen: [number, number, number] = [labelCameraPosition.x, labelCameraPosition.y, labelCameraPosition.z];
       world.markers?.setView(markerView.showMarkers, cameraZen, markerView.markerDistance * 100);
       world.markers?.setOcclusion(markerView.markerOcclusion);
+      const locatorView = locatorRef.current;
+      world.setLocatorView(locatorView !== null, cameraZen, locatorView?.radiusCm ?? 0);
       const overlay = overlayRef.current;
       overlay?.setView(cameraZen, markerView.markerDistance * 100);
       overlay?.setOcclusion(markerView.markerOcclusion);
@@ -1370,6 +1393,7 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
         ...(instanced.geometry.getAttribute(SELECTED_ATTRIBUTE).array as Float32Array),
       ]),
       selectionBoxes: () => world.selectionBoxes.map((box) => [...box]),
+      locatorVobs: () => [...world.locatorVobs],
       cameraTarget: () => threeToZen(controls.target.toArray() as [number, number, number]),
       cameraPosition: () => threeToZen(camera.position.toArray() as [number, number, number]),
       // Reports the marker that is actually *in the scene*, not merely the
@@ -1670,6 +1694,13 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
   useEffect(() => {
     sceneRef.current?.setHiddenVobs(hiddenVobs);
   }, [hiddenVobs, mesh, visuals]);
+
+  // The items the locator's name and "bad only" switches kept. Separate from
+  // the radius above, which the draw loop applies: a camera move must not cost
+  // a React render, and a filter change does not need one.
+  useEffect(() => {
+    sceneRef.current?.setLocatorItems(locatorItems);
+  }, [locatorItems, mesh, visuals]);
 
   // The selection, drawn on the VOBs themselves (§16.24 1) — the gizmo is one
   // set of handles and says nothing about the other members of a multi-select,

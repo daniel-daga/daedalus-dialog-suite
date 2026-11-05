@@ -265,8 +265,24 @@ against again (§7).
   4 KB bound the IPC validator now imports rather than repeating): entries the
   chest already holds keep their place, a name it already holds has the count
   added, an unreadable string is never rewritten, and a list that would cross
-  the bound is refused rather than truncated. Left to its own issue: the locator
-  (#417).
+  the bound is refused rather than truncated. *Slice 3 landed 2026-11-05
+  (#417)*: the **Locator** tab beside Scene/Assets/Folders — Spacer's Item
+  Locator, the one view that answers "which items are within reach, and which of
+  them are wrong". It lists the world's `oCItem` VOBs within a radius of the
+  camera (30 m, Spacer's reference 3,000) and draws a ring for each one through
+  the geometry hiding it, which is the whole point: the items worth finding are
+  the ones placed wrong or lost inside a wall. A **Bad only** switch keeps just
+  the instances the loaded project cannot resolve — the same index
+  `oCItem.instance` is refused against, so an item the locator calls bad is
+  exactly one the property grid would refuse — and a search matches the name a
+  player reads or the instance. A row is the surface's own selection plus a
+  camera jump, so there is no second selection system. Its data costs nothing
+  extra: the instances arrive in the `getWorldItemInstances` payload #424's
+  drawing already reads (one `getVobProps` per item row *inside* the worker,
+  2,331 rows and 28 ms on retail NewWorld, one boundary crossing), and positions
+  come from the summary's index; per-VOB IPC would have been 2,331 round trips.
+  What it cannot see is stated where it lives: an `oCItem` with an empty
+  `instance` never reaches that payload, so the locator does not list it.
 - Engine preview ("play from here") — parked as later/kept-open (§11).
 - **A visual for a VOB that has no mesh** — Spacer draws a marker for a sound,
   a light, a zone or a trigger, and we drew nothing at all: 38.0 % of retail
