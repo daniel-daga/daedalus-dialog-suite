@@ -3453,3 +3453,89 @@ accord — the architecture doc's "as they do the fly" clause was the stale half
 and is gone.
 
 ---
+
+### 16.45 A particle effect is a Daedalus instance, so a preview starts with a reader (2026-11-05; #410)
+
+**Today a particle effect is a pip, and nothing about it is effect-specific.**
+A VOB whose visual type is `PARTICLE_EFFECT` gets the magenta diamond
+(`VobMarkerLayer.ts:73`, `:127`) — 14 px, rimmed, a faint depth-test-off twin
+behind it, pickable at 9 px. A `zCPFXController` gets the *same* diamond in the
+fallback grey, because `MARKER_COLORS` has no entry for the class and `:210`
+asks it only for the shape. Neither has a size, a facing or an extent to draw:
+the index gives a particle VOB one position and one visual name. The three
+retail worlds hold
+**1,391 VOBs whose visual is a `.PFX` and 109 `zCPFXController`s** (NewWorld
+alone carries 26 distinct particle visual names), and the status bar keeps them
+out of its unresolved count by name (`WorldStatusStats.tsx:17`) — a preview must
+not change that.
+
+**The world file holds a name; the effect is not a file.** `VobIndex` carries
+`visuals` and `visualTypes` and no effect data at all (architecture §7). `.PFX`
+is not in the VFS: `extractVisual` returns null for it by design
+(`buildScene.ts:15`; zenkit-node's README, *"a `.pfx` particle effect is a
+Daedalus instance"*), the binding exposes nothing beyond a visual's name and
+type except a decal's own fields (`normalize.cc:681`), and the property
+catalogue holds only the controller's three scalars — `pfxName`,
+`killWhenDone`, `initiallyRunning` (`zen-world/src/model/vobClasses.ts:240`) —
+read one VOB per `world:vobProps` call (`main.ts:1105`). The definition is an
+ordinary Daedalus instance, `INSTANCE <name> (C_PARTICLEFX)` with field
+assignments in its body; the parser's own corpus carries one
+(`daedalus-parser/test/fixtures/corpus/zpe-extensions.d:17`,
+`vistexcolorstart_s`). So the definition lives in script source — the project's,
+or the game's compiled `.DAT`, which nothing in this repo reads.
+
+**Decided 2026-10-29 (maintainer, on #410): a bounded spike at visual
+plausibility, not engine parity** — texture, rate, lifetime, size over time,
+colour keys; no physics, no claim to match the engine frame for frame. The
+reader is the first half, and the decision includes paying for it.
+
+**The minimum that would tell a designer what the effect is:**
+
+1. **Name → file.** `ProjectIndex` gains an `instanceFiles` map (UPPERCASED
+   instance name → file) beside `npcFiles`, filled in the loop that already
+   fills it from `MetadataWorkerPool`'s per-file `instances`
+   (`src/shared/types.ts:122`). General rather than PFX-only, because a
+   `C_PARTICLEFX` body may sit under a prototype. The definition then costs
+   `readFile` and the existing `npc:extract`, whose classifier reads *any*
+   instance body by shape rather than by a list of known names
+   (`npc-definition.ts:8`, `:84`) — no new parser code, no new IPC.
+2. **One billboard layer.** A camera-facing textured quad per particle VOB, at
+   the marker's position and the effect's size, blended the way `DecalLayer`
+   already blends a decal. Its texture goes through `WorldScene`'s one slot
+   funnel (`WorldScene.ts:1438`), so decoding, the per-world cache,
+   `pendingTextureNames` and `applyTexture` are reused unchanged.
+3. **Motion, on a clock that exists.** `WorldViewport`'s `draw` is a
+   `requestAnimationFrame` loop with `performance.now()` already in hand
+   (`WorldViewport.tsx:1199`), so rate, lifetime, size-over-time and colour keys
+   are per-frame writes to a layer the loop can reach.
+
+**What it still would not be.** Retail effects resolve only when the indexed
+project folder declares the instance; a definition in a merged MDK tree outside
+the scanned folder resolves to nothing, and the fallback is today's diamond.
+There is no `zCEffect` chaining, no trigger- or collision-driven emission, and no
+controller state: `zCPFXController` stays a grey pip unless the editor reads
+`pfxName` per VOB, and `initiallyRunning`/`killWhenDone` decide whether anything
+should animate at all — 82 of the 109 start off. Emitter volume distribution,
+per-particle variance, soft particles and the texture animation the `visTexAni*`
+fields imply are not modelled: plausible, not equal. And nothing is written —
+the picture is of a definition, not an edit of one.
+
+**Effort, in this plan's terms.** Step 0 is a measurement and needs **no code**:
+dump the retail `.PFX` bodies with `readFile` + `extractNpc` and tabulate their
+distinct fields against the groups above. It needs a machine with the retail
+script tree — no MDK tree and no world corpus is checked in, so it cannot happen
+in this repo. If the fields land in those groups, the rest is **two session-sized
+slices** — the index and the static billboard, then the motion — each a file or
+two in `zen-world` and the renderer plus its suite, and **no native code**:
+nothing here reads or writes a format, and the `.zen` is untouched. If a field's
+meaning only OpenGothic's particle implementation supplies, the reading is one
+more slice before the renderer starts; the effort stops being slice-sized only if
+retail resolution is closed by indexing the MDK tree too, which is a separate
+question.
+
+**Two things are still the maintainer's:** whether a preview that resolves only
+project-declared effects is worth shipping — the retail case is what a modder
+looks at first — or the index has to reach the merged MDK tree before it; and
+whether the controller half rides along or waits.
+
+---
