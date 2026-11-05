@@ -2,6 +2,7 @@
 
 ## One line per change, newest on top, `- #123: Short description` (120 characters max). A build ships only the lines added since the last one, and CHANGELOG.md keeps them; old lines may be pruned at any time.
 
+- #406: A searched asset that can be placed — a compiled MOB model included — stays in the Assets list
 - #422: Space, X and PageUp/Down lift and lower a VOB in rotate mode instead of rolling it
 - #434: An autocomplete field's clear and follow-reference buttons sit side by side instead of on top of each other
 - #499: Trialogue voice ids are no longer flagged as malformed

@@ -39,4 +39,21 @@ describe('the asset category seed', () => {
     // A G1-only name must not be here: G1 is not installed and the seed is G2.
     for (const category of catalog.categories) expect(category.visuals).not.toContain('ITRW_BOW_LONG_01.3DS');
   });
+
+  // #406, measured: what the furniture question can be answered from here.
+  // The catalogue files the beds — in a German category, under their English
+  // file names — and holds no armchair at all, because the tree is vobbilder's
+  // `.3DS` meshes and the interactive furniture is an `.ASC`/`.MDS` model
+  // (zen-world's `MOB_SCHEMES`: `BENCH_1_OC.ASC`, `CHAIR_1_OC.ASC`). Neither
+  // list can match a German object word: the categories are German, the
+  // visuals are the file names, and there is no word-to-visual table here.
+  it('holds three beds under a German category, no armchair, and no German object word', () => {
+    const catalog = parseAssetCatalog(seed);
+    const furniture = catalog.categories.find((category) => category.path === 'Einrichtungsgegenstände');
+    expect(furniture?.visuals.filter((visual) => visual.includes('BED')))
+      .toEqual(['DT_BED_V1.3DS', 'ORC_BED_01.3DS', 'ORC_E_BED.3DS']);
+    const everyVisual = catalog.categories.flatMap((category) => category.visuals);
+    expect(everyVisual.filter((visual) => /CHAIR|SESSEL|BENCH|STUHL/.test(visual))).toEqual([]);
+    expect(everyVisual.filter((visual) => /BETT|TISCH|SCHRANK|REGAL|KASTEN/.test(visual))).toEqual([]);
+  });
 });
