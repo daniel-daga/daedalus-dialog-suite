@@ -19,11 +19,11 @@ const SAMPLE_DIALOG_CONTENT = fs.readFileSync(
   'utf-8'
 );
 
-async function openSampleDialog(page: Page) {
+async function openSampleDialog(page: Page, content = SAMPLE_DIALOG_CONTENT) {
   await page.goto('/');
-  await page.evaluate((content) => {
-    localStorage.setItem('mockapi_file_test-dialog.d', content);
-  }, SAMPLE_DIALOG_CONTENT);
+  await page.evaluate((c) => {
+    localStorage.setItem('mockapi_file_test-dialog.d', c);
+  }, content);
 
   page.on('dialog', async (d) => await d.accept('test-dialog.d'));
   await page.getByRole('button', { name: /Open Single File/i }).click();
@@ -204,5 +204,60 @@ test.describe('Action content editing persists in session', () => {
 
     await page.keyboard.press('Tab');
     await expect(item).toBeFocused();
+  });
+});
+
+test.describe('Give Inventory Items adornments', () => {
+  test.beforeEach(async ({ page }) => {
+    // The follow-reference button only appears for a value the model knows, so
+    // this dialog needs an NPC instance to point at.
+    await openSampleDialog(
+      page,
+      SAMPLE_DIALOG_CONTENT + '\nINSTANCE SLD_99005_Arog(C_NPC)\n{\n\tname = SLD_99005_Arog;\n};\n'
+    );
+  });
+
+  // Issue #434: the "follow reference" button and the Autocomplete's clear
+  // button used to be drawn on top of each other in these narrow fields — the
+  // clear icon appeared over the follow button on hover. Their boxes must be
+  // disjoint.
+  test('clear and follow-reference buttons do not overlap', async ({ page }) => {
+    await addActionFromMenu(page, 'Give Inventory Items');
+
+    // The report names both NPC fields; both carry the pair of buttons.
+    for (const label of ['Giver', 'Receiver']) {
+      // The listbox carries the same accessible name, so target the input.
+      const input = page.getByRole('combobox', { name: label });
+      await input.fill('SLD_99005_Arog');
+      await input.press('Tab');
+
+      const field = page.locator('.MuiAutocomplete-root').filter({ has: input });
+      const follow = field.getByRole('button', { name: 'Follow reference' });
+      const clear = field.getByRole('button', { name: 'Clear' });
+
+      // Both controls exist, and the clear button only shows while hovered.
+      await field.hover();
+      await expect(follow).toBeVisible();
+      await expect(clear).toBeVisible();
+
+      const [followBox, clearBox, fieldBox] = await Promise.all([
+        follow.boundingBox(),
+        clear.boundingBox(),
+        field.boundingBox()
+      ]);
+      expect(followBox).not.toBeNull();
+      expect(clearBox).not.toBeNull();
+      expect(fieldBox).not.toBeNull();
+      const [f, c, box] = [followBox!, clearBox!, fieldBox!];
+
+      // Side by side: one ends where the other starts, never on top of it.
+      expect(f.x + f.width <= c.x || c.x + c.width <= f.x).toBe(true);
+      // And both still sit inside the field rather than spilling over the
+      // neighbouring controls.
+      for (const control of [f, c]) {
+        expect(control.x).toBeGreaterThanOrEqual(box.x);
+        expect(control.x + control.width).toBeLessThanOrEqual(box.x + box.width);
+      }
+    }
   });
 });
