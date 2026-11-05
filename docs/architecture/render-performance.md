@@ -84,6 +84,51 @@ in the signature, so the cache composes with those callers unchanged.
 build; it is memoized per `dialogIndex` identity (`WeakMap`), so it is not rebuilt
 per edit flush.
 
+**Globals merge with no NPC selected (#526, measured 2026-11-05).** Since #526
+`loadAndMergeNpcModels(null)` merges the dialog-less files — the constants and
+instance files the World surface's Items tab, the container picker and the item
+previews read — on project load and on every flush that lands one, instead of
+only once an NPC is picked. Measured on generated fixtures (57 / 157 / 507
+files, the shape #438 used) with the real store loaded through `tsx` and the
+real parser, AMD Ryzen AI 9 HX 370 (24 threads), Node 24.11:
+
+| fixture | global declarations | merge, whole ingestion | worst case, one flush per global file | parse, in-process sum |
+|---|---|---|---|---|
+| 57 | 5,500 | 4.2 ms (0.09 %) | 4 ms | 3.6 s |
+| 157 | 16,500 | 11.2 ms (0.07 %) | 17 ms | 12.6 s |
+| 507 | 55,000 | 46–94 ms (0.1–0.2 %) | 82 ms | 41.7 s |
+
+The first column sums every `loadAndMergeNpcModels` call the run made; one flush
+landed all seven global files. The worst case sums the seven per-file rebuilds,
+which is what happens if each global file lands in its own 500 ms flush. Against
+#438's 9.7–10.2 s index pass on the same 507-file fixture, the merge is under
+1 %. The parse column is single-threaded and in-process; shipped ingestion uses
+~8 workers, so the real wall is shorter and the share larger — still under 2 %.
+
+Once the globals are cached, a re-merge is 0.03–0.06 ms: every category's
+signature matches and `mergeSemanticModels` reuses it. A rebuild is dominated by
+`constants` (36.7 ms for 37.5k) and then `variables` (9.8 ms for 12.5k);
+`instances` and `items` are ~3 ms each. The largest single pause is the flush
+that lands `Text_Constants.d`: 49 ms at 507 files, once.
+
+Wake count: the top-level identity changes once per flush that lands a global —
+one in the 507-file run, at most seven. No dialog-file flush re-merges. Only
+category consumers of what the globals contribute (`WorldSurface`'s item set,
+`VariableManager`'s constants/variables) recompute, at most those seven times,
+and with an NPC selected the merged contents are exactly what they were before
+#526. The one unmeasured wake is `MainLayout`'s whole-model selector in the
+non-dialog views (the dialog view nulls it): it re-renders on those ≤7 changes,
+which is also when the Items tab has new data to draw. Nothing is woken per
+dialog batch.
+
+**Decision: no code change.** Ordering ingestion to parse the global files first
+would not reduce any of the above — the cost is bounded by those seven rebuilds
+wherever they fall in the queue. It would only move the moment the Items tab
+fills from the last flush to the first, since a path-sorted index puts `DIA_*`
+files before `Instances_*`/`Story_Globals.d`/`Text_Constants.d`; that timing is
+the only thing the lever buys, and it is not worth changing the ingestion queue
+for until the lateness is itself a complaint.
+
 **Escalation path (documented, not built).** If profiling ever shows the
 `functions` category rebuild itself hot (it is O(all functions in scope) per
 flush), add per-file contribution maps with a collision-count fallback. Not
