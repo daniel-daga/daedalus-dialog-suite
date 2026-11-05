@@ -39,6 +39,23 @@ export interface MetadataFailure {
 
 export type ProcessFileResult = MetadataResult | MetadataFailure;
 
+/**
+ * What a worker posts back. One spelling of the metadata shape: anything the
+ * worker sends travels through the pool untouched, so a field added to
+ * `ParsedFileMetadata` reaches the caller without a line here.
+ */
+type MetadataMessage = Partial<MetadataResult> & { id: string; error?: string };
+
+const EMPTY_METADATA: MetadataResult = {
+  dialogs: [],
+  instances: [],
+  prototypes: [],
+  isQuestFile: false,
+  routines: [],
+  functions: [],
+  voiceIds: [],
+};
+
 interface PendingTask {
   resolve: (value: ProcessFileResult) => void;
   reject: (reason?: any) => void;
@@ -148,20 +165,7 @@ export class MetadataWorkerPool {
   private spawnWorker(): ForkedWorker {
     const worker = new ForkedWorker(this.workerPath);
 
-    worker.on('message', (message: {
-      id: string;
-      dialogs?: DialogMetadata[];
-      instances?: Array<{ name: string; parent: string }>;
-      prototypes?: Array<{ name: string; parent: string }>;
-      isQuestFile?: boolean;
-      routines?: string[];
-      functions?: string[];
-      voiceIds?: Array<{ id: string; functionName: string; line?: number }>;
-      semanticModel?: SemanticModel;
-      parseErrors?: FileParseErrors;
-      mtimeMs?: number;
-      error?: string;
-    }) => {
+    worker.on('message', (message: MetadataMessage) => {
       this.handleMessage(worker, message);
     });
 
@@ -178,24 +182,8 @@ export class MetadataWorkerPool {
     return worker;
   }
 
-  private handleMessage(worker: ForkedWorker, message: {
-    id: string;
-    dialogs?: DialogMetadata[];
-    instances?: Array<{ name: string; parent: string }>;
-    prototypes?: Array<{ name: string; parent: string }>;
-    isQuestFile?: boolean;
-    routines?: string[];
-    functions?: string[];
-    voiceIds?: Array<{ id: string; functionName: string; line?: number }>;
-    semanticModel?: SemanticModel;
-    parseErrors?: FileParseErrors;
-    mtimeMs?: number;
-    error?: string;
-  }) {
-    const {
-      id, dialogs, instances, prototypes, isQuestFile, routines, functions, voiceIds, semanticModel,
-      parseErrors, mtimeMs, error,
-    } = message;
+  private handleMessage(worker: ForkedWorker, message: MetadataMessage) {
+    const { id, error, ...metadata } = message;
 
     const inFlight = this.inFlightByWorker.get(worker);
     if (inFlight && inFlight.id === id) {
@@ -210,18 +198,7 @@ export class MetadataWorkerPool {
         // Per-file parse/read error: resolve as a failure so the index build survives.
         pending.resolve({ ok: false, filePath: inFlight?.filePath ?? '', error });
       } else {
-        pending.resolve({
-          dialogs: dialogs || [],
-          instances: instances || [],
-          prototypes: prototypes || [],
-          isQuestFile: !!isQuestFile,
-          routines: routines || [],
-          functions: functions || [],
-          voiceIds: voiceIds || [],
-          semanticModel,
-          parseErrors,
-          mtimeMs,
-        });
+        pending.resolve({ ...EMPTY_METADATA, ...metadata });
       }
     }
 

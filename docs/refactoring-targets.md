@@ -352,23 +352,20 @@ place two spellings can disagree.
 
 ---
 
-### 17. `MetadataWorkerPool` rebuilds the worker's reply field by field
+### 17. `MetadataWorkerPool` rebuilds the worker's reply field by field — done
 **Files:** `daedalus-dialog-editor/src/main/services/MetadataWorkerPool.ts`
 (`spawnWorker`'s message handler and `handleMessage`)
 
-A field added to `ParsedFileMetadata` and posted by `metadata.worker.ts` is
-**silently dropped in production** unless it is also named in two inline message
-types and in the object `handleMessage` resolves with. Jest never sees it: the
-pool takes the inline path under test (`isLikelyTestRuntime`), and that path
-spreads the extractor's result whole. `parseErrors` was lost exactly this way
-between two commits on 2026-09-13.
+Landed 2026-11-05 (#531). The handler takes one `MetadataMessage`
+(`Partial<MetadataResult>` plus the envelope's `id`/`error`) and resolves
+`{ ...EMPTY_METADATA, ...metadata }`, so the shape has one spelling and a field
+the worker posts reaches the caller without being named in the pool. The two
+inline message types and the per-field rebuild are gone.
 
-`tests/services/MetadataWorkerPool.test.ts`, *"carries every metadata field back
-from the worker, not only the first few"*, is the guard: a stub worker posting a
-full payload, asserted field by field. It catches the omission but does not
-prevent it — fix direction is for the handler to take the payload as one
-`MetadataResult`-shaped object and forward it, so there is one spelling of the
-shape rather than four.
+`tests/services/MetadataWorkerPool.test.ts` keeps the field-by-field guard, and
+*"forwards a worker payload field it has never been taught about"* is the
+assertion that prevents the regression: a stub worker posts a field on no type,
+and it must arrive.
 
 ### 18. The viewport's same-world rebuild caches outlived their reason
 **Files:** `daedalus-dialog-editor/src/renderer/components/world/WorldViewport.tsx`

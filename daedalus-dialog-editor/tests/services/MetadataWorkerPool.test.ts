@@ -90,6 +90,20 @@ describe('MetadataWorkerPool worker lifecycle', () => {
     expect(result.semanticModel).toBeDefined();
   });
 
+  it('forwards a worker payload field it has never been taught about', async () => {
+    // The test above lists the fields one by one, so it only notices an
+    // omission after someone wrote the assertion for the new field. This one
+    // posts a field the pool has no name for: it can only arrive if the pool
+    // forwards the payload as a whole, which is what keeps the next field added
+    // to `ParsedFileMetadata` from being dropped in production the way
+    // `parseErrors` was on 2026-09-13.
+    const pool = makePool('metadata-fields.worker.js');
+
+    const result: any = await pool.processFile('Story/Triggers.d');
+
+    expect(result.unlistedField).toEqual({ nested: true });
+  });
+
   it('settles a file as failure when its worker exits mid-task', async () => {
     const pool = makePool('exit.worker.js');
 
