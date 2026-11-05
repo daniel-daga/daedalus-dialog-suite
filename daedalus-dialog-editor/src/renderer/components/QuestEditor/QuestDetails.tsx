@@ -27,13 +27,13 @@ import {
   Warning as WarningIcon,
   Info as InfoIcon
 } from '@mui/icons-material';
-import type { SemanticModel } from '../types/global';
-import { useNavigation } from '../hooks/useNavigation';
-import { analyzeQuest, getQuestReferences, buildQuestDiary, implicitQuestSource, type QuestDiaryItem, type QuestDiaryState } from '../quest/domain';
-import { buildQuestStages, stageNameCollision, stageVariableName, type QuestStageItem } from '../quest/domain/questStages';
-import { useProjectStore } from '../store/projectStore';
-import { openDirtyFileReason } from '../store/fileStore';
-import { questNameFromTitle, topicBaseName } from '../utils/questLogFiles';
+import type { SemanticModel } from '../../types/global';
+import { useNavigation } from '../../hooks/useNavigation';
+import { analyzeQuest, getQuestReferences, buildQuestDiary, implicitQuestSource, type QuestDiaryItem, type QuestDiaryState } from '../../quest/domain';
+import { buildQuestStages, stageNameCollision, stageVariableName, type QuestStageItem } from '../../quest/domain/questStages';
+import { useProjectStore } from '../../store/projectStore';
+import { openDirtyFileReason } from '../../store/fileStore';
+import { questNameFromTitle, topicBaseName } from '../../utils/questLogFiles';
 import { saveDiaryEntryText, upgradeImplicitQuest } from './questDiarySave';
 
 const STATE_LABEL: Record<QuestDiaryState, string> = {

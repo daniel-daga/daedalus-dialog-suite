@@ -1,11 +1,11 @@
-import { useEditorStore } from '../store/editorStore';
-import * as historyActions from '../store/historyActions';
-import { useProjectStore } from '../store/projectStore';
-import type { DialogAction, SemanticModel } from '../types/global';
-import { getQuestMisVariableName } from '../utils/questIdentity';
-import { withQuestStateAssignments, type QuestDiaryItem } from '../quest/domain/questDiary';
-import { getActionAtPath, updateActionAtPath, type ActionPath } from './nestedActionUtils';
-import { fileModel } from './routineSave';
+import { useEditorStore } from '../../store/editorStore';
+import * as historyActions from '../../store/historyActions';
+import { useProjectStore } from '../../store/projectStore';
+import type { DialogAction, SemanticModel } from '../../types/global';
+import { getQuestMisVariableName } from '../../utils/questIdentity';
+import { withQuestStateAssignments, type QuestDiaryItem } from '../../quest/domain/questDiary';
+import { getActionAtPath, updateActionAtPath, type ActionPath } from '../nestedActionUtils';
+import { fileModel } from '../routineSave';
 
 /**
  * The quest page's writes (#324). Like a routine save, an edit is a new

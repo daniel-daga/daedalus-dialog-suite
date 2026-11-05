@@ -1,6 +1,6 @@
 import React from 'react';
 import { render, screen } from '@testing-library/react';
-import QuestList from '../src/renderer/components/QuestList';
+import QuestList from '../src/renderer/components/QuestEditor/QuestList';
 import type { SemanticModel } from '../src/renderer/types/global';
 
 // Mock useNavigation

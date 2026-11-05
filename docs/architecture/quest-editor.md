@@ -5,13 +5,14 @@ This document captures the durable architecture decisions for quest editing in t
 ## Scope
 
 The quest surface is a quest list and a details panel
-(`components/QuestEditor.tsx`, `QuestList.tsx`, `QuestDetails.tsx`), backed by
-pure analysis and graph inference in `quest/domain/`. The details panel is the
+(`components/QuestEditor/` — `QuestEditor.tsx`, `QuestList.tsx`,
+`QuestDetails.tsx`), backed by pure analysis and graph inference in
+`quest/domain/`. The details panel is the
 quest's diary (#324): every entry and state change in story order, entries
 edited in place, a jump to each writing dialog, and a one-click upgrade for an
 implicit quest. Below the diary sits the same quest's named sub-stages (#325):
 each stage's kind, its derived counter target, a jump to every write and every
-check, and the "declared, never set" / "set, never checked" notes. Its writes go through `components/questDiarySave.ts`. Its "Create New Quest"
+check, and the "declared, never set" / "set, never checked" notes. Its writes go through `components/QuestEditor/questDiarySave.ts`. Its "Create New Quest"
 button opens the same create flow as a quest card's "New quest"
 (`RegisterTopicDialog` in create mode, #322): only the title is asked for; the
 `TOPIC_`/`MIS_` names (from `utils/questLogFiles.questNameFromTitle`), chapters
@@ -46,9 +47,12 @@ Two layers remain, with a one-way import direction (UI → domain):
 - Quest analysis, graph inference, and the condition-expression codec.
 - Must not import React/MUI/litegraph/dagre, renderer hooks, zustand, or
   Electron APIs. Enforced by `tests/questDomainBoundary.test.ts`, which also
-  asserts the command write path stays removed.
+  asserts the command write path stays removed and that `components/QuestEditor/`
+  still holds the surface it guards; a future move fails there rather than
+  silently weakening the check.
 
-2. Quest UI (`components/QuestEditor.tsx`, `QuestList.tsx`, `QuestDetails.tsx`)
+2. Quest UI (`components/QuestEditor/` — `QuestEditor.tsx`, `QuestList.tsx`,
+   `QuestDetails.tsx`, `questDiarySave.ts`)
 - Reads via `quest/domain` and the project store. Writes through
   `projectStore.registerTopicInLogFiles` (the create flow) and
   `questDiarySave.ts` (#324), which, like a routine save, opens the writing

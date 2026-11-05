@@ -10,7 +10,7 @@ import { useProjectStore } from '../store/projectStore';
 import { flushAllPendingEdits } from '../utils/pendingEditFlushRegistry';
 import type { SemanticModel } from '../types/global';
 
-const QuestEditor = lazy(() => import('./QuestEditor'));
+const QuestEditor = lazy(() => import('./QuestEditor/QuestEditor'));
 const VariableManager = lazy(() => import('./VariableManager'));
 const ProblemsPanel = lazy(() => import('./Problems/ProblemsPanel'));
 // Lazily loaded on purpose (level-editor.md §6): three.js, three-mesh-bvh and

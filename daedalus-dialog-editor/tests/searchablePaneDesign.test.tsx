@@ -1,7 +1,7 @@
 import React from 'react';
 import { render } from '@testing-library/react';
 import '@testing-library/jest-dom';
-import QuestList from '../src/renderer/components/QuestList';
+import QuestList from '../src/renderer/components/QuestEditor/QuestList';
 import NPCList from '../src/renderer/components/NPCList';
 import DialogTree from '../src/renderer/components/DialogTree';
 import SearchPanel from '../src/renderer/components/SearchPanel';

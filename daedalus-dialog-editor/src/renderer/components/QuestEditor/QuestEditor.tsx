@@ -3,9 +3,9 @@ import { Box, Paper, Alert, LinearProgress } from '@mui/material';
 import { shallow } from 'zustand/shallow';
 import QuestList from './QuestList';
 import QuestDetails from './QuestDetails';
-import { useProjectStore } from '../store/projectStore';
-import { useUISelectionStore } from '../store/uiSelectionStore';
-import type { SemanticModel } from '../types/global';
+import { useProjectStore } from '../../store/projectStore';
+import { useUISelectionStore } from '../../store/uiSelectionStore';
+import type { SemanticModel } from '../../types/global';
 
 interface QuestEditorProps {
   semanticModel: SemanticModel;

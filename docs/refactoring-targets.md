@@ -298,18 +298,15 @@ per-action one inside `deserializeAction` is the one recursion into
 
 ---
 
-### 14. The quest UI sits flat at `components/` root
-**Files:** `daedalus-dialog-editor/src/renderer/components/QuestEditor.tsx`,
-`QuestList.tsx`, `QuestDetails.tsx`
+### 14. The quest UI sits flat at `components/` root — done
+**Files:** `daedalus-dialog-editor/src/renderer/components/QuestEditor/`
 
-The other surfaces with several files own a folder — `Problems/`,
-`Simulator/`, `world/` — while the three quest files sit among some fifty
-siblings at the root. `docs/architecture/quest-editor.md` (§Scope, §Internal
-Boundaries) was aligned to the flat layout rather than the layout to a folder,
-and `tests/questDomainBoundary.test.ts` guards only the domain side (domain
-must not import UI); nothing names the UI files as one unit. Fix direction:
-`components/QuestEditor/` holding the four, the doc's two file lists and the
-boundary test's UI-tree path updated in the same change.
+Landed 2026-11-05 (#533): `QuestEditor.tsx`, `QuestList.tsx`, `QuestDetails.tsx`
+and `questDiarySave.ts` (the page's write path) live in
+`components/QuestEditor/`, as `Problems/` and `Simulator/` do.
+`docs/architecture/quest-editor.md` names the folder in both file lists, and
+`tests/questDomainBoundary.test.ts` asserts the folder still holds the surface
+before it reads domain imports for violations.
 
 ---
 

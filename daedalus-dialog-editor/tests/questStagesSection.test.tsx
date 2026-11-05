@@ -4,7 +4,7 @@
  */
 import React from 'react';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import QuestDetails from '../src/renderer/components/QuestDetails';
+import QuestDetails from '../src/renderer/components/QuestEditor/QuestDetails';
 import SetVariableActionRenderer from '../src/renderer/components/actionRenderers/SetVariableActionRenderer';
 import { createAction } from '../src/renderer/components/actionFactory';
 import type { BaseActionRendererProps } from '../src/renderer/components/actionRenderers/types';

@@ -10,6 +10,7 @@ import * as path from 'path';
 
 const RENDERER_DIR = path.join(__dirname, '..', 'src', 'renderer');
 const DOMAIN_DIR = path.join(RENDERER_DIR, 'quest', 'domain');
+const QUEST_UI_DIR = path.join(RENDERER_DIR, 'components', 'QuestEditor');
 const PROBLEMS_DOMAIN_DIR = path.join(RENDERER_DIR, 'problems', 'domain');
 const SIMULATOR_DIR = path.join(RENDERER_DIR, 'simulator');
 const QUEST_GRAPH_TYPES = path.join(RENDERER_DIR, 'types', 'questGraph.ts');
@@ -67,6 +68,13 @@ describe('quest domain boundary', () => {
       }
     }
     expect(violations).toEqual([]);
+  });
+
+  it('guards the QuestEditor UI tree it forbids imports from', () => {
+    const uiFiles = collectFiles(QUEST_UI_DIR).map((file) => path.basename(file));
+    expect(uiFiles).toEqual(
+      expect.arrayContaining(['QuestEditor.tsx', 'QuestList.tsx', 'QuestDetails.tsx', 'questDiarySave.ts'])
+    );
   });
 
   it('does not import from the QuestEditor UI tree', () => {

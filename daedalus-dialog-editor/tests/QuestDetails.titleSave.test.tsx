@@ -5,7 +5,7 @@
  */
 import React from 'react';
 import { fireEvent, render, screen } from '@testing-library/react';
-import QuestDetails from '../src/renderer/components/QuestDetails';
+import QuestDetails from '../src/renderer/components/QuestEditor/QuestDetails';
 import { useProjectStore } from '../src/renderer/store/projectStore';
 import type { SemanticModel } from '../src/renderer/types/global';
 
