@@ -1,6 +1,12 @@
 import { alpha } from '@mui/material/styles';
 import type { Theme } from '@mui/material/styles';
 
+/**
+ * Deliberate test anchor, read by nothing in `src/`: a searchable pane renders
+ * it on its shell so `tests/searchablePaneDesign.test.tsx` can find that element
+ * (and then assert `searchablePaneShellSx` on it) without depending on DOM
+ * nesting. Removing it removes the tests' locator — see #513.
+ */
 export const SEARCHABLE_PANE_PATTERN = 'searchable-pane-v1';
 
 export const searchablePaneShellSx = (theme: Theme) => ({
