@@ -100,6 +100,42 @@ test.describe('World surface', () => {
     await expect(y).toHaveValue('0');
   });
 
+  test('Space moves the selection vertically in rotate mode instead of turning it (#422)', async ({ page }) => {
+    await openWorldView(page);
+    await page.evaluate(async (fixturePath) => {
+      const { SUMMARY, vobIndex, BASE_PROPS } = await import(/* @vite-ignore */ fixturePath);
+      const api = (window as unknown as { editorAPI: Record<string, unknown> }).editorAPI;
+      api.listWorlds = async () => [{ path: SUMMARY.worldPath, name: 'NewWorld.zen', source: 'C:/Gothic', isDefault: false }];
+      api.openWorld = async () => ({ ...SUMMARY, assetSources: [], vobIndex: vobIndex([[0, 0, 0]], 'zCVob', undefined, ['BARREL'], ['']) });
+      api.getWorldMesh = async () => ({ groups: [], bbox: SUMMARY.bbox });
+      api.getWorldVisuals = async () => ({ visuals: [], decals: { groups: [], count: 0 }, stats: {
+        visualsSeen: 0, visualsResolved: 0, vobsPlaced: 0, instancedDrawGroups: 0,
+        levelCompos: 0, unresolvedByType: {}, unresolved: [],
+      } });
+      api.getWorldItemInstances = async () => ({ vobs: [], instances: [] });
+      api.getVobProps = async () => ({ class: 'zCVob', ...BASE_PROPS });
+      api.getWorldPortalFindings = async () => [];
+      api.getVobFolders = async () => ({ folders: [] });
+      api.applyWorldOps = async () => undefined;
+      api.getWorldHistoryDepth = async () => ({ undo: 0, redo: 0 });
+    }, viteFsUrl(resolve(__dirname, '../worldFixtures.ts')));
+    await page.getByTestId('world-open').click();
+    await page.getByTestId('world-picker-entry-NewWorld.zen').click();
+    await page.getByRole('treeitem').filter({ hasText: 'BARREL' }).click();
+    await page.getByTestId('world-gizmo-rotate').click();
+
+    const y = page.getByTestId('world-prop-position-y-input');
+    const x = page.getByTestId('world-prop-position-x-input');
+    await expect(y).toHaveValue('0');
+    // Leave the mode button (and the tree) out of it: Space is a focused
+    // control's own click.
+    await page.evaluate(() => (document.activeElement as HTMLElement)?.blur());
+
+    await page.keyboard.press('Space');
+    await expect(y).toHaveValue('1');
+    await expect(x).toHaveValue('0');
+  });
+
   test('renders solid 3D waypoint arrows with perspective, facing and arrow-head picking', async ({ page }) => {
     await openWorldView(page);
     await expect(page.getByTestId('world-open')).toBeVisible();

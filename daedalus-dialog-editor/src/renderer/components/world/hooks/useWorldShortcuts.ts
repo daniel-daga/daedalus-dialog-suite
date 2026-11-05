@@ -21,10 +21,14 @@ const NUDGE_DELTAS: Record<string, [number, number, number]> = {
 };
 
 /**
- * The same keys in rotate mode, read as `[yaw, roll, pitch]` degrees by
+ * The keys that turn in rotate mode, read as `[yaw, roll, pitch]` degrees by
  * `turnSoFar` — A/D lean the selection sideways about camera-forward (#404),
- * W/S pitch it about camera-right, and Space/X keep the lean they had (as do
- * PageUp/Down). Yaw is `YAW_DELTAS`' alone, because Q/E do it in both modes.
+ * W/S pitch it about camera-right. Yaw is `YAW_DELTAS`' alone, because Q/E do
+ * it in both modes.
+ *
+ * Space/X and PageUp/Down are deliberately absent: they are the vertical
+ * movement keys in either mode, and mode 2's roll is already A/D's, so a roll
+ * on them only did what A/D does (#422).
  */
 const TURN_DELTAS: Record<string, [number, number, number]> = {
   arrowleft: [0, 1, 0],
@@ -35,10 +39,6 @@ const TURN_DELTAS: Record<string, [number, number, number]> = {
   w: [0, 0, 1],
   arrowdown: [0, 0, -1],
   s: [0, 0, -1],
-  pageup: [0, 1, 0],
-  ' ': [0, 1, 0],
-  pagedown: [0, -1, 0],
-  x: [0, -1, 0],
 };
 
 /** Q/E turn the selection about the vertical in **either** mode, which is the
@@ -132,11 +132,11 @@ export interface WorldShortcutsInput {
   onNudgeBy: (direction: [number, number, number]) => void;
   onNudgeEnd: () => void;
   /**
-   * The turn keys: the movement keys in rotate mode, and Q/E in either mode
-   * — the same one-gesture shape, fed `[yaw, roll, pitch]` in degrees — A/D
-   * lean sideways about camera-forward, W/S pitch about camera-right, Space/X
-   * roll, and Q/E yaw about the vertical (#404). `step` is the angle step the
-   * turn snaps to, 0 for free-form.
+   * The turn keys: A/D and W/S in rotate mode, and Q/E in either mode — the
+   * same one-gesture shape, fed `[yaw, roll, pitch]` in degrees — A/D lean
+   * sideways about camera-forward, W/S pitch about camera-right, and Q/E yaw
+   * about the vertical (#404). `step` is the angle step the turn snaps to, 0
+   * for free-form.
    */
   onTurnBegin: (step: number) => boolean;
   onTurnBy: (turn: [number, number, number]) => void;
@@ -198,12 +198,16 @@ export function useWorldShortcuts({
     let freeMovement = false;
     let holdDelay = NUDGE_HOLD_DELAY;
     /** The delta a key contributes: the movement table in move mode, the turn
-     *  table in rotate mode, and Q/E's yaw in both. */
+     *  table in rotate mode for the keys that table holds, and Q/E's yaw in
+     *  both — so the vertical keys move whatever the mode. */
     const deltaOf = (key: string): [number, number, number] | undefined =>
-      YAW_DELTAS[key] ?? (turning ? TURN_DELTAS[key] : NUDGE_DELTAS[key]);
-    /** Which verb a key belongs to, before a gesture has begun. */
+      YAW_DELTAS[key] ?? (turning ? TURN_DELTAS[key] : undefined) ?? NUDGE_DELTAS[key];
+    /** Which verb a key belongs to, before a gesture has begun — read off the
+     *  tables, so a key in neither is nobody's. */
     const verbOf = (key: string): 'nudge' | 'turn' =>
-      turning || YAW_DELTAS[key] !== undefined ? 'turn' : 'nudge';
+      (turning && TURN_DELTAS[key] !== undefined) || YAW_DELTAS[key] !== undefined
+        ? 'turn'
+        : 'nudge';
     let frame: number | null = null;
     let lastFrame = 0;
 
@@ -357,11 +361,11 @@ export function useWorldShortcuts({
 
       // Camera-relative nudge — WASD and the arrows move in the view plane;
       // PageUp/Down, and Space/X as the fly binds them, stay on ZenGin's
-      // vertical axis. Shift multiplies the step by ten and Ctrl by a tenth
-      // (#386). In rotate mode the same keys turn the selection instead, and
-      // Q/E turn it in either mode (#387, #404). Ctrl starts a gesture only on
-      // keys whose Ctrl chord is nobody's (`CTRL_NUDGE_KEYS`); Ctrl+S, Ctrl+D
-      // fall through to those.
+      // vertical axis in either gizmo mode. Shift multiplies the step by ten
+      // and Ctrl by a tenth (#386). In rotate mode A/D and W/S turn the
+      // selection instead, and Q/E turn it in either mode (#387, #404). Ctrl
+      // starts a gesture only on keys whose Ctrl chord is nobody's
+      // (`CTRL_NUDGE_KEYS`); Ctrl+S, Ctrl+D fall through to those.
       //
       // Free movement starts continuously at once after a fine tap; snapped
       // movement and rotation retain the hold delay. The gesture is previewed and only

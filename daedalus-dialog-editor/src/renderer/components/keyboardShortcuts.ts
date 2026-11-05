@@ -79,7 +79,7 @@ export const KEYBOARD_SHORTCUTS: readonly KeyboardShortcut[] = [
   },
   {
     group: 'World editor', keys: 'WASD / arrows; Space / X; PageUp / PageDown',
-    action: 'Nudge in the camera plane, hold to keep moving; Space/X and PageUp/Down vertically; Shift ×10, Ctrl ×0.1',
+    action: 'Nudge in the camera plane, hold to keep moving; Space/X and PageUp/Down vertically in either gizmo mode; Shift ×10, Ctrl ×0.1',
     probe: {
       listener: 'world',
       events: ['w', 'a', 's', 'd', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', ' ', 'x', 'PageUp', 'PageDown']
@@ -92,8 +92,8 @@ export const KEYBOARD_SHORTCUTS: readonly KeyboardShortcut[] = [
     probe: { listener: 'world', events: [{ key: 'q' }, { key: 'e' }] },
   },
   {
-    group: 'World editor', keys: 'In turn mode: A / D, W / S, Space / X',
-    action: 'Lean the selection sideways (A/D), pitch it about camera-right (W/S), roll it (Space/X); Shift ×10, Ctrl ×0.1',
+    group: 'World editor', keys: 'In turn mode: A / D, W / S',
+    action: 'Lean the selection sideways (A/D), pitch it about camera-right (W/S); Shift ×10, Ctrl ×0.1',
   },
   { group: 'World editor', keys: '.', action: 'Frame the selection' },
   { group: 'World editor', keys: 'Home', action: 'Frame the world' },

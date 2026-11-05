@@ -383,16 +383,14 @@ describe('arrow-key nudge', () => {
     await chooseStep('15°');
     await act(async () => { useWorldStore.getState().selectWaypoint(1); });
 
-    // Q yaws 15°, and a Ctrl+PageUp adds 1.5° of pitch: the yaw is the step,
+    // Q yaws 15°, and a Ctrl+ArrowDown adds 0.1° of pitch: the yaw is the step,
     // the pitch is dropped by the snap.
     fireEvent.keyDown(window, { key: 'q' });
-    fireEvent.keyDown(window, { key: 'PageUp', ctrlKey: true });
-    const turned = mockPreviewTurn.mock.calls.length;
-    fireEvent.keyUp(window, { key: 'PageUp', ctrlKey: true });
+    fireEvent.keyDown(window, { key: 'ArrowDown', ctrlKey: true });
+    const last = mockPreviewTurn.mock.calls[mockPreviewTurn.mock.calls.length - 1][0] as number[];
+    fireEvent.keyUp(window, { key: 'ArrowDown', ctrlKey: true });
     fireEvent.keyUp(window, { key: 'q' });
 
-    expect(mockPreviewTurn.mock.calls.length).toBe(turned + 1);
-    const last = mockPreviewTurn.mock.calls[mockPreviewTurn.mock.calls.length - 1][0] as number[];
     rotationAboutUp((-15 * Math.PI) / 180).forEach((value, at) =>
       expect(last[at]).toBeCloseTo(value, 6));
     expect(mockCommitNudge).toHaveBeenCalledTimes(1);
@@ -663,6 +661,23 @@ describe('arrow-key nudge', () => {
     expect(ops[0].to).toEqual(
       rotationAbout([0, 0, 1], -Math.PI / 2).map((value) => expect.closeTo(value, 6)),
     );
+  });
+
+  it('moves the selection with Space and X in rotate mode instead of leaning it (#422)', async () => {
+    await openWorld();
+    fireEvent.click(screen.getByTestId('world-gizmo-rotate'));
+    await act(async () => { useWorldStore.getState().selectVob(1); });
+
+    tap(' ');
+    await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalled());
+    expect(api.applyWorldOps.mock.calls[0][0]).toMatchObject([nudgeOp([10, 21, 30])]);
+
+    mockPreviewTurn.mockClear();
+    api.applyWorldOps.mockClear();
+    tap('x');
+    await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalled());
+    expect(api.applyWorldOps.mock.calls[0][0]).toMatchObject([{ op: 'MoveVob', to: [10, 20, 30] }]);
+    expect(mockPreviewTurn).not.toHaveBeenCalled();
   });
 
   it('pitches with W about camera-right, snapped to the angle step', async () => {

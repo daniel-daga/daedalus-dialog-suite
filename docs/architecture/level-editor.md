@@ -4320,10 +4320,12 @@ halves are needed: the first sees where focus *is*, the second what is *open*.
   PageUp/Down, whose Ctrl chords are nobody's; Ctrl+S, Ctrl+D and the rest stay
   their own chords. These defaults permit precision work; a measured Spacer
   speed comparison remains for maintainer feedback.
-- **In rotate mode the same keys turn the selection** (#387, #404): A/D lean it
+- **In rotate mode A/D and W/S turn the selection** (#387, #404): A/D lean it
   sideways about camera-forward (A tips the top left as the camera sees it),
-  W/S pitch about camera-right (W tips the top away), Space/X keep the lean
-  they had. **Q/E yaw about the vertical in either mode** — the Spacer's
+  W/S pitch about camera-right (W tips the top away). Space/X and PageUp/Down
+  are not turn keys in either mode — they stay the vertical movement keys, so a
+  VOB can be lifted while the rotate gizmo is up, and mode 2's roll is A/D's
+  (#422). **Q/E yaw about the vertical in either mode** — the Spacer's
   binding, and the only turn move mode has. 1° a tap, 45°/s held, the angle
   snap step when one is set (each axis snapped on its own), Shift and Ctrl as
   above; a move-mode yaw snaps to whatever angle the Snap control last showed

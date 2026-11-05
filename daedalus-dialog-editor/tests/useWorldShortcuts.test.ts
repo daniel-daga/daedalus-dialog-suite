@@ -359,9 +359,9 @@ describe('useWorldShortcuts — the step a nudge key takes', () => {
     expect(verbs.onTurnBy).toHaveBeenCalledWith([1, 0, 0]);
   });
 
-  test('in rotate mode A/D lean the selection sideways, W/S pitch it, Space/X roll (#404)', () => {
+  test('in rotate mode A/D lean the selection sideways and W/S pitch it (#404)', () => {
     bound({ gizmoMode: 'rotate', snapAngleDegrees: 15 });
-    for (const key of ['d', 'a', 'w', 's', ' ', 'x']) {
+    for (const key of ['d', 'a', 'w', 's']) {
       press(key);
       release(key);
     }
@@ -369,9 +369,26 @@ describe('useWorldShortcuts — the step a nudge key takes', () => {
     expect(verbs.onTurnBegin).toHaveBeenCalledWith(15);
     // Read as `[yaw, roll, pitch]`: the lean is A/D's, and yaw is Q/E's alone.
     expect(verbs.onTurnBy.mock.calls.map(([turn]) => turn)).toEqual([
-      [0, -15, 0], [0, 15, 0], [0, 0, 15], [0, 0, -15], [0, 15, 0], [0, -15, 0], [0, -150, 0],
+      [0, -15, 0], [0, 15, 0], [0, 0, 15], [0, 0, -15], [0, -150, 0],
     ]);
     expect(verbs.onNudgeBy).not.toHaveBeenCalled();
+  });
+
+  test('in rotate mode Space/X and PageUp/Down still move vertically (#422)', () => {
+    // The vertical keys are the fly's, and mode 2's roll is A/D's; they used to
+    // roll the selection, which is what A/D already does.
+    bound({ gizmoMode: 'rotate', snapAngleDegrees: 15 });
+    for (const key of [' ', 'x', 'PageUp', 'PageDown']) {
+      press(key);
+      release(key);
+    }
+    press('x', { shiftKey: true });
+    expect(verbs.onNudgeBegin).toHaveBeenCalledWith(0);
+    expect(verbs.onNudgeBy.mock.calls.map(([delta]) => delta)).toEqual([
+      [0, 1, 0], [0, -1, 0], [0, 1, 0], [0, -1, 0], [0, -10, 0],
+    ]);
+    expect(verbs.onTurnBegin).not.toHaveBeenCalled();
+    expect(verbs.onTurnBy).not.toHaveBeenCalled();
   });
 
   test('Q and E yaw about the vertical in rotate mode too (#404)', () => {
