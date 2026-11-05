@@ -164,6 +164,21 @@ Policy: **suspend auto-save AND prompt** — suspension is the safety mechanism
   mtime granularity of a coarse filesystem (FAT/network shares) that keeps the
   inode can be missed; the watcher path catches it moments later.
 
+**An external `add` may write into the project.** Every `add` event runs the
+#141 EXIT-dialog creation as part of `handleFileAdded`
+(`src/renderer/hooks/useFileWatcher.ts`): `planExitDialogsForAddedFile`
+(`src/renderer/utils/npcExitDialog.ts`) returns a `DIA_<NPC>.d` for each NPC in
+the added file that has no dialogs in the index yet, in the project's most
+common dialog directory, and `autoCreateExitDialogFiles` writes them. A `git
+checkout`, a merge or a branch switch that brings in twenty NPC files therefore
+writes twenty untracked `DIA_*.d` files on an event the user did not trigger.
+This is deliberately **not** gated to the editor's own Create-NPC path: the
+writes are harmless and gating them is a behaviour change nobody has justified.
+They are harmless because of the read before each write — a target that already
+holds content is skipped, so a pre-existing EXIT dialog, tracked or not, is
+never replaced — and `ignoreInitial: true` keeps the project's own files from
+firing the path when watching starts.
+
 ## Save-error classification
 
 Extends the fix-03 contract (see
