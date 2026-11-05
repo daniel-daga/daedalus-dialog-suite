@@ -125,6 +125,20 @@ describe('serializeConditionsToExpression is a strict inverse of the condition c
     expect(parsed.conditions).toEqual(conditions);
   });
 
+  it('round-trips a negated Npc_KnowsInfo chain gate', () => {
+    const parsed = parseConditionExpressionToConditions('!Npc_KnowsInfo(other, DIA_Foo)');
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+    expect(parsed.mode).toBe('structured');
+    expect(parsed.conditions).toEqual([
+      { type: 'NpcKnowsInfoCondition', npc: 'other', dialogRef: 'DIA_Foo', negated: true }
+    ]);
+    expect(serializeConditionsToExpression(parsed.conditions)).toEqual({
+      ok: true,
+      expression: '!Npc_KnowsInfo(other, DIA_Foo)'
+    });
+  });
+
   it('serializes an empty condition list to an empty string', () => {
     expect(serializeConditionsToExpression([], undefined)).toEqual({ ok: true, expression: '' });
     expect(serializeConditionsToExpression(undefined, undefined)).toEqual({ ok: true, expression: '' });
