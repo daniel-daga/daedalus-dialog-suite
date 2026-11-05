@@ -43,6 +43,9 @@ export interface WorldFolderTreeProps {
   summary: WorldSummary;
   selection: readonly number[];
   onSelect: (vob: number, additive: boolean) => void;
+  /** The whole membership of a folder, for a click on its row: what makes
+   *  "move one, move them all" work through the existing multi-selection. */
+  onSelectMany: (vobs: readonly number[], additive: boolean) => void;
   /** Absent when there is no viewport beside the tree, matching
    *  `WorldSceneTree`'s own `onFocus`. */
   onFocus?: (vob: number) => void;
@@ -53,7 +56,7 @@ export interface WorldFolderTreeProps {
 }
 
 const WorldFolderTree: React.FC<WorldFolderTreeProps> = ({
-  folders, summary, selection, onSelect, onFocus,
+  folders, summary, selection, onSelect, onSelectMany, onFocus,
   onCreateFolder, onRenameFolder, onDeleteFolder, onRemoveFromFolder,
 }) => {
   const { reader } = useMemo(() => vobModelOf(summary), [summary]);
@@ -128,6 +131,9 @@ const WorldFolderTree: React.FC<WorldFolderTreeProps> = ({
           const members = resolveMembers(reader, folder);
           const isOpen = expanded.has(folder.id);
           const isRenaming = renaming?.id === folder.id;
+          // Empty is never "selected": `every` on nothing would light up a
+          // folder with no VOBs in it.
+          const isSelected = members.length > 0 && members.every(({ vob }) => selected.has(vob));
 
           return (
             <Box key={folder.id} data-testid={`world-folder-${folder.id}`}>
@@ -135,10 +141,17 @@ const WorldFolderTree: React.FC<WorldFolderTreeProps> = ({
                 role="treeitem"
                 aria-level={1}
                 aria-expanded={isOpen}
+                aria-selected={isSelected}
                 data-testid={`world-folder-row-${folder.id}`}
+                onClick={(event) => onSelectMany(
+                  members.map(({ vob }) => vob),
+                  event.shiftKey || event.ctrlKey || event.metaKey,
+                )}
                 sx={{
                   display: 'flex', alignItems: 'center', gap: 0.5, pl: 0.5, pr: 1, minHeight: 28,
                   cursor: 'pointer',
+                  bgcolor: isSelected ? 'action.selected' : undefined,
+                  '&:hover': { bgcolor: isSelected ? 'action.selected' : 'action.hover' },
                   // `:focus-within` as well, or a row's own verbs vanish the
                   // moment a keyboard reaches them (§5.4 item 18).
                   '&:hover .world-folder-verb, &:focus-within .world-folder-verb': { visibility: 'visible' },
@@ -147,7 +160,7 @@ const WorldFolderTree: React.FC<WorldFolderTreeProps> = ({
                 <Box
                   component="span"
                   data-testid={`world-folder-toggle-${folder.id}`}
-                  onClick={() => toggle(folder.id)}
+                  onClick={(event) => { event.stopPropagation(); toggle(folder.id); }}
                   sx={{ display: 'flex', width: 18, flexShrink: 0, color: 'text.secondary' }}
                 >
                   {isOpen ? <ExpandMoreIcon fontSize="small" /> : <ChevronRightIcon fontSize="small" />}
@@ -164,6 +177,7 @@ const WorldFolderTree: React.FC<WorldFolderTreeProps> = ({
                       if (event.key === 'Escape') setRenaming(null);
                     }}
                     onBlur={commitRename}
+                    onClick={(event) => event.stopPropagation()}
                     inputProps={{ 'data-testid': `world-folder-rename-${folder.id}`, style: { fontSize: 12 } }}
                     sx={{ flex: 1, minWidth: 0 }}
                   />
@@ -191,7 +205,7 @@ const WorldFolderTree: React.FC<WorldFolderTreeProps> = ({
                     className="world-folder-verb"
                     data-testid={`world-folder-rename-open-${folder.id}`}
                     aria-label={`Rename ${folder.name}`}
-                    onClick={() => setRenaming({ id: folder.id, name: folder.name })}
+                    onClick={(event) => { event.stopPropagation(); setRenaming({ id: folder.id, name: folder.name }); }}
                     sx={{ p: 0.25, flexShrink: 0, visibility: 'hidden', color: 'text.secondary' }}
                   >
                     <EditIcon sx={{ fontSize: 14 }} />
@@ -203,7 +217,7 @@ const WorldFolderTree: React.FC<WorldFolderTreeProps> = ({
                     className="world-folder-verb"
                     data-testid={`world-folder-delete-${folder.id}`}
                     aria-label={`Delete ${folder.name}`}
-                    onClick={() => setDeleting(folder)}
+                    onClick={(event) => { event.stopPropagation(); setDeleting(folder); }}
                     sx={{ p: 0.25, flexShrink: 0, visibility: 'hidden', color: 'text.secondary' }}
                   >
                     <DeleteIcon sx={{ fontSize: 14 }} />

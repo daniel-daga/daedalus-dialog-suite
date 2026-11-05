@@ -176,7 +176,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
   const routineNpcIndex = useProjectStore((s) => s.routineNpcIndex);
   const routineStateIndex = useProjectStore((s) => s.routineStateIndex);
   const {
-    beginOpen, openSucceeded, openFailed, selectVob, toggleVob, selectWaypoint,
+    beginOpen, openSucceeded, openFailed, selectVob, selectVobs, toggleVob, selectWaypoint,
   } = useWorldStore.getState();
 
   const [mesh, setMesh] = useState<WorldMeshPayload | null>(null);
@@ -912,6 +912,20 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
     // highlight to bring it back.
     setSelectedAsset(null);
   }, [selectVob, toggleVob]);
+
+  /** A click on a folder's row — its whole membership at once, so the gizmo
+   *  and the nudge keys move the group as one. Additive toggles each member
+   *  exactly as clicking its own row would. */
+  const handleSelectMany = useCallback((vobs: readonly number[], additive: boolean) => {
+    if (additive) {
+      const next = new Set(selection);
+      for (const vob of vobs) { if (!next.delete(vob)) next.add(vob); }
+      selectVobs([...next]);
+    } else {
+      selectVobs(vobs);
+    }
+    setSelectedAsset(null);
+  }, [selection, selectVobs]);
 
   /**
    * The right-click menu (level-editor.md §17, the
@@ -2881,6 +2895,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
                     summary={summary}
                     selection={selection}
                     onSelect={handleSelect}
+                    onSelectMany={handleSelectMany}
                     onFocus={focusVob}
                     onCreateFolder={createEmptyFolder}
                     onRenameFolder={renameFolderHandler}

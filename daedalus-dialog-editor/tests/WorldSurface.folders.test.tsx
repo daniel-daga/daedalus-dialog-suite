@@ -136,6 +136,22 @@ describe('VOB folders', () => {
     expect(screen.getByTestId('world-context-add-to-folder')).toHaveAttribute('aria-disabled', 'true');
   });
 
+  it('selects a whole folder from its row, and toggles it off again with a modifier', async () => {
+    // The "bewegt man eines, bewegt man alle" half (#519): the row feeds the
+    // same multi-selection the gizmo and the nudge keys act on.
+    api.getVobFolders.mockResolvedValueOnce({
+      folders: [{ id: 'f1', name: 'Pair', vobPaths: ['0', '1'] }],
+    } as never);
+    await openWorld();
+    fireEvent.click(screen.getByTestId('world-panel-folders'));
+
+    fireEvent.click(await screen.findByTestId('world-folder-row-f1'));
+    expect(useWorldStore.getState().selection).toEqual([0, 1]);
+
+    fireEvent.click(screen.getByTestId('world-folder-row-f1'), { ctrlKey: true });
+    expect(useWorldStore.getState().selection).toEqual([]);
+  });
+
   it('removing a member from the Folders tab persists the change', async () => {
     await openWorld();
     fireEvent.click(screen.getByTestId('world-panel-folders'));
