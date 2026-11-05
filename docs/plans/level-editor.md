@@ -3576,3 +3576,94 @@ all of them. With the cap applied that is 22,288 particle instances on NewWorld,
 9,340 on OldWorld and 11,700 on AddOn, and one draw call per effect.
 
 ---
+
+### 16.46 Replacing a world's mesh — the workflow is a hand-off, and how much of it we build is the decision (2026-11-05; #537)
+
+**The compile is the boundary, not the write.** We do not write `MeshAndBsp`
+(architecture §5, #420), and Spacer's route is not an in-place swap either: it
+discards the blob and rebuilds it from a `.3DS`. Every headless path was checked
+and none exists. GMBT's `spacer` verb only launches `Spacer2.exe` with `-ini`,
+`-vdfs physicalfirst`, `-zlog` and `-zmaxframerate` (`src/gmbt/src/Spacer.cs`);
+its `compile` verb cooks models, textures and animations and builds no BSP; and
+Spacer's world compile is a `Tools > Macros` entry with no documented command
+line to run one at startup. So the seven steps below are done by hand, once per
+replace.
+
+**The workflow, as the modders do it** — LikerGothic's Spacer.NET lesson
+*"Изменение меша и сохранение вобов"* (2024-06-06) for the sequence; GMC's
+Spacer page for the compile options and the multi-part caveat:
+
+1. Open the compiled world and `File → Save VOBs`: a VOB-only ZEN, no mesh.
+2. Re-export the terrain from Blender to `.3DS` into `_work/Data/Meshes/<folder>`.
+   Every polygon carries the material whose name is the texture; portal and
+   sector metadata *are* material names (`P:_…` / `P:…_`, `S:…`,
+   `GHOSTOCCLUDER`); and `.3DS` caps one object at 65,536 triangles, so a large
+   world is several objects.
+3. `File → Open MESH`, or `Merge MESH` for the extra parts.
+4. `File → Merge ZEN` with the file from step 1 — this is what brings the VOB
+   tree back, and with it the static light VOBs the bake needs.
+5. `World → Compile World` (indoor/outdoor, leak detect, polycheck), then
+   `Compile Light`.
+6. `File → Save ZEN`, then reload with `File → Open ZEN`; compilation changes
+   what the file holds.
+7. On a single-mesh world, clear the compiled `zCVobLevelCompo` visuals before
+   saving, or every load pays for the source meshes again.
+
+**GMC adds two facts the plan should not lose.** Updating a compiled ZEN's mesh
+is "generally avoided" in the original Spacer — Spacer.NET and other editors are
+used for it — and joining part ZENs with `Load world … / compile world outdoor /
+compile light high` is a final step that breaks culling and stops interiors
+rendering. Retail worlds are built from part ZENs, so a mod that still has them
+should replace the part's source and re-merge, not swap the compiled whole.
+
+**What we can own, and what already exists.**
+
+- `parse3ds` (`zen-world/src/assets/threeDs.ts`, #297) reads an exported `.3DS`
+  from bytes, no VFS needed. `checkPortalMaterials`
+  (`zen-world/src/validate/portalMaterials.ts`, §16.18 slice 1) encodes the name
+  rules and still has no consumer; `checkPortalPairing` works on names alone.
+  The malformed-name half applies before the compile; the unknown-sector half
+  must not run there, since sectors are produced by the compile.
+- The rest of the pre-compile check is new and small: triangle count per object
+  against the 65,536 cap, texture names through `vfsResolve`, and the new mesh's
+  bbox/centroid against the mesh it replaces — the last one catches a re-export
+  in the wrong units or moved off origin, which otherwise leaves every VOB in
+  mid-air.
+- The project already knows its GMBT `assets` folders
+  (`src/main/services/gmbtProject.ts`) and configured `assetSources`;
+  `runGmbtCompile` (`GmbtService.ts`) is the merge-and-convert step — textures
+  and props, never the BSP — and the Assets panel already remounts the VFS
+  after it.
+- `openWorld` reopens a world; the file watcher watches only `.d`, so the
+  reload after a replace is manual unless a world mtime watch is added.
+- Launching Spacer is one spawn off `gothicRoot` with GMBT's arguments; nothing
+  waits on it.
+
+**What it cannot be.** Not UI automation of Spacer: GMC calls the original "a
+very buggy tool", and a menu macro has no addressable target. Not our own
+BSP/light compiler (§11, brief §3). And not `gmbt compile --full` alone — it
+converts assets and never compiles a world. Two native additions would shorten
+the seam but not change the shape: `stripWorldMesh` in `zenkit-node` would let
+the app write the VOB-only ZEN itself (step 1), and a whole-blob splice would
+take Spacer's compiled `MeshAndBsp` into the world the editor already holds
+(skipping the reopen, and keeping VOB edits made after the export).
+`tools/chunksplice.js` already patches the container for a single chunk, and §12
+names a chunk splice as Plan B; both would need an engine witness.
+
+**Effort.** The guided hand-off is small and has no native code: the `.3DS`
+checks are pure functions in `zen-world` with Jest, the copy-and-compile reuses
+the Assets panel's path, and the Spacer launch is a spawn. A Playwright spec can
+reach the launch and no further — CI has neither GMBT nor Spacer.
+
+**The decisions, all the maintainer's.**
+
+1. Build the guided hand-off, or leave the steps as documentation? Without the
+   pre-compile validation there is nothing to build: Spacer saves its own VOBs,
+   and the only thing left is reopening the file.
+2. May an import copy the `.3DS` and its textures into an asset source the
+   project does not own, and if so which?
+3. After a replace the light bake is as new as the compile and as stale as the
+   next light edit. Does the surface mark it stale, refuse light edits, or say
+   nothing?
+
+---

@@ -1029,7 +1029,8 @@ scope call, not a gap. If it is ever picked up the shape
 is a hand-off, never a writer of ours: export the mesh for Blender, take the
 re-export back, drive the compile step; the honest feature there validates and
 reports (plan §16.18), it does not own the mesh. The VOB-visual half is a
-different question and it is plan §16.42.
+different question and it is plan §16.42; the hand-off workflow around a world
+mesh replace, and the decision of how much of it the app builds, is plan §16.46.
 
 Still open, and not to be reasoned about: whether the merge macro *preserves*
 VOBs already present on a compiled target or rebuilds the tree purely from the
