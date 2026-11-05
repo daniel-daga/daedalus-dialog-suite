@@ -351,3 +351,108 @@ describe('ProjectStore - mergedSemanticModel', () => {
     expect(entries).toHaveLength(1);
   });
 });
+
+describe('ProjectStore - global declarations without a selected NPC (#526)', () => {
+  const ITEMS_FILE = '/path/to/Items.d';
+  const NPC_DIALOG_FILE = '/path/to/DIA_NPC.d';
+
+  // The globals: the constants the project declares and the item instances,
+  // which live in dialog-less files. This is what Assets -> Items reads.
+  const globalsModel = (): SemanticModel => ({
+    ...createModel([]),
+    constants: { GIL_BAU: { name: 'GIL_BAU', type: 'int', value: 1 } },
+    items: {
+      ItFo_Apple: { name: 'ItFo_Apple', parent: 'C_ITEM', displayName: 'Apfel' }
+    }
+  });
+  // The NPC file declares its own symbols too, so a merge that wrongly pulled
+  // it in would show them.
+  const npcDialogModel = (): SemanticModel => ({
+    ...createModel(['VAR_NPC'], [{ name: 'DIA_Hello', npc: 'NPC_1' }]),
+    constants: { GIL_NPC: { name: 'GIL_NPC', type: 'int', value: 2 } },
+    items: {
+      ItX_NpcOwned: { name: 'ItX_NpcOwned', parent: 'C_ITEM', displayName: 'NpcItem' }
+    }
+  });
+
+  let originalParseDialogFile: typeof window.editorAPI.parseDialogFile;
+
+  beforeEach(() => {
+    useProjectStore.getState().closeProject();
+    originalParseDialogFile = window.editorAPI.parseDialogFile;
+    window.editorAPI.parseDialogFile = jest.fn(async (filePath: string) =>
+      filePath === ITEMS_FILE ? globalsModel() : npcDialogModel()
+    );
+  });
+
+  afterEach(() => {
+    window.editorAPI.parseDialogFile = originalParseDialogFile;
+  });
+
+  const index = () => new Map([
+    ['NPC_1', [{ dialogName: 'DIA_Hello', npc: 'NPC_1', filePath: NPC_DIALOG_FILE, startLine: 1, endLine: 10 }]]
+  ]);
+
+  const loadProject = async (): Promise<void> => {
+    useProjectStore.setState({
+      projectPath: '/project',
+      allDialogFiles: [ITEMS_FILE, NPC_DIALOG_FILE],
+      questFiles: [],
+      dialogIndex: index(),
+      parsedFiles: new Map(),
+      selectedNpc: null,
+      mergedSemanticModel: createModel([])
+    });
+    // Typed `void` (it is async in the implementation); awaited for the session.
+    await useProjectStore.getState().startBackgroundIngestion();
+  };
+
+  test('project load merges the files that declare globals, and only those', async () => {
+    await loadProject();
+
+    const merged = useProjectStore.getState().mergedSemanticModel;
+    // The whole of the global file, and nothing from the dialog file: the
+    // merge reads the dialog-less files, not every file the project parsed.
+    expect(Object.keys(merged.items || {})).toEqual(['ItFo_Apple']);
+    expect(merged.constants).toHaveProperty('GIL_BAU');
+    expect(merged.constants).not.toHaveProperty('GIL_NPC');
+    expect(merged.dialogs).not.toHaveProperty('DIA_Hello');
+  });
+
+  test('a later NPC selection keeps the globals and adds only that NPC', async () => {
+    await loadProject();
+
+    useProjectStore.getState().selectNpc('NPC_1');
+    useProjectStore.getState().loadAndMergeNpcModels('NPC_1');
+
+    const merged = useProjectStore.getState().mergedSemanticModel;
+    // The globals survive the switch, and the NPC's file joins them.
+    expect(Object.keys(merged.items || {}).sort()).toEqual(['ItFo_Apple', 'ItX_NpcOwned']);
+    expect(merged.constants).toHaveProperty('GIL_BAU');
+    expect(merged.constants).toHaveProperty('GIL_NPC');
+    expect(merged.dialogs).toHaveProperty('DIA_Hello');
+  });
+
+  test('an edit to a global file re-merges it with no NPC selected', () => {
+    useProjectStore.setState({
+      allDialogFiles: [ITEMS_FILE, NPC_DIALOG_FILE],
+      dialogIndex: index(),
+      parsedFiles: new Map([
+        [ITEMS_FILE, { filePath: ITEMS_FILE, semanticModel: globalsModel(), lastParsed: new Date() }]
+      ]),
+      selectedNpc: null,
+      mergedSemanticModel: createModel([])
+    });
+
+    useProjectStore.getState().updateFileModel(ITEMS_FILE, {
+      ...globalsModel(),
+      items: {
+        ...globalsModel().items,
+        ItMi_Gold: { name: 'ItMi_Gold', parent: 'C_ITEM', displayName: 'Gold' }
+      }
+    });
+
+    const merged = useProjectStore.getState().mergedSemanticModel;
+    expect(Object.keys(merged.items || {}).sort()).toEqual(['ItFo_Apple', 'ItMi_Gold']);
+  });
+});
