@@ -215,6 +215,13 @@ A bind-pose preview beside the form, reusing `VisualPreviewScene` (#298).
 - **Armour**: `npcBodyRequest` replaces the body with the armour item's
   `visual_change`, read from the item's `sourceText` as the World item picker
   reads `visual`; an armour it cannot find is named and not drawn.
+- **Weapon (#426)**: the form's melee weapon rides along as the item's `visual`
+  (the same reader the World item picker uses), and `zen-world`'s
+  `buildNpcBody` hangs that mesh on `BIP01 R HAND` of the same hierarchy the
+  head uses, scaled with the NPC. That node is inferred from the retail
+  skeleton's `BIP01 HEAD` rather than from a capture; a hierarchy without it,
+  an item the project does not define and an item with no `visual` are each
+  named and left undrawn. The ranged weapon is not drawn.
 - **The panel**, `NpcVisualPreview`, sits in a sticky column beside the form
   and follows unsaved edits (`withEdits` applies the form's pending edits in
   memory, where the writer would put them, since statement order is what the

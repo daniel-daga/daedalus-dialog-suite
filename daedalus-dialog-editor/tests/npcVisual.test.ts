@@ -155,6 +155,8 @@ describe('npcBodyRequest', () => {
   const ITEMS: Record<string, string> = {
     ITAR_VLK_H: 'INSTANCE ITAR_Vlk_H (C_Item)\n{\n\tvisual = "ItAr_Vlk_H.3ds";\n\tvisual_change = "Armor_Vlk_H.asc";\n};',
     ITAR_BROKEN: 'INSTANCE ITAR_Broken (C_Item)\n{\n\tvisual = "ItAr_Broken.3ds";\n};',
+    ITMW_SWORD: 'INSTANCE ITMW_1H_SWORD_01 (C_Item)\n{\n\tvisual = "ItMw_1h_Sword_01.3DS";\n};',
+    ITMW_BROKEN: 'INSTANCE ITMW_Broken (C_Item)\n{\n\tmainflag = ITEM_KAT_NF;\n};',
   };
   const itemSource = (name: string) => ITEMS[name.toUpperCase()];
 
@@ -181,6 +183,17 @@ describe('npcBodyRequest', () => {
       .toEqual(['Armour ITAR_Mod is not an item the project defines, so it is not drawn']);
   });
 
+
+  it('asks for the selected weapon as its item visual, and says why when it cannot', () => {
+    expect(npcBodyRequest({ ...VISUAL, armor: null }, itemSource, 'ITMW_SWORD').request.weapon)
+      .toBe('ItMw_1h_Sword_01.3DS');
+    expect(npcBodyRequest({ ...VISUAL, armor: null }, itemSource, '').request.weapon).toBeUndefined();
+    expect(npcBodyRequest({ ...VISUAL, armor: null }, itemSource, 'ITMW_BROKEN')).toMatchObject({
+      notes: ['Weapon ITMW_BROKEN has no visual, so it is not drawn'],
+    });
+    expect(npcBodyRequest({ ...VISUAL, armor: null }, itemSource, 'ITMW_Mod').notes)
+      .toEqual(['Weapon ITMW_Mod is not an item the project defines, so it is not drawn']);
+  });
 
   it('keeps the notes the visual already carries', () => {
     expect(npcBodyRequest({ ...VISUAL, armor: null, notes: ['Width assumed normal'] }, itemSource).notes)

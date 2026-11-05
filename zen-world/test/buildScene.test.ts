@@ -253,6 +253,38 @@ describe('zen-world/scene — buildNpcBody', () => {
     expect(scene.bounds[4]).toBeCloseTo(161);
   });
 
+  test('hangs the weapon on BIP01 R HAND, scaled with the NPC', () => {
+    const HAND_AT = [1, 0, 0, 60, 0, 1, 0, 100, 0, 0, 1, 0, 0, 0, 0, 1];
+    const b = npcBinding(
+      { ...MESHES, 'ITMW_1H_SWORD_01.3DS': [chunk('ITMW_1H_SWORD_V0.TGA')] },
+      [{ name: 'BIP01 HEAD', transform: HEAD_AT }, { name: 'BIP01 R HAND', transform: HAND_AT }],
+    );
+    const scene = buildNpcBody(b, VFS, { ...REQUEST, weapon: 'ItMw_1h_Sword_01.3DS' })!;
+
+    expect(texturesOf(scene)).toContain('ITMW_1H_SWORD_V0.TGA');
+    const sword = scene.groups.find((group) => group.texture === 'ITMW_1H_SWORD_V0.TGA')!;
+    const positions = new Float32Array(sword.positions);
+    // The weapon chunk's vertex (0, 1, 0) lands at the hand, not at the origin.
+    expect(positions[6]).toBeCloseTo(60);
+    expect(positions[7]).toBeCloseTo(101);
+    expect(scene.missing).toEqual([]);
+
+    const wide = buildNpcBody(b, VFS, { ...REQUEST, weapon: 'ItMw_1h_Sword_01.3DS', scale: [2, 1, 1] })!;
+    const wideSword = wide.groups.find((group) => group.texture === 'ITMW_1H_SWORD_V0.TGA')!;
+    expect(new Float32Array(wideSword.positions)[6]).toBeCloseTo(120);
+  });
+
+  test('draws the body alone, and says why, when the weapon cannot be placed', () => {
+    const meshes = { ...MESHES, 'ITMW_1H_SWORD_01.3DS': [chunk('ITMW_1H_SWORD_V0.TGA')] };
+    const noHand = buildNpcBody(npcBinding(meshes), VFS, { ...REQUEST, weapon: 'ItMw_1h_Sword_01.3DS' })!;
+    expect(noHand.missing).toEqual(['HUMANS.MDS has no BIP01 R HAND node to hang the weapon on']);
+
+    const noMesh = buildNpcBody(
+      npcBinding(MESHES, [{ name: 'BIP01 HEAD', transform: HEAD_AT }, { name: 'BIP01 R HAND', transform: HEAD_AT }]),
+      VFS, { ...REQUEST, weapon: 'ItMw_1h_Sword_01.3DS' })!;
+    expect(noMesh.missing).toEqual(['Weapon mesh ItMw_1h_Sword_01.3DS did not resolve']);
+  });
+
   test('scales body and head alike, head position included', () => {
     const scene = buildNpcBody(npcBinding(MESHES), VFS, { ...REQUEST, scale: [2, 1, 1] })!;
     expect(new Float32Array(scene.groups[0].positions)[3]).toBeCloseTo(2);

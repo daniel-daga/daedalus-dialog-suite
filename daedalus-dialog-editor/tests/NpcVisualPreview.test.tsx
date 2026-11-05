@@ -25,9 +25,15 @@ const ONAR: NpcDefinition = {
 };
 const CONSTANTS: Record<string, number> = { MALE: 0, FACE_N_WEAK_ORRY: 42, BODYTEX_N: 1, NO_ARMOR: -1 };
 const lookupConstant = (name: string) => CONSTANTS[name.toUpperCase()];
-const itemSource = (name: string) => (name.toUpperCase() === 'ITAR_VLK_H'
-  ? 'INSTANCE ITAR_Vlk_H (C_Item) { visual_change = "Armor_Vlk_H.asc"; };'
-  : undefined);
+const ITEM_SOURCES: Record<string, string> = {
+  ITAR_VLK_H: 'INSTANCE ITAR_Vlk_H (C_Item) { visual_change = "Armor_Vlk_H.asc"; };',
+  ITMW_SWORD: 'INSTANCE ITMW_1H_SWORD_01 (C_Item) { visual = "ItMw_1h_Sword_01.3DS"; };',
+};
+const itemSource = (name: string) => ITEM_SOURCES[name.toUpperCase()];
+const SWORD: NpcDefinition = {
+  ...ONAR,
+  statements: [...ONAR.statements, call('EquipItem', ['self', 'ITMW_SWORD'])],
+};
 
 function scene(missing: string[] = []): NpcBodyScene {
   return {
@@ -53,12 +59,13 @@ beforeEach(() => {
   };
 });
 
-const renderPreview = (definition = ONAR) => render(
+const renderPreview = (definition = ONAR, weapon = '') => render(
   <NpcVisualPreview
     definition={definition}
     edits={[]}
     lookupConstant={lookupConstant}
     itemSource={itemSource}
+    weapon={weapon}
     assetsReady
     assetsError={null}
   />,
@@ -100,6 +107,7 @@ describe('NpcVisualPreview', () => {
         }]}
         lookupConstant={lookupConstant}
         itemSource={itemSource}
+        weapon=""
         assetsReady
         assetsError={null}
       />,
@@ -109,6 +117,22 @@ describe('NpcVisualPreview', () => {
     // the canvas leaving the page and taking the user's orbit with it.
     expect(screen.getByTestId('npc-preview-canvas')).toBe(canvas);
     expect(screen.getByText('Assembling…')).toBeInTheDocument();
+  });
+
+  it('asks for the melee weapon the form selected (#426)', async () => {
+    getNpcBody.mockResolvedValue(scene([]));
+    renderPreview(SWORD, 'ITMW_SWORD');
+    await waitFor(() => expect(getNpcBody).toHaveBeenCalledWith(expect.objectContaining({
+      weapon: 'ItMw_1h_Sword_01.3DS',
+    })));
+  });
+
+  it('says why a weapon it cannot resolve is not drawn', async () => {
+    getNpcBody.mockResolvedValue(scene([]));
+    renderPreview(SWORD, 'ITMW_Mod');
+    await waitFor(() => expect(getNpcBody).toHaveBeenCalled());
+    expect(screen.getByTestId('npc-preview-notes'))
+      .toHaveTextContent('Weapon ITMW_Mod is not an item the project defines, so it is not drawn');
   });
 
   it('says the body did not resolve when the worker finds nothing', async () => {

@@ -16,6 +16,8 @@ interface NpcVisualPreviewProps {
   edits: NpcEdit[];
   lookupConstant: (name: string) => number | undefined;
   itemSource: (instance: string) => string | undefined;
+  /** The melee weapon the form has selected — an item instance, or empty. */
+  weapon: string;
   assetsReady: boolean;
   assetsError: string | null;
 }
@@ -27,7 +29,7 @@ const DEBOUNCE_MS = 250;
 const loadTexture = (name: string, maxSize: number) => window.editorAPI.getWorldTexture(name, maxSize);
 
 const NpcVisualPreview: React.FC<NpcVisualPreviewProps> = (
-  { definition, edits, lookupConstant, itemSource, assetsReady, assetsError },
+  { definition, edits, lookupConstant, itemSource, weapon, assetsReady, assetsError },
 ) => {
   const resolved = useMemo(
     () => resolveNpcVisual(withEdits(definition, edits), lookupConstant),
@@ -36,9 +38,9 @@ const NpcVisualPreview: React.FC<NpcVisualPreviewProps> = (
   const body = useMemo(
     () => {
       if (!resolved.ok) return null;
-      return npcBodyRequest(resolved.visual, itemSource);
+      return npcBodyRequest(resolved.visual, itemSource, weapon);
     },
-    [resolved, itemSource],
+    [resolved, itemSource, weapon],
   );
   const requestKey = body ? JSON.stringify(body.request) : null;
 
