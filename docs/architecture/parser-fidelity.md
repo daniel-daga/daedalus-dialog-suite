@@ -52,6 +52,54 @@ cycles, literal/reference controls, direct and whole-model exports, and three
 roundtrip cycles. The test-only commit reproduced 17 failures before the fixes;
 the five other new cases guarded existing behavior.
 
+### Instance map authority (#353)
+
+A native parse indexes one `GlobalInstance` four ways without copying it:
+`declaration-visitor.ts` writes `instances[name]` and then `items` / `npcs` /
+`animations` by case-insensitive parent class (`C_ITEM`, `C_NPC`, `C_MDS`),
+for bodied instances and for `instance a, b(C);` forward declarations alike.
+`semantic-error-handling.test.js` pins that identity.
+
+Serialization breaks it. The parser worker sends JSON, and
+`deserializeSemanticModel` rebuilds `instances`, then each categorized map from
+its own JSON category with its own `plainToInstance`; deriving from `instances`
+happens only for a category the payload omits. A natively parsed file populates
+its categories, so each instance is serialized twice and
+`model.instances.X !== model.npcs.X` after the first cycle — a complete copy,
+not a reference. The derivation still serves payloads that omit a category (a
+hand-built model, an older or foreign serializer), and a category entry whose
+name is absent from `instances` survives hydration but is then invisible to
+generation. Neither hydration branch has a regression test.
+
+Authority by path: native parse, one object in all four maps; the worker
+boundary is JSON, so the live editor model is the diverged one; generation
+reads `instances` alone (ordered emission, fallback clustering,
+`lookupGlobalSymbol`); the NPC editor's save and routine creation write
+`instances[key]`, plus `npcs[key]` when it exists. The renderer never hydrates,
+and the main-process generator rehydrates the renderer's payload, where
+`instances` is again what a save emits.
+
+Only an edit made through `instances` alone can be observed elsewhere. The two
+consumers that would see it are `npcFieldValues`
+(`npc/npcFieldOptions.ts`, `sourceText` read from `npcs`) and the routine names
+in `useVariableOptions` (its instance list dedupes by name, so `instances`
+wins, but a stale `dailyRoutine` in `npcs` could still offer a routine that no
+longer exists). Nothing writes `items` or `animations`; their readers
+(`npcItemCategories`, `spawnNpcVisuals`, `itemCatalogue`, the world item
+catalogue and property grid) take names and `sourceText` as of the parse, so
+item authoring would be the first path to observe a divergence. Consumers that
+cannot: `fileFacts` reads `npcs` for names only and aggregates into a set;
+navigation, `CreateNpcDialog` and the main process's metadata extraction read
+`instances` alone; quest logic reads neither. `mergeSemanticModels` merges each
+category separately and reconciles nothing, so a per-file divergence reaches
+the merged project model unchanged.
+
+Any consolidation must keep the parent classification case-insensitive and
+per-name (every name of a comma-list declaration), the derivation for payloads
+without a category, and category entries absent from `instances` — dropping
+those would be new loss. It must leave generation reading `instances`, so a
+save is unaffected by which map the editor's lists read.
+
 Durable decisions from the 2026-07 fidelity remediation (review findings
 P1–P7, M1–M5, N1–N10). The governing principle:
 
