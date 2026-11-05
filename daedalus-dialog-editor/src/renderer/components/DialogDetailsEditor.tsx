@@ -362,6 +362,7 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
             open
             onClose={() => uiState.setSourceViewOpen(false)}
             dialogName={dialogName}
+            filePath={filePath}
             semanticModel={semanticModel}
           />
         </Suspense>

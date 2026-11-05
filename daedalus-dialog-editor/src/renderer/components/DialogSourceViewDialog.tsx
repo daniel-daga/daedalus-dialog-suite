@@ -37,6 +37,8 @@ interface DialogSourceViewDialogProps {
   open: boolean;
   onClose: () => void;
   dialogName: string;
+  /** The `.d` file holding the dialog, when it was opened from one. */
+  filePath?: string | null;
   semanticModel: SemanticModel;
 }
 
@@ -44,9 +46,12 @@ const DialogSourceViewDialog: React.FC<DialogSourceViewDialogProps> = ({
   open,
   onClose,
   dialogName,
+  filePath,
   semanticModel
 }) => {
   const [code, setCode] = useState<string>('');
+  /** 1-based line to reveal in `code`; 0 when `code` is the generated dialog. */
+  const [sourceLine, setSourceLine] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
   const codeSettings = useEditorStore((s) => s.codeSettings);
   // Monaco ships two stock themes; follow the app palette's mode (F13).
@@ -55,10 +60,24 @@ const DialogSourceViewDialog: React.FC<DialogSourceViewDialogProps> = ({
   useEffect(() => {
     if (open && dialogName && semanticModel) {
       setIsLoading(true);
-      window.editorAPI.generateDialogCode(semanticModel, dialogName, codeSettings)
-        .then((generatedCode) => {
-          setCode(generatedCode);
-        })
+      setSourceLine(0);
+      const line = semanticModel.dialogs?.[dialogName]?.line;
+      const generateCode = () => window.editorAPI.generateDialogCode(semanticModel, dialogName, codeSettings)
+        .then(setCode);
+      // A dialog the parser read knows the line it sits on (#433). Showing the
+      // file itself at its own numbering is what makes a validation error's line
+      // findable here. A dialog the editor built itself has no such line, and an
+      // unreadable file leaves nothing to show — both keep the generated view.
+      const source = filePath && line
+        ? window.editorAPI.readFile(filePath).then(
+          (fileText) => {
+            setCode(fileText);
+            setSourceLine(line);
+          },
+          generateCode
+        )
+        : generateCode();
+      source
         .catch((err) => {
           console.error('Failed to generate dialog code:', err);
           setCode(`// Error generating code for ${dialogName}
@@ -68,7 +87,7 @@ const DialogSourceViewDialog: React.FC<DialogSourceViewDialogProps> = ({
           setIsLoading(false);
         });
     }
-  }, [open, dialogName, semanticModel, codeSettings]);
+  }, [open, dialogName, semanticModel, codeSettings, filePath]);
 
   const [copied, setCopied] = useState(false);
 
@@ -112,6 +131,13 @@ const DialogSourceViewDialog: React.FC<DialogSourceViewDialogProps> = ({
             defaultLanguage="cpp"
             value={code}
             theme={monacoTheme}
+            // Rendered only once loading finished, so the line is known by now.
+            onMount={(editor) => {
+              if (sourceLine > 0) {
+                editor.revealLineInCenter(sourceLine);
+                editor.setPosition({ lineNumber: sourceLine, column: 1 });
+              }
+            }}
             options={{
               readOnly: true,
               minimap: { enabled: true },
