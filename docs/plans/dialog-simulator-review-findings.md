@@ -80,13 +80,15 @@ simulator's `evaluateCondition` inverts on it. `condition-idioms.d` gained a
 dropped `!` is now token drift. The editor's condition card labels the negated
 form "NPC Does Not Know Dialog".
 
-Two adjacent shapes are deliberately **not** covered and still land as generic
-or unknown rather than inverted: `Npc_KnowsInfo(...) == FALSE` (the
-`parseBoolLikeComparisonAsNegation` path handles only `npc_isdead` and
-`npc_isinstate`), and `!Npc_KnowsInfo(...)` inside a raw condition string, where
-`conditionExpressionCodec.parseSimpleClause`'s knows-info regex accepts no
-leading `!` (its `Npc_IsDead` twin does). Neither inverts availability; both
-report unknown.
+Two adjacent shapes landed as generic or unknown rather than inverted, and only
+one of them now remains: `Npc_KnowsInfo(...) == FALSE` was the first — the
+comparison fold handled only `npc_isdead` and `npc_isinstate` — and #529
+structures it with `negated` while keeping the comparison, so it regenerates as
+written (`Npc_KnowsInfo(other, DIA_Foo) == FALSE`, not a rewritten `!`) and
+evaluates inverted. The second is `!Npc_KnowsInfo(...)` inside a raw condition
+string, where `conditionExpressionCodec.parseSimpleClause`'s knows-info regex
+accepts no leading `!` (its `Npc_IsDead` twin does); it reports unknown rather
+than inverted.
 
 Original finding:
 

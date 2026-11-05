@@ -155,7 +155,7 @@ describe('knowsInfoDanglingRule over real parser output', () => {
       knownNpcNames: []
     });
 
-    expect(sitesOf(view)).toEqual(['DIA_Foo_Condition:4', 'DIA_Baz_Condition:25']);
+    expect(sitesOf(view)).toEqual(['DIA_Foo_Condition:4', 'DIA_Baz_Condition:25', 'DIA_Qux_Condition:34']);
     expect(parsed.model.functions.DIA_Foo_Condition.conditions).toEqual([]);
   });
 

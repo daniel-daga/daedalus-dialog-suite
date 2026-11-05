@@ -1,3 +1,9 @@
+import React from 'react';
+import { render, screen, fireEvent } from '@testing-library/react';
+import '@testing-library/jest-dom';
+import ConditionCard from '../src/renderer/components/ConditionCard';
+import { CONDITION_REGISTRY } from '../src/renderer/components/conditions/conditionRegistry';
+
 /**
  * Test suite for ConditionCard component - Data loss fix verification
  *
@@ -227,8 +233,6 @@ describe('ConditionCard Data Loss Fix', () => {
  * their condition changes are always preserved.
  */
 
-import { CONDITION_REGISTRY } from '../src/renderer/components/conditions/conditionRegistry';
-
 describe('condition registry labels', () => {
   test('a negated Npc_KnowsInfo condition is labelled as not known', () => {
     const entry = CONDITION_REGISTRY['NpcKnowsInfoCondition'];
@@ -237,5 +241,40 @@ describe('condition registry labels', () => {
       .toBe('NPC Knows Dialog');
     expect(entry.label({ type: 'NpcKnowsInfoCondition', npc: 'other', dialogRef: 'DIA_Foo', negated: true }))
       .toBe('NPC Does Not Know Dialog');
+  });
+});
+
+// #529: the parser keeps `Npc_KnowsInfo(...) == FALSE` on the condition so it
+// regenerates as written, and shows it as a negated card. The NOT switch must
+// drop that comparison, or flipping it would change nothing on save.
+describe('a compared Npc_KnowsInfo condition card', () => {
+  test('the NOT switch clears the comparison it replaces', () => {
+    const updateCondition = jest.fn();
+    render(
+      <ConditionCard
+        condition={{
+          type: 'NpcKnowsInfoCondition',
+          npc: 'other',
+          dialogRef: 'DIA_Foo',
+          negated: true,
+          operator: '==',
+          value: 'FALSE'
+        } as any}
+        index={0}
+        totalConditions={1}
+        updateCondition={updateCondition}
+        deleteCondition={jest.fn()}
+        focusCondition={jest.fn()}
+      />
+    );
+
+    const notSwitch = screen.getByRole('checkbox', { name: 'NOT' });
+    expect(notSwitch).toBeChecked();
+    fireEvent.click(notSwitch);
+
+    const updated = updateCondition.mock.calls[0][1];
+    expect(updated.negated).toBe(false);
+    expect(updated.operator).toBeUndefined();
+    expect(updated.value).toBeUndefined();
   });
 });
