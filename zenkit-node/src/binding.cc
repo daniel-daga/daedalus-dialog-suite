@@ -25,6 +25,7 @@
 #include <initializer_list>
 #include <memory>
 #include <optional>
+#include <span>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -1689,9 +1690,14 @@ Napi::Value SetVobProp(Napi::CallbackInfo const& info) {
 // real and legal on some *other* class, and "unknown property 'range'" does not
 // say why it was refused. The empty-props refusal lives here too, so a class
 // with no case at all is still refused for being that class.
+//
+// `extra` is a class's own keys beside the family's shared list, so a class
+// that inherits a family's fields does not restate them: the family's array is
+// the one spelling of them, and only the keys it adds are written out again.
 void RequireClassKeys(Napi::Env env,
                       Napi::Object props,
-                      std::initializer_list<char const*> known,
+                      std::span<char const* const> known,
+                      std::initializer_list<char const*> extra,
                       char const* class_name) {
   auto names = props.GetPropertyNames();
   if (names.Length() == 0) {
@@ -1699,12 +1705,26 @@ void RequireClassKeys(Napi::Env env,
   }
   for (std::uint32_t i = 0; i < names.Length(); ++i) {
     std::string const key = names.Get(i).As<Napi::String>().Utf8Value();
-    if (std::find_if(known.begin(), known.end(),
-                     [&key](char const* candidate) { return key == candidate; }) == known.end()) {
+    auto const listed = [&key](auto const& keys) {
+      return std::find_if(keys.begin(), keys.end(), [&key](char const* candidate) {
+               return key == candidate;
+             }) != keys.end();
+    };
+    if (!listed(known) && !listed(extra)) {
       throw Napi::Error::New(env, "props: a " + std::string {class_name} + " has no property '" +
                                       key + "'");
     }
   }
+}
+
+// For a class whose keys are all its own — every class outside the trigger and
+// movable-object families.
+void RequireClassKeys(Napi::Env env,
+                      Napi::Object props,
+                      std::initializer_list<char const*> known,
+                      char const* class_name) {
+  RequireClassKeys(env, props, std::span<char const* const> {known.begin(), known.size()}, {},
+                   class_name);
 }
 
 // The OptionalBool idiom for a scalar. Non-finite is refused here rather than
@@ -1861,6 +1881,126 @@ std::optional<std::string> OptionalCp1252String(Napi::Env env,
                                                 char const* key) {
   if (props.Get(key).IsUndefined()) return std::nullopt;
   return RequiredCp1252String(env, props, key);
+}
+
+// The key lists a class family shares, so a class that inherits a family's
+// fields names them through the array rather than again in its own case: the
+// check and the write cannot disagree about what a family has.
+
+// Concatenates two families' key lists for a class that inherits both, at
+// compile time and without retyping either.
+template <std::size_t N, std::size_t M>
+constexpr std::array<char const*, N + M> ConcatKeys(std::array<char const*, N> const& first,
+                                                    std::array<char const*, M> const& second) {
+  std::array<char const*, N + M> keys {};
+  for (std::size_t i = 0; i < N; ++i) keys[i] = first[i];
+  for (std::size_t i = 0; i < M; ++i) keys[N + i] = second[i];
+  return keys;
+}
+
+// The two targets, the eight bools and the four numerics `VTrigger` declares.
+constexpr std::array<char const*, 14> kTriggerKeys = {
+    "target", "vobTarget", "startEnabled", "sendUntrigger", "reactToOnTrigger",
+    "reactToOnTouch", "reactToOnDamage", "respondToObject", "respondToPc", "respondToNpc",
+    "maxActivationCount", "retriggerDelaySec", "damageThreshold", "fireDelaySec"};
+
+constexpr std::array<char const*, 11> kMovableObjectKeys = {
+    "focusName", "hp", "damage", "movable", "takable", "focusOverride", "soundMaterial",
+    "visualDestroyed", "owner", "ownerGuild", "destroyed"};
+
+constexpr std::array<char const*, 6> kInteractiveObjectKeys = {
+    "stateCount", "target", "item", "conditionFunction", "onStateChangeFunction", "rewind"};
+
+constexpr auto kInteractiveObjectFamilyKeys =
+    ConcatKeys(kMovableObjectKeys, kInteractiveObjectKeys);
+
+// The writer's mirror of normalize.cc's `PutTriggerProps` /
+// `PutMovableObjectProps` / `PutInteractiveObjectProps`: one base class's
+// fields, read and assigned member by member. Never by rebuilding the struct —
+// "set the fields named and leave every other one alone" is the contract the
+// catalogue's round trip holds these to, and a base carries fields no class in
+// the family can name.
+void ApplyTriggerProps(Napi::Env env, Napi::Object props, zenkit::VTrigger& vob) {
+  auto target = OptionalCp1252String(env, props, "target");
+  auto vob_target = OptionalCp1252String(env, props, "vobTarget");
+  auto const start_enabled = OptionalBool(env, props, "startEnabled");
+  auto const send_untrigger = OptionalBool(env, props, "sendUntrigger");
+  auto const react_to_on_trigger = OptionalBool(env, props, "reactToOnTrigger");
+  auto const react_to_on_touch = OptionalBool(env, props, "reactToOnTouch");
+  auto const react_to_on_damage = OptionalBool(env, props, "reactToOnDamage");
+  auto const respond_to_object = OptionalBool(env, props, "respondToObject");
+  auto const respond_to_pc = OptionalBool(env, props, "respondToPc");
+  auto const respond_to_npc = OptionalBool(env, props, "respondToNpc");
+  auto const max_activation_count =
+      OptionalInt32(env, props, "maxActivationCount", std::nullopt, std::nullopt);
+  auto const retrigger_delay_sec =
+      OptionalFloatIn(env, props, "retriggerDelaySec", 0, std::nullopt);
+  auto const damage_threshold = OptionalFloatIn(env, props, "damageThreshold", 0, std::nullopt);
+  auto const fire_delay_sec = OptionalFloatIn(env, props, "fireDelaySec", 0, std::nullopt);
+  if (target) vob.target = std::move(*target);
+  if (vob_target) vob.vob_target = std::move(*vob_target);
+  if (start_enabled.has_value()) vob.start_enabled = *start_enabled;
+  if (send_untrigger.has_value()) vob.send_untrigger = *send_untrigger;
+  if (react_to_on_trigger.has_value()) vob.react_to_on_trigger = *react_to_on_trigger;
+  if (react_to_on_touch.has_value()) vob.react_to_on_touch = *react_to_on_touch;
+  if (react_to_on_damage.has_value()) vob.react_to_on_damage = *react_to_on_damage;
+  if (respond_to_object.has_value()) vob.respond_to_object = *respond_to_object;
+  if (respond_to_pc.has_value()) vob.respond_to_pc = *respond_to_pc;
+  if (respond_to_npc.has_value()) vob.respond_to_npc = *respond_to_npc;
+  if (max_activation_count.has_value()) vob.max_activation_count = *max_activation_count;
+  if (retrigger_delay_sec.has_value()) vob.retrigger_delay_sec = *retrigger_delay_sec;
+  if (damage_threshold.has_value()) vob.damage_threshold = *damage_threshold;
+  if (fire_delay_sec.has_value()) vob.fire_delay_sec = *fire_delay_sec;
+}
+
+void ApplyMovableObjectProps(Napi::Env env, Napi::Object props, zenkit::VMovableObject& vob) {
+  auto focus_name = OptionalCp1252String(env, props, "focusName");
+  auto const hp = OptionalInt32(env, props, "hp", std::nullopt, std::nullopt);
+  auto const damage = OptionalInt32(env, props, "damage", std::nullopt, std::nullopt);
+  auto const movable = OptionalBool(env, props, "movable");
+  auto const takable = OptionalBool(env, props, "takable");
+  auto const focus_override = OptionalBool(env, props, "focusOverride");
+  auto const sound_material = OptionalEnum<zenkit::SoundMaterialType>(env, props, "soundMaterial");
+  auto visual_destroyed = OptionalCp1252String(env, props, "visualDestroyed");
+  auto owner = OptionalCp1252String(env, props, "owner");
+  auto owner_guild = OptionalCp1252String(env, props, "ownerGuild");
+  auto const destroyed = OptionalBool(env, props, "destroyed");
+  if (focus_name) vob.name = std::move(*focus_name);
+  if (hp.has_value()) vob.hp = *hp;
+  if (damage.has_value()) vob.damage = *damage;
+  if (movable.has_value()) vob.movable = *movable;
+  if (takable.has_value()) vob.takable = *takable;
+  if (focus_override.has_value()) vob.focus_override = *focus_override;
+  if (sound_material) vob.material = *sound_material;
+  if (visual_destroyed) vob.visual_destroyed = std::move(*visual_destroyed);
+  if (owner) vob.owner = std::move(*owner);
+  if (owner_guild) vob.owner_guild = std::move(*owner_guild);
+  if (destroyed.has_value()) vob.destroyed = *destroyed;
+}
+
+// The interactive family's own six on top of the movable base. **Two
+// cross-references, checked against two different indexes and neither of them
+// here.** `target` is what this mob fires when it is used — a `vobName` in this
+// world, so the renderer refuses a dangling one. `item` is what the player has
+// to be carrying to use it — a Daedalus item instance, so the *project's* item
+// index is what can refuse it, exactly as for `oCItem.instance`. The binding
+// knows neither and writes both as the cp1252 strings the archive holds.
+void ApplyInteractiveObjectProps(Napi::Env env,
+                                 Napi::Object props,
+                                 zenkit::VInteractiveObject& vob) {
+  auto const state_count = OptionalInt32(env, props, "stateCount", std::nullopt, std::nullopt);
+  auto target = OptionalCp1252String(env, props, "target");
+  auto item = OptionalCp1252String(env, props, "item");
+  auto condition_function = OptionalCp1252String(env, props, "conditionFunction");
+  auto on_state_change_function = OptionalCp1252String(env, props, "onStateChangeFunction");
+  auto const rewind = OptionalBool(env, props, "rewind");
+  ApplyMovableObjectProps(env, props, vob);
+  if (state_count.has_value()) vob.state_count = *state_count;
+  if (target) vob.target = std::move(*target);
+  if (item) vob.item = std::move(*item);
+  if (condition_function) vob.condition_function = std::move(*condition_function);
+  if (on_state_change_function) vob.on_state_change_function = std::move(*on_state_change_function);
+  if (rewind.has_value()) vob.rewind = *rewind;
 }
 
 // setVobClassProp(handle, indexPath, props) — the fields a VOB has because of
@@ -2106,44 +2246,8 @@ Napi::Value SetVobClassProp(Napi::CallbackInfo const& info) {
     // VOB answers to is a trigger that fires at nothing, so it is refused where
     // the world is known (the renderer) rather than here.
     case zenkit::VirtualObjectType::zCTrigger: {
-      RequireClassKeys(env, props,
-                       {"target", "vobTarget", "startEnabled", "sendUntrigger",
-                        "reactToOnTrigger", "reactToOnTouch",
-                        "reactToOnDamage", "respondToObject", "respondToPc", "respondToNpc",
-                        "maxActivationCount", "retriggerDelaySec", "damageThreshold",
-                        "fireDelaySec"},
-                       class_name);
-      auto target = OptionalCp1252String(env, props, "target");
-      auto vob_target = OptionalCp1252String(env, props, "vobTarget");
-      auto const start_enabled = OptionalBool(env, props, "startEnabled");
-      auto const send_untrigger = OptionalBool(env, props, "sendUntrigger");
-      auto const react_to_on_trigger = OptionalBool(env, props, "reactToOnTrigger");
-      auto const react_to_on_touch = OptionalBool(env, props, "reactToOnTouch");
-      auto const react_to_on_damage = OptionalBool(env, props, "reactToOnDamage");
-      auto const respond_to_object = OptionalBool(env, props, "respondToObject");
-      auto const respond_to_pc = OptionalBool(env, props, "respondToPc");
-      auto const respond_to_npc = OptionalBool(env, props, "respondToNpc");
-      auto const max_activation_count =
-          OptionalInt32(env, props, "maxActivationCount", std::nullopt, std::nullopt);
-      auto const retrigger_delay_sec =
-          OptionalFloatIn(env, props, "retriggerDelaySec", 0, std::nullopt);
-      auto const damage_threshold = OptionalFloatIn(env, props, "damageThreshold", 0, std::nullopt);
-      auto const fire_delay_sec = OptionalFloatIn(env, props, "fireDelaySec", 0, std::nullopt);
-      auto& trigger = static_cast<zenkit::VTrigger&>(*vob);
-      if (target) trigger.target = std::move(*target);
-      if (vob_target) trigger.vob_target = std::move(*vob_target);
-      if (start_enabled.has_value()) trigger.start_enabled = *start_enabled;
-      if (send_untrigger.has_value()) trigger.send_untrigger = *send_untrigger;
-      if (react_to_on_trigger.has_value()) trigger.react_to_on_trigger = *react_to_on_trigger;
-      if (react_to_on_touch.has_value()) trigger.react_to_on_touch = *react_to_on_touch;
-      if (react_to_on_damage.has_value()) trigger.react_to_on_damage = *react_to_on_damage;
-      if (respond_to_object.has_value()) trigger.respond_to_object = *respond_to_object;
-      if (respond_to_pc.has_value()) trigger.respond_to_pc = *respond_to_pc;
-      if (respond_to_npc.has_value()) trigger.respond_to_npc = *respond_to_npc;
-      if (max_activation_count.has_value()) trigger.max_activation_count = *max_activation_count;
-      if (retrigger_delay_sec.has_value()) trigger.retrigger_delay_sec = *retrigger_delay_sec;
-      if (damage_threshold.has_value()) trigger.damage_threshold = *damage_threshold;
-      if (fire_delay_sec.has_value()) trigger.fire_delay_sec = *fire_delay_sec;
+      RequireClassKeys(env, props, kTriggerKeys, {}, class_name);
+      ApplyTriggerProps(env, props, static_cast<zenkit::VTrigger&>(*vob));
       break;
     }
     // What this class fires at when the world loads, and whether it fires only
@@ -2223,47 +2327,10 @@ Napi::Value SetVobClassProp(Napi::CallbackInfo const& info) {
     // the one `VTrigger` whose delays and react-to flags nothing could reach.
     // `s_*` is save-game only, so the class is now complete.
     case zenkit::VirtualObjectType::oCTriggerScript: {
-      RequireClassKeys(env, props,
-                       {"target", "vobTarget", "startEnabled", "sendUntrigger",
-                        "reactToOnTrigger", "reactToOnTouch",
-                        "reactToOnDamage", "respondToObject", "respondToPc", "respondToNpc",
-                        "maxActivationCount", "retriggerDelaySec", "damageThreshold",
-                        "fireDelaySec", "function"},
-                       class_name);
-      auto target = OptionalCp1252String(env, props, "target");
-      auto vob_target = OptionalCp1252String(env, props, "vobTarget");
-      auto const start_enabled = OptionalBool(env, props, "startEnabled");
-      auto const send_untrigger = OptionalBool(env, props, "sendUntrigger");
-      auto const react_to_on_trigger = OptionalBool(env, props, "reactToOnTrigger");
-      auto const react_to_on_touch = OptionalBool(env, props, "reactToOnTouch");
-      auto const react_to_on_damage = OptionalBool(env, props, "reactToOnDamage");
-      auto const respond_to_object = OptionalBool(env, props, "respondToObject");
-      auto const respond_to_pc = OptionalBool(env, props, "respondToPc");
-      auto const respond_to_npc = OptionalBool(env, props, "respondToNpc");
-      auto const max_activation_count =
-          OptionalInt32(env, props, "maxActivationCount", std::nullopt, std::nullopt);
-      auto const retrigger_delay_sec =
-          OptionalFloatIn(env, props, "retriggerDelaySec", 0, std::nullopt);
-      auto const damage_threshold = OptionalFloatIn(env, props, "damageThreshold", 0, std::nullopt);
-      auto const fire_delay_sec = OptionalFloatIn(env, props, "fireDelaySec", 0, std::nullopt);
+      RequireClassKeys(env, props, kTriggerKeys, {"function"}, class_name);
       auto function = OptionalCp1252String(env, props, "function");
       auto& trigger_script = static_cast<zenkit::VTriggerScript&>(*vob);
-      if (target) trigger_script.target = std::move(*target);
-      if (vob_target) trigger_script.vob_target = std::move(*vob_target);
-      if (start_enabled.has_value()) trigger_script.start_enabled = *start_enabled;
-      if (send_untrigger.has_value()) trigger_script.send_untrigger = *send_untrigger;
-      if (react_to_on_trigger.has_value()) trigger_script.react_to_on_trigger = *react_to_on_trigger;
-      if (react_to_on_touch.has_value()) trigger_script.react_to_on_touch = *react_to_on_touch;
-      if (react_to_on_damage.has_value()) trigger_script.react_to_on_damage = *react_to_on_damage;
-      if (respond_to_object.has_value()) trigger_script.respond_to_object = *respond_to_object;
-      if (respond_to_pc.has_value()) trigger_script.respond_to_pc = *respond_to_pc;
-      if (respond_to_npc.has_value()) trigger_script.respond_to_npc = *respond_to_npc;
-      if (max_activation_count.has_value()) {
-        trigger_script.max_activation_count = *max_activation_count;
-      }
-      if (retrigger_delay_sec.has_value()) trigger_script.retrigger_delay_sec = *retrigger_delay_sec;
-      if (damage_threshold.has_value()) trigger_script.damage_threshold = *damage_threshold;
-      if (fire_delay_sec.has_value()) trigger_script.fire_delay_sec = *fire_delay_sec;
+      ApplyTriggerProps(env, props, trigger_script);
       if (function) trigger_script.function = std::move(*function);
       break;
     }
@@ -2273,46 +2340,11 @@ Napi::Value SetVobClassProp(Napi::CallbackInfo const& info) {
     // in the world names them back — so they join rather than stay held out
     // with the rest of the family's target strings.
     case zenkit::VirtualObjectType::oCTriggerChangeLevel: {
-      RequireClassKeys(env, props,
-                       {"target", "vobTarget", "startEnabled", "sendUntrigger",
-                        "reactToOnTrigger", "reactToOnTouch",
-                        "reactToOnDamage", "respondToObject", "respondToPc", "respondToNpc",
-                        "maxActivationCount", "retriggerDelaySec", "damageThreshold",
-                        "fireDelaySec", "levelName", "startVob"},
-                       class_name);
-      auto target = OptionalCp1252String(env, props, "target");
-      auto vob_target = OptionalCp1252String(env, props, "vobTarget");
-      auto const start_enabled = OptionalBool(env, props, "startEnabled");
-      auto const send_untrigger = OptionalBool(env, props, "sendUntrigger");
-      auto const react_to_on_trigger = OptionalBool(env, props, "reactToOnTrigger");
-      auto const react_to_on_touch = OptionalBool(env, props, "reactToOnTouch");
-      auto const react_to_on_damage = OptionalBool(env, props, "reactToOnDamage");
-      auto const respond_to_object = OptionalBool(env, props, "respondToObject");
-      auto const respond_to_pc = OptionalBool(env, props, "respondToPc");
-      auto const respond_to_npc = OptionalBool(env, props, "respondToNpc");
-      auto const max_activation_count =
-          OptionalInt32(env, props, "maxActivationCount", std::nullopt, std::nullopt);
-      auto const retrigger_delay_sec =
-          OptionalFloatIn(env, props, "retriggerDelaySec", 0, std::nullopt);
-      auto const damage_threshold = OptionalFloatIn(env, props, "damageThreshold", 0, std::nullopt);
-      auto const fire_delay_sec = OptionalFloatIn(env, props, "fireDelaySec", 0, std::nullopt);
+      RequireClassKeys(env, props, kTriggerKeys, {"levelName", "startVob"}, class_name);
       auto level_name = OptionalCp1252String(env, props, "levelName");
       auto start_vob = OptionalCp1252String(env, props, "startVob");
       auto& change_level = static_cast<zenkit::VTriggerChangeLevel&>(*vob);
-      if (target) change_level.target = std::move(*target);
-      if (vob_target) change_level.vob_target = std::move(*vob_target);
-      if (start_enabled.has_value()) change_level.start_enabled = *start_enabled;
-      if (send_untrigger.has_value()) change_level.send_untrigger = *send_untrigger;
-      if (react_to_on_trigger.has_value()) change_level.react_to_on_trigger = *react_to_on_trigger;
-      if (react_to_on_touch.has_value()) change_level.react_to_on_touch = *react_to_on_touch;
-      if (react_to_on_damage.has_value()) change_level.react_to_on_damage = *react_to_on_damage;
-      if (respond_to_object.has_value()) change_level.respond_to_object = *respond_to_object;
-      if (respond_to_pc.has_value()) change_level.respond_to_pc = *respond_to_pc;
-      if (respond_to_npc.has_value()) change_level.respond_to_npc = *respond_to_npc;
-      if (max_activation_count.has_value()) change_level.max_activation_count = *max_activation_count;
-      if (retrigger_delay_sec.has_value()) change_level.retrigger_delay_sec = *retrigger_delay_sec;
-      if (damage_threshold.has_value()) change_level.damage_threshold = *damage_threshold;
-      if (fire_delay_sec.has_value()) change_level.fire_delay_sec = *fire_delay_sec;
+      ApplyTriggerProps(env, props, change_level);
       if (level_name) change_level.level_name = std::move(*level_name);
       if (start_vob) change_level.start_vob = std::move(*start_vob);
       break;
@@ -2328,33 +2360,11 @@ Napi::Value SetVobClassProp(Napi::CallbackInfo const& info) {
     // zen-world's `vobClasses.ts` for the full "legal write the engine
     // ignores" note.
     case zenkit::VirtualObjectType::zCMover: {
-      RequireClassKeys(env, props,
-                       {"target", "vobTarget", "startEnabled", "sendUntrigger",
-                        "reactToOnTrigger", "reactToOnTouch",
-                        "reactToOnDamage", "respondToObject", "respondToPc", "respondToNpc",
-                        "maxActivationCount", "retriggerDelaySec", "damageThreshold",
-                        "fireDelaySec", "behavior", "touchBlockerDamage", "stayOpenTimeSec",
-                        "locked",
-                        "autoLink", "autoRotate", "sfxOpenStart", "sfxOpenEnd",
-                        "sfxTransitioning", "sfxCloseStart", "sfxCloseEnd", "sfxLock",
-                        "sfxUnlock", "sfxUseLocked"},
+      RequireClassKeys(env, props, kTriggerKeys,
+                       {"behavior", "touchBlockerDamage", "stayOpenTimeSec", "locked", "autoLink",
+                        "autoRotate", "sfxOpenStart", "sfxOpenEnd", "sfxTransitioning",
+                        "sfxCloseStart", "sfxCloseEnd", "sfxLock", "sfxUnlock", "sfxUseLocked"},
                        class_name);
-      auto target = OptionalCp1252String(env, props, "target");
-      auto vob_target = OptionalCp1252String(env, props, "vobTarget");
-      auto const start_enabled = OptionalBool(env, props, "startEnabled");
-      auto const send_untrigger = OptionalBool(env, props, "sendUntrigger");
-      auto const react_to_on_trigger = OptionalBool(env, props, "reactToOnTrigger");
-      auto const react_to_on_touch = OptionalBool(env, props, "reactToOnTouch");
-      auto const react_to_on_damage = OptionalBool(env, props, "reactToOnDamage");
-      auto const respond_to_object = OptionalBool(env, props, "respondToObject");
-      auto const respond_to_pc = OptionalBool(env, props, "respondToPc");
-      auto const respond_to_npc = OptionalBool(env, props, "respondToNpc");
-      auto const max_activation_count =
-          OptionalInt32(env, props, "maxActivationCount", std::nullopt, std::nullopt);
-      auto const retrigger_delay_sec =
-          OptionalFloatIn(env, props, "retriggerDelaySec", 0, std::nullopt);
-      auto const damage_threshold = OptionalFloatIn(env, props, "damageThreshold", 0, std::nullopt);
-      auto const fire_delay_sec = OptionalFloatIn(env, props, "fireDelaySec", 0, std::nullopt);
       auto const behavior = OptionalEnum<zenkit::MoverBehavior>(env, props, "behavior");
       auto const touch_blocker_damage =
           OptionalFloatIn(env, props, "touchBlockerDamage", 0, std::nullopt);
@@ -2372,20 +2382,7 @@ Napi::Value SetVobClassProp(Napi::CallbackInfo const& info) {
       auto sfx_unlock = OptionalCp1252String(env, props, "sfxUnlock");
       auto sfx_use_locked = OptionalCp1252String(env, props, "sfxUseLocked");
       auto& mover = static_cast<zenkit::VMover&>(*vob);
-      if (target) mover.target = std::move(*target);
-      if (vob_target) mover.vob_target = std::move(*vob_target);
-      if (start_enabled.has_value()) mover.start_enabled = *start_enabled;
-      if (send_untrigger.has_value()) mover.send_untrigger = *send_untrigger;
-      if (react_to_on_trigger.has_value()) mover.react_to_on_trigger = *react_to_on_trigger;
-      if (react_to_on_touch.has_value()) mover.react_to_on_touch = *react_to_on_touch;
-      if (react_to_on_damage.has_value()) mover.react_to_on_damage = *react_to_on_damage;
-      if (respond_to_object.has_value()) mover.respond_to_object = *respond_to_object;
-      if (respond_to_pc.has_value()) mover.respond_to_pc = *respond_to_pc;
-      if (respond_to_npc.has_value()) mover.respond_to_npc = *respond_to_npc;
-      if (max_activation_count.has_value()) mover.max_activation_count = *max_activation_count;
-      if (retrigger_delay_sec.has_value()) mover.retrigger_delay_sec = *retrigger_delay_sec;
-      if (damage_threshold.has_value()) mover.damage_threshold = *damage_threshold;
-      if (fire_delay_sec.has_value()) mover.fire_delay_sec = *fire_delay_sec;
+      ApplyTriggerProps(env, props, mover);
       if (behavior) mover.behavior = *behavior;
       if (touch_blocker_damage.has_value()) mover.touch_blocker_damage = *touch_blocker_damage;
       if (stay_open_time_sec.has_value()) mover.stay_open_time_sec = *stay_open_time_sec;
@@ -2403,34 +2400,8 @@ Napi::Value SetVobClassProp(Napi::CallbackInfo const& info) {
       break;
     }
     case zenkit::VirtualObjectType::oCMOB: {
-      RequireClassKeys(env, props,
-                       {"focusName", "hp", "damage", "movable", "takable", "focusOverride",
-                        "soundMaterial", "visualDestroyed", "owner", "ownerGuild", "destroyed"},
-                       class_name);
-      auto focus_name = OptionalCp1252String(env, props, "focusName");
-      auto const hp = OptionalInt32(env, props, "hp", std::nullopt, std::nullopt);
-      auto const damage = OptionalInt32(env, props, "damage", std::nullopt, std::nullopt);
-      auto const movable = OptionalBool(env, props, "movable");
-      auto const takable = OptionalBool(env, props, "takable");
-      auto const focus_override = OptionalBool(env, props, "focusOverride");
-      auto const sound_material =
-          OptionalEnum<zenkit::SoundMaterialType>(env, props, "soundMaterial");
-      auto visual_destroyed = OptionalCp1252String(env, props, "visualDestroyed");
-      auto owner = OptionalCp1252String(env, props, "owner");
-      auto owner_guild = OptionalCp1252String(env, props, "ownerGuild");
-      auto const destroyed = OptionalBool(env, props, "destroyed");
-      auto& mob = static_cast<zenkit::VMovableObject&>(*vob);
-      if (focus_name) mob.name = std::move(*focus_name);
-      if (hp.has_value()) mob.hp = *hp;
-      if (damage.has_value()) mob.damage = *damage;
-      if (movable.has_value()) mob.movable = *movable;
-      if (takable.has_value()) mob.takable = *takable;
-      if (focus_override.has_value()) mob.focus_override = *focus_override;
-      if (sound_material) mob.material = *sound_material;
-      if (visual_destroyed) mob.visual_destroyed = std::move(*visual_destroyed);
-      if (owner) mob.owner = std::move(*owner);
-      if (owner_guild) mob.owner_guild = std::move(*owner_guild);
-      if (destroyed.has_value()) mob.destroyed = *destroyed;
+      RequireClassKeys(env, props, kMovableObjectKeys, {}, class_name);
+      ApplyMovableObjectProps(env, props, static_cast<zenkit::VMovableObject&>(*vob));
       break;
     }
     case zenkit::VirtualObjectType::oCMobInter:
@@ -2438,143 +2409,23 @@ Napi::Value SetVobClassProp(Napi::CallbackInfo const& info) {
     case zenkit::VirtualObjectType::oCMobLadder:
     case zenkit::VirtualObjectType::oCMobSwitch:
     case zenkit::VirtualObjectType::oCMobWheel: {
-      RequireClassKeys(env, props,
-                       {"focusName", "hp", "damage", "movable", "takable", "focusOverride",
-                        "soundMaterial", "visualDestroyed", "owner", "ownerGuild", "destroyed", "stateCount",
-                        "target", "item", "conditionFunction", "onStateChangeFunction", "rewind"},
-                       class_name);
-      auto focus_name = OptionalCp1252String(env, props, "focusName");
-      auto const hp = OptionalInt32(env, props, "hp", std::nullopt, std::nullopt);
-      auto const damage = OptionalInt32(env, props, "damage", std::nullopt, std::nullopt);
-      auto const movable = OptionalBool(env, props, "movable");
-      auto const takable = OptionalBool(env, props, "takable");
-      auto const focus_override = OptionalBool(env, props, "focusOverride");
-      auto const sound_material =
-          OptionalEnum<zenkit::SoundMaterialType>(env, props, "soundMaterial");
-      auto visual_destroyed = OptionalCp1252String(env, props, "visualDestroyed");
-      auto owner = OptionalCp1252String(env, props, "owner");
-      auto owner_guild = OptionalCp1252String(env, props, "ownerGuild");
-      auto const destroyed = OptionalBool(env, props, "destroyed");
-      auto const state_count = OptionalInt32(env, props, "stateCount", std::nullopt, std::nullopt);
-      // Two cross-references on one class, checked against two different
-      // indexes and neither of them here. `target` is what this mob fires when
-      // it is used — a `vobName` in this world, so the renderer refuses a
-      // dangling one. `item` is what the player has to be carrying to use it —
-      // a Daedalus item instance, so the *project's* item index is what can
-      // refuse it, exactly as for `oCItem.instance`. The binding knows neither
-      // and writes both as the cp1252 strings the archive holds.
-      auto target = OptionalCp1252String(env, props, "target");
-      auto item = OptionalCp1252String(env, props, "item");
-      auto condition_function = OptionalCp1252String(env, props, "conditionFunction");
-      auto on_state_change_function = OptionalCp1252String(env, props, "onStateChangeFunction");
-      auto const rewind = OptionalBool(env, props, "rewind");
-      auto& mob = static_cast<zenkit::VInteractiveObject&>(*vob);
-      if (focus_name) mob.name = std::move(*focus_name);
-      if (hp.has_value()) mob.hp = *hp;
-      if (damage.has_value()) mob.damage = *damage;
-      if (movable.has_value()) mob.movable = *movable;
-      if (takable.has_value()) mob.takable = *takable;
-      if (focus_override.has_value()) mob.focus_override = *focus_override;
-      if (sound_material) mob.material = *sound_material;
-      if (visual_destroyed) mob.visual_destroyed = std::move(*visual_destroyed);
-      if (owner) mob.owner = std::move(*owner);
-      if (owner_guild) mob.owner_guild = std::move(*owner_guild);
-      if (destroyed.has_value()) mob.destroyed = *destroyed;
-      if (state_count.has_value()) mob.state_count = *state_count;
-      if (target) mob.target = std::move(*target);
-      if (item) mob.item = std::move(*item);
-      if (condition_function) mob.condition_function = std::move(*condition_function);
-      if (on_state_change_function) mob.on_state_change_function = std::move(*on_state_change_function);
-      if (rewind.has_value()) mob.rewind = *rewind;
+      RequireClassKeys(env, props, kInteractiveObjectFamilyKeys, {}, class_name);
+      ApplyInteractiveObjectProps(env, props, static_cast<zenkit::VInteractiveObject&>(*vob));
       break;
     }
     case zenkit::VirtualObjectType::oCMobFire: {
-      RequireClassKeys(env, props,
-                       {"focusName", "hp", "damage", "movable", "takable", "focusOverride",
-                        "soundMaterial", "visualDestroyed", "owner", "ownerGuild", "destroyed", "stateCount",
-                        "target", "item", "conditionFunction", "onStateChangeFunction", "rewind", "slot", "vobTree"},
-                       class_name);
-      auto focus_name = OptionalCp1252String(env, props, "focusName");
-      auto const hp = OptionalInt32(env, props, "hp", std::nullopt, std::nullopt);
-      auto const damage = OptionalInt32(env, props, "damage", std::nullopt, std::nullopt);
-      auto const movable = OptionalBool(env, props, "movable");
-      auto const takable = OptionalBool(env, props, "takable");
-      auto const focus_override = OptionalBool(env, props, "focusOverride");
-      auto const sound_material =
-          OptionalEnum<zenkit::SoundMaterialType>(env, props, "soundMaterial");
-      auto visual_destroyed = OptionalCp1252String(env, props, "visualDestroyed");
-      auto owner = OptionalCp1252String(env, props, "owner");
-      auto owner_guild = OptionalCp1252String(env, props, "ownerGuild");
-      auto const destroyed = OptionalBool(env, props, "destroyed");
-      auto const state_count = OptionalInt32(env, props, "stateCount", std::nullopt, std::nullopt);
-      // Two cross-references on one class, checked against two different
-      // indexes and neither of them here. `target` is what this mob fires when
-      // it is used — a `vobName` in this world, so the renderer refuses a
-      // dangling one. `item` is what the player has to be carrying to use it —
-      // a Daedalus item instance, so the *project's* item index is what can
-      // refuse it, exactly as for `oCItem.instance`. The binding knows neither
-      // and writes both as the cp1252 strings the archive holds.
-      auto target = OptionalCp1252String(env, props, "target");
-      auto item = OptionalCp1252String(env, props, "item");
-      auto condition_function = OptionalCp1252String(env, props, "conditionFunction");
-      auto on_state_change_function = OptionalCp1252String(env, props, "onStateChangeFunction");
-      auto const rewind = OptionalBool(env, props, "rewind");
+      RequireClassKeys(env, props, kInteractiveObjectFamilyKeys, {"slot", "vobTree"}, class_name);
       auto slot = OptionalCp1252String(env, props, "slot");
       auto vob_tree = OptionalCp1252String(env, props, "vobTree");
       auto& mob = static_cast<zenkit::VFire&>(*vob);
-      if (focus_name) mob.name = std::move(*focus_name);
-      if (hp.has_value()) mob.hp = *hp;
-      if (damage.has_value()) mob.damage = *damage;
-      if (movable.has_value()) mob.movable = *movable;
-      if (takable.has_value()) mob.takable = *takable;
-      if (focus_override.has_value()) mob.focus_override = *focus_override;
-      if (sound_material) mob.material = *sound_material;
-      if (visual_destroyed) mob.visual_destroyed = std::move(*visual_destroyed);
-      if (owner) mob.owner = std::move(*owner);
-      if (owner_guild) mob.owner_guild = std::move(*owner_guild);
-      if (destroyed.has_value()) mob.destroyed = *destroyed;
-      if (state_count.has_value()) mob.state_count = *state_count;
-      if (target) mob.target = std::move(*target);
-      if (item) mob.item = std::move(*item);
-      if (condition_function) mob.condition_function = std::move(*condition_function);
-      if (on_state_change_function) mob.on_state_change_function = std::move(*on_state_change_function);
-      if (rewind.has_value()) mob.rewind = *rewind;
+      ApplyInteractiveObjectProps(env, props, mob);
       if (slot) mob.slot = std::move(*slot);
       if (vob_tree) mob.vob_tree = std::move(*vob_tree);
       break;
     }
     case zenkit::VirtualObjectType::oCMobContainer: {
-      RequireClassKeys(env, props,
-                       {"focusName", "hp", "damage", "movable", "takable", "focusOverride",
-                        "soundMaterial", "visualDestroyed", "owner", "ownerGuild", "destroyed", "stateCount",
-                        "target", "item", "conditionFunction", "onStateChangeFunction", "rewind", "locked",
-                        "key", "pickString", "contents"},
-                       class_name);
-      auto focus_name = OptionalCp1252String(env, props, "focusName");
-      auto const hp = OptionalInt32(env, props, "hp", std::nullopt, std::nullopt);
-      auto const damage = OptionalInt32(env, props, "damage", std::nullopt, std::nullopt);
-      auto const movable = OptionalBool(env, props, "movable");
-      auto const takable = OptionalBool(env, props, "takable");
-      auto const focus_override = OptionalBool(env, props, "focusOverride");
-      auto const sound_material =
-          OptionalEnum<zenkit::SoundMaterialType>(env, props, "soundMaterial");
-      auto visual_destroyed = OptionalCp1252String(env, props, "visualDestroyed");
-      auto owner = OptionalCp1252String(env, props, "owner");
-      auto owner_guild = OptionalCp1252String(env, props, "ownerGuild");
-      auto const destroyed = OptionalBool(env, props, "destroyed");
-      auto const state_count = OptionalInt32(env, props, "stateCount", std::nullopt, std::nullopt);
-      // Two cross-references on one class, checked against two different
-      // indexes and neither of them here. `target` is what this mob fires when
-      // it is used — a `vobName` in this world, so the renderer refuses a
-      // dangling one. `item` is what the player has to be carrying to use it —
-      // a Daedalus item instance, so the *project's* item index is what can
-      // refuse it, exactly as for `oCItem.instance`. The binding knows neither
-      // and writes both as the cp1252 strings the archive holds.
-      auto target = OptionalCp1252String(env, props, "target");
-      auto item = OptionalCp1252String(env, props, "item");
-      auto condition_function = OptionalCp1252String(env, props, "conditionFunction");
-      auto on_state_change_function = OptionalCp1252String(env, props, "onStateChangeFunction");
-      auto const rewind = OptionalBool(env, props, "rewind");
+      RequireClassKeys(env, props, kInteractiveObjectFamilyKeys,
+                       {"locked", "key", "pickString", "contents"}, class_name);
       auto const locked = OptionalBool(env, props, "locked");
       // The item instance that unlocks it — the class's own item-instance
       // string, checked where `item` above is and written here as it is given.
@@ -2586,23 +2437,7 @@ Napi::Value SetVobClassProp(Napi::CallbackInfo const& info) {
       // holds no script index and refuses nothing the archive can hold.
       auto contents = OptionalCp1252String(env, props, "contents");
       auto& mob = static_cast<zenkit::VContainer&>(*vob);
-      if (focus_name) mob.name = std::move(*focus_name);
-      if (hp.has_value()) mob.hp = *hp;
-      if (damage.has_value()) mob.damage = *damage;
-      if (movable.has_value()) mob.movable = *movable;
-      if (takable.has_value()) mob.takable = *takable;
-      if (focus_override.has_value()) mob.focus_override = *focus_override;
-      if (sound_material) mob.material = *sound_material;
-      if (visual_destroyed) mob.visual_destroyed = std::move(*visual_destroyed);
-      if (owner) mob.owner = std::move(*owner);
-      if (owner_guild) mob.owner_guild = std::move(*owner_guild);
-      if (destroyed.has_value()) mob.destroyed = *destroyed;
-      if (state_count.has_value()) mob.state_count = *state_count;
-      if (target) mob.target = std::move(*target);
-      if (item) mob.item = std::move(*item);
-      if (condition_function) mob.condition_function = std::move(*condition_function);
-      if (on_state_change_function) mob.on_state_change_function = std::move(*on_state_change_function);
-      if (rewind.has_value()) mob.rewind = *rewind;
+      ApplyInteractiveObjectProps(env, props, mob);
       if (locked.has_value()) mob.locked = *locked;
       if (lock_key) mob.key = std::move(*lock_key);
       if (pick_string) mob.pick_string = std::move(*pick_string);
@@ -2610,60 +2445,15 @@ Napi::Value SetVobClassProp(Napi::CallbackInfo const& info) {
       break;
     }
     case zenkit::VirtualObjectType::oCMobDoor: {
-      RequireClassKeys(env, props,
-                       {"focusName", "hp", "damage", "movable", "takable", "focusOverride",
-                        "soundMaterial", "visualDestroyed", "owner", "ownerGuild", "destroyed", "stateCount",
-                        "target", "item", "conditionFunction", "onStateChangeFunction", "rewind", "locked",
-                        "key", "pickString"},
-                       class_name);
-      auto focus_name = OptionalCp1252String(env, props, "focusName");
-      auto const hp = OptionalInt32(env, props, "hp", std::nullopt, std::nullopt);
-      auto const damage = OptionalInt32(env, props, "damage", std::nullopt, std::nullopt);
-      auto const movable = OptionalBool(env, props, "movable");
-      auto const takable = OptionalBool(env, props, "takable");
-      auto const focus_override = OptionalBool(env, props, "focusOverride");
-      auto const sound_material =
-          OptionalEnum<zenkit::SoundMaterialType>(env, props, "soundMaterial");
-      auto visual_destroyed = OptionalCp1252String(env, props, "visualDestroyed");
-      auto owner = OptionalCp1252String(env, props, "owner");
-      auto owner_guild = OptionalCp1252String(env, props, "ownerGuild");
-      auto const destroyed = OptionalBool(env, props, "destroyed");
-      auto const state_count = OptionalInt32(env, props, "stateCount", std::nullopt, std::nullopt);
-      // Two cross-references on one class, checked against two different
-      // indexes and neither of them here. `target` is what this mob fires when
-      // it is used — a `vobName` in this world, so the renderer refuses a
-      // dangling one. `item` is what the player has to be carrying to use it —
-      // a Daedalus item instance, so the *project's* item index is what can
-      // refuse it, exactly as for `oCItem.instance`. The binding knows neither
-      // and writes both as the cp1252 strings the archive holds.
-      auto target = OptionalCp1252String(env, props, "target");
-      auto item = OptionalCp1252String(env, props, "item");
-      auto condition_function = OptionalCp1252String(env, props, "conditionFunction");
-      auto on_state_change_function = OptionalCp1252String(env, props, "onStateChangeFunction");
-      auto const rewind = OptionalBool(env, props, "rewind");
+      RequireClassKeys(env, props, kInteractiveObjectFamilyKeys,
+                       {"locked", "key", "pickString"}, class_name);
       auto const locked = OptionalBool(env, props, "locked");
       // The item instance that unlocks it — the class's own item-instance
       // string, checked where `item` above is and written here as it is given.
       auto lock_key = OptionalCp1252String(env, props, "key");
       auto pick_string = OptionalCp1252String(env, props, "pickString");
       auto& mob = static_cast<zenkit::VDoor&>(*vob);
-      if (focus_name) mob.name = std::move(*focus_name);
-      if (hp.has_value()) mob.hp = *hp;
-      if (damage.has_value()) mob.damage = *damage;
-      if (movable.has_value()) mob.movable = *movable;
-      if (takable.has_value()) mob.takable = *takable;
-      if (focus_override.has_value()) mob.focus_override = *focus_override;
-      if (sound_material) mob.material = *sound_material;
-      if (visual_destroyed) mob.visual_destroyed = std::move(*visual_destroyed);
-      if (owner) mob.owner = std::move(*owner);
-      if (owner_guild) mob.owner_guild = std::move(*owner_guild);
-      if (destroyed.has_value()) mob.destroyed = *destroyed;
-      if (state_count.has_value()) mob.state_count = *state_count;
-      if (target) mob.target = std::move(*target);
-      if (item) mob.item = std::move(*item);
-      if (condition_function) mob.condition_function = std::move(*condition_function);
-      if (on_state_change_function) mob.on_state_change_function = std::move(*on_state_change_function);
-      if (rewind.has_value()) mob.rewind = *rewind;
+      ApplyInteractiveObjectProps(env, props, mob);
       if (locked.has_value()) mob.locked = *locked;
       if (lock_key) mob.key = std::move(*lock_key);
       if (pick_string) mob.pick_string = std::move(*pick_string);
@@ -2676,48 +2466,10 @@ Napi::Value SetVobClassProp(Napi::CallbackInfo const& info) {
     // so a trigger list was authorable with nothing editable from I3 until the
     // enums landed.
     case zenkit::VirtualObjectType::zCTriggerList: {
-      RequireClassKeys(env, props,
-                       {"target", "vobTarget", "startEnabled", "sendUntrigger",
-                        "reactToOnTrigger", "reactToOnTouch",
-                        "reactToOnDamage", "respondToObject", "respondToPc", "respondToNpc",
-                        "maxActivationCount", "retriggerDelaySec", "damageThreshold",
-                        "fireDelaySec", "mode"},
-                       class_name);
-      auto target = OptionalCp1252String(env, props, "target");
-      auto vob_target = OptionalCp1252String(env, props, "vobTarget");
-      auto const start_enabled = OptionalBool(env, props, "startEnabled");
-      auto const send_untrigger = OptionalBool(env, props, "sendUntrigger");
-      auto const react_to_on_trigger = OptionalBool(env, props, "reactToOnTrigger");
-      auto const react_to_on_touch = OptionalBool(env, props, "reactToOnTouch");
-      auto const react_to_on_damage = OptionalBool(env, props, "reactToOnDamage");
-      auto const respond_to_object = OptionalBool(env, props, "respondToObject");
-      auto const respond_to_pc = OptionalBool(env, props, "respondToPc");
-      auto const respond_to_npc = OptionalBool(env, props, "respondToNpc");
-      auto const max_activation_count =
-          OptionalInt32(env, props, "maxActivationCount", std::nullopt, std::nullopt);
-      auto const retrigger_delay_sec =
-          OptionalFloatIn(env, props, "retriggerDelaySec", 0, std::nullopt);
-      auto const damage_threshold = OptionalFloatIn(env, props, "damageThreshold", 0, std::nullopt);
-      auto const fire_delay_sec = OptionalFloatIn(env, props, "fireDelaySec", 0, std::nullopt);
+      RequireClassKeys(env, props, kTriggerKeys, {"mode"}, class_name);
       auto const mode = OptionalEnum<zenkit::TriggerBatchMode>(env, props, "mode");
       auto& list = static_cast<zenkit::VTriggerList&>(*vob);
-      // Qualified, and it has to be: `VTriggerList` declares a deprecated
-      // `using target = Target` for its per-entry struct, which shadows the
-      // member name it inherits — `list.target` is a *type* here.
-      if (target) list.zenkit::VTrigger::target = std::move(*target);
-      if (vob_target) list.vob_target = std::move(*vob_target);
-      if (start_enabled.has_value()) list.start_enabled = *start_enabled;
-      if (send_untrigger.has_value()) list.send_untrigger = *send_untrigger;
-      if (react_to_on_trigger.has_value()) list.react_to_on_trigger = *react_to_on_trigger;
-      if (react_to_on_touch.has_value()) list.react_to_on_touch = *react_to_on_touch;
-      if (react_to_on_damage.has_value()) list.react_to_on_damage = *react_to_on_damage;
-      if (respond_to_object.has_value()) list.respond_to_object = *respond_to_object;
-      if (respond_to_pc.has_value()) list.respond_to_pc = *respond_to_pc;
-      if (respond_to_npc.has_value()) list.respond_to_npc = *respond_to_npc;
-      if (max_activation_count.has_value()) list.max_activation_count = *max_activation_count;
-      if (retrigger_delay_sec.has_value()) list.retrigger_delay_sec = *retrigger_delay_sec;
-      if (damage_threshold.has_value()) list.damage_threshold = *damage_threshold;
-      if (fire_delay_sec.has_value()) list.fire_delay_sec = *fire_delay_sec;
+      ApplyTriggerProps(env, props, list);
       if (mode) list.mode = *mode;
       break;
     }
