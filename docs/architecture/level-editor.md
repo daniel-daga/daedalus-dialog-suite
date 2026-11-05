@@ -2638,7 +2638,11 @@ it as-is would build an op per character, and its "Add …" affordance offers to
 author a Daedalus symbol from the level editor. Making it fit means local draft
 state and a second commit path beside `EditableField`'s, which is more machinery
 than the refusal is. A `<datalist>` on the existing input is the cheap version if
-suggestion is ever wanted. **A refusal for the other direction** — an item
+suggestion is ever wanted. **A picker does exist, just not on this field**: the
+Assets panel's **Items** tab (#412) lists the item index as a catalogue and
+places one as an `oCItem` with `instance` filled in, through the armed `AddVob`
+path — what it does not do is change the instance of a VOB already in the world,
+which is still this field. **A refusal for the other direction** — an item
 instance that exists in the scripts but whose *world* VOB is gone — is script→
 world, which is the cross-reference job in §14.4, not this one. And **partial
 ingestion can refuse a real name**: the index converges, the refusal writes
