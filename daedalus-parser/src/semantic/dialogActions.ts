@@ -27,7 +27,10 @@ export class DialogLine implements CodeGeneratable {
   }
 
   generateCode(options: CodeGenOptions): string {
-    const shouldEmitComment = options.includeComments && (this.inlineComment ?? this.text !== this.id);
+    // `inlineComment` records whether the source wrote one; an edited subtitle
+    // on a line that had none still has to be written, or the edit is lost
+    // (#514's tier-3 case).
+    const shouldEmitComment = options.includeComments && (this.inlineComment || this.text !== this.id);
     // A line comment ends at the next physical newline. Prefix every
     // continuation line so edited subtitle text cannot become Daedalus code.
     const commentText = this.text.replace(/(\r\n|\r|\n)/g, '$1//');

@@ -2,6 +2,7 @@
 
 ## One line per change, newest on top, `- #123: Short description` (120 characters max). A build ships only the lines added since the last one, and CHANGELOG.md keeps them; old lines may be pruned at any time.
 
+- #514: A dialog line's edited subtitle is saved even when the line carried no inline comment
 - #410: Particle effects draw in the World viewport from the project's own C_PARTICLEFX definitions
 - #426: The NPC editor's preview draws the melee weapon the form selects
 - #406: A searched asset that can be placed — a compiled MOB model included — stays in the Assets list

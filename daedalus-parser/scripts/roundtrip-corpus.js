@@ -629,4 +629,10 @@ function main() {
   }
 }
 
-main();
+// The tier-3 edit test (#514) reuses the token comparison rather than keeping a
+// second copy of it; the CLI still runs only when invoked directly.
+module.exports = { tokenStream, compareTokenStreams };
+
+if (require.main === module) {
+  main();
+}

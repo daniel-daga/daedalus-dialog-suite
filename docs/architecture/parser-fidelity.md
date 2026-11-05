@@ -541,6 +541,22 @@ function of another name (#395).
 3. **Semantic drift + idempotence:** model summaries (including
    class/prototype/global name sets) across reparse.
 
+**Save after an edit (#514).** The corpus only proves a file can be re-saved
+untouched; the editor's real path is a save *after* the user changed the model,
+and the edit-then-save defects (slice 2, 4 and 5) live outside it.
+`test/roundtrip-edits.test.js` parses a fixture, edits the model the way the
+editor does — a subtitle, a typed action's argument, a condition added to the
+guard, a `C_INFO` property — then runs the save path as it actually is
+(`JSON` → `deserializeSemanticModel` → generate, the hop across the IPC
+boundary) and compares the result against the source carrying the same edit, as
+token streams. The expected text is written in the test, never recorded from
+the generator, so a generator that drops the edit or a statement beside it
+fails. Add one case per edit family. Its first run caught a lost edit: a
+subtitle edited on a line whose source had no `//` comment was never written,
+because `DialogLine` preferred the parsed `inlineComment: false` over the
+changed text — `inlineComment` now only forces a comment, it no longer
+suppresses one.
+
 The committed fixture corpus (`test/fixtures/corpus/`, 18 files, one per
 construct family) runs fully strict via `test/roundtrip-corpus-smoke.test.js`
 — all fixtures are in the green set and the test fails if any regresses.
