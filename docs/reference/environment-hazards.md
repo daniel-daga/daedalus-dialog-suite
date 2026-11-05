@@ -466,6 +466,14 @@ unexplained**, and three plausible-looking explanations have been ruled out.
   or `HKLM\SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps` on
   `node.exe`) so the faulting module is read off a stack instead of guessed at.
 
+**Closed 2026-11-05 without a capture (#224): it has not recurred.** No run
+since 2026-08-28 exited `0xC0000409`, and the evidence above still names
+tree-sitter's two `.node` files, not the addon, so re-open on a fresh sighting
+with a dump in hand rather than guessing again. The two runners stay:
+`test:stable:windows` is the local Windows baseline (one suite per process,
+`--no-cache`, one retry on a detected native exit) and `test:matrix:windows` is
+the repro matrix if it returns.
+
 ## Running a sabotage harness here
 
 A sabotage run breaks the code on purpose and checks the suite notices. On this
