@@ -280,7 +280,14 @@ const ActionsList = React.memo<ActionsListProps>(({
   const visibleItems = items.filter((item) => item.start < visibleCount);
 
   const droppable = (
-    <Droppable droppableId={droppableId}>
+    // #436: a list's `type` is its droppableId, so a drag can only be dropped
+    // back into its own list. The library filters candidates by the dragged
+    // item's type; without that, a Droppable nested inside a Draggable (a
+    // choice's sub-list) loses its drop to the enclosing list, which displaces
+    // the card by a transform and re-anchors the position:fixed drag preview to
+    // it — the row vanishes and the drop snaps back. Cross-list moves are
+    // unsupported anyway (DialogActionsSection drops them).
+    <Droppable droppableId={droppableId} type={droppableId}>
       {(provided) => (
         <Stack
           spacing={0}
