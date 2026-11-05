@@ -139,8 +139,8 @@ by one of them, not inferred. No repository file was edited except this report.
      function call.` `reference/SLD_99003_Farim.d:46` does the same for
      `Rtn_Start_99003`. A probe with `start_aistate = ZS_Test;` reports
      `ZS_Test` the same way. That is one finding per NPC routine in the project:
-     the routine rule's own comment measures **1,137 routines** in retail Gothic
-     II (`routineOverlap.ts:33-35`), and every one of them is named by
+     the routine rule's own comment measures **1,154 routines** in retail Gothic
+     II (`routineOverlap.ts:37-39`), and every one of them is named by
      `daily_routine` and by nothing else.
    - **What the user loses:** the panel. At the assumed load this rule pushes
      something on the order of a thousand false warnings into a list that has no
@@ -290,7 +290,7 @@ should say so, and finding 1 gives it a second caller; and `WorldLocus.vob`
 Neither is worth an issue; delete the field, or leave it.
 
 Not checked: no real project on this machine, so the routine and trialogue counts
-are extrapolated from the 1,137 routines and the one real dialog file named above,
+are extrapolated from the 1,154 routines and the one real dialog file named above,
 not counted over 890 files; the world-side inputs (`waynetNames`, `portalFindings`,
 `routinePlaces`) are read as the store hands them over and belong to slice 9; the
 `output-unit` write path's main-process half is slice 1's; and

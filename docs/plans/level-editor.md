@@ -3276,45 +3276,6 @@ lists and loads.
 
 ---
 
-### 16.34 Routine gap — a hole in the day, and the threshold nobody has set (#236)
-
-The other half of `coverageOf`, and it is not the twin of the overlap check
-that landed 2026-09-12 (#235, `problems/domain/rules/routineOverlap.ts`).
-
-**A hole is not undefined behaviour.** It is legal and common at half-day
-scale: an NPC with a twelve-hour routine is elsewhere the other twelve, and the
-schedule's own fallback draws him at his static spawn in the unknown layer
-rather than nowhere (`docs/architecture/level-editor.md` §8). So a gap is a
-fact about the day that may or may not be a defect, where an overlap is a day
-the scripts do not determine.
-
-**What retail does, and why it is not a cliff.** 11 of the 1,154 routines the
-index now carries leave exactly one hole each: 720, 600, 540, 420, 240, 60, 50,
-30, 30, 30 and 7 minutes. That is a spread, not two populations. The top five
-are plainly deliberate half- and quarter-day routines, the 7-minute one is
-plainly not, and nothing in between announces where the line falls. Every
-cut-off is equally defensible, which is the problem.
-
-**So this is a measurement card before it is a rule card**, in §16.22's manner:
-the question is not "is a gap bad" but "is there a hole size retail does not
-write". The instrument exists —
-`daedalus-dialog-editor/scripts/check-routine-coverage.js` — so the work is a
-re-run and a reading, not a script.
-
-**The re-run is done (2026-10-29) and the tail did not move.** 1,725 files,
-6,215 of 6,275 `TA`-family calls indexed (99.0%), 1,154 routines, the same
-eleven routines with the same eleven numbers, 8 routines overlapping as before.
-The 17 `DMT_DementorAmbient.d` walker routines the `$.block` fix recovered added
-no gap, so 2026-09-01's 1,137/11 was the whole picture rather than a truncated
-one — this is a count of routines, not of holes. The gap is already drawn where
-an author edits it (`RoutineEditor` marks it and says no activity covers the
-time), so what is left is the choice in #236, not a measurement.
-
-**A measurement is allowed to kill its own check**, as occupancy's did (§16.22).
-The same spread with no cliff means no gap rule and a close as answered rather
-than as built; #236 carries the options and the recommendation. Corpus is
-`mdk/Content` — the maintainer's machine, not CI, so this was not agent-ready.
-
 ### 16.40 A decal edit was not redrawn (fixed), and `visualCamAlign` is unread (2026-10-12; #391)
 
 The decals are drawn — a camera-facing quad per decal at its own size, alpha
