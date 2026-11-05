@@ -4,13 +4,18 @@ import type { CommentActionType } from '../../types/global';
 import { ActionFieldContainer, ActionTextField, ActionDeleteButton } from '../common';
 
 /**
- * Read-only display for a standalone comment preserved from source (parser's
- * `CommentAction`). Comments are not structurally editable in the dialog UI,
- * but must render without crashing and survive round-trips (delete-only).
+ * The model keeps a comment's source text verbatim, marker included; the field
+ * edits only the note behind it and always writes the marker back (#430), so an
+ * edited note can never become a bare statement.
  */
+const NOTE_PREFIX = '// ';
+const noteBody = (text: string): string => text.replace(/^\/\/[ \t]?/, '');
+
 const CommentActionRenderer: React.FC<BaseActionRendererProps> = ({
   action,
+  handleUpdate,
   handleDelete,
+  flushUpdate,
   handleKeyDown,
   mainFieldRef
 }) => {
@@ -21,12 +26,12 @@ const CommentActionRenderer: React.FC<BaseActionRendererProps> = ({
       <ActionTextField
         fullWidth
         label="Comment"
-        value={typedAction.text || ''}
-        onChange={() => { /* read-only: comments are not editable */ }}
+        value={noteBody(typedAction.text || '')}
+        onChange={(value) => handleUpdate({ ...typedAction, text: `${NOTE_PREFIX}${value}` })}
+        onFlush={flushUpdate}
         onKeyDown={handleKeyDown}
         isMainField
         mainFieldRef={mainFieldRef}
-        InputProps={{ readOnly: true }}
         sx={{
           '& .MuiInputBase-input': {
             fontFamily: 'monospace',

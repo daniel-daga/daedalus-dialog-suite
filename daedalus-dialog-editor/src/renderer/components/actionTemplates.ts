@@ -30,6 +30,7 @@ import type {
   InsertNpcAction,
   HeroFollowsAction,
   ConditionalAction,
+  CommentAction,
   CustomAction
 } from './actionTypes';
 
@@ -218,6 +219,14 @@ export const ACTION_TEMPLATES = {
     condition,
     thenActions: [],
     elseActions: []
+  }),
+
+  // #430: a standalone `// note` line. The marker is part of the text (the
+  // parser keeps a comment's source verbatim), and an empty note keeps it so
+  // it stays a comment line instead of a blank line that read-back drops.
+  commentAction: (text: string = '// '): CommentAction => ({
+    type: 'CommentAction',
+    text
   }),
 
   customAction: (action: string = 'AI_StopProcessInfos(self)'): CustomAction => ({

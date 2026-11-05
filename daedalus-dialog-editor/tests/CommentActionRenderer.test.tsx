@@ -5,6 +5,9 @@ import CommentActionRenderer from '../src/renderer/components/actionRenderers/Co
 import ActionsList from '../src/renderer/components/ActionsList';
 import { getRendererForAction, getActionTypeLabel } from '../src/renderer/components/actionRenderers';
 import { getActionType } from '../src/renderer/components/actionTypes';
+import { createAction } from '../src/renderer/components/actionFactory';
+import { CodeGeneratorService } from '../src/main/services/CodeGeneratorService';
+import type { CommentActionType } from '../src/renderer/types/global';
 
 const baseProps = {
   path: [0],
@@ -22,15 +25,27 @@ const baseProps = {
 describe('CommentActionRenderer (parser fix P6: standalone comments preserved as CommentAction)', () => {
   const commentAction = { type: 'CommentAction' as const, text: '// standalone note about the routine below' };
 
-  test('renders the comment text', () => {
+  test('renders the note body, not the // marker (the marker is the generator\'s)', () => {
     render(<CommentActionRenderer {...baseProps} action={commentAction} />);
-    expect(screen.getByLabelText('Comment')).toHaveValue('// standalone note about the routine below');
+    expect(screen.getByLabelText('Comment')).toHaveValue('standalone note about the routine below');
   });
 
-  test('is read-only: typing into the field does not attempt a structural edit', () => {
-    render(<CommentActionRenderer {...baseProps} action={commentAction} />);
+  test('is editable: typing writes the text back as a // comment (#430)', () => {
+    const handleUpdate = jest.fn();
+    render(
+      <CommentActionRenderer
+        {...baseProps}
+        action={{ type: 'CommentAction' as const, text: '// ' }}
+        handleUpdate={handleUpdate}
+      />
+    );
     const field = screen.getByLabelText('Comment') as HTMLInputElement;
-    expect(field).toHaveAttribute('readonly');
+    expect(field).not.toHaveAttribute('readonly');
+    fireEvent.change(field, { target: { value: 'create the variable for this condition' } });
+    expect(handleUpdate).toHaveBeenCalledWith({
+      type: 'CommentAction',
+      text: '// create the variable for this condition'
+    });
   });
 
   test('delete button still calls handleDelete (comments can be removed like any action)', () => {
@@ -44,6 +59,28 @@ describe('CommentActionRenderer (parser fix P6: standalone comments preserved as
     const bareComment = { type: 'CommentAction' as const, text: '' };
     render(<CommentActionRenderer {...baseProps} action={bareComment} />);
     expect(screen.getByLabelText('Comment')).toHaveValue('');
+  });
+});
+
+describe('an added note (#430)', () => {
+  test('the factory creates an empty comment whose marker keeps it in the file', () => {
+    const note = createAction('commentAction') as CommentActionType;
+    expect(note).toMatchObject({ type: 'CommentAction', text: '// ' });
+    expect(getActionType(note)).toBe('commentAction');
+  });
+
+  test('the editor\'s save path writes an added and edited note as a comment line', () => {
+    const note = { ...(createAction('commentAction') as CommentActionType), text: '// TODO: create the variable' };
+    const code = new CodeGeneratorService().generateCode(
+      {
+        functions: {
+          DIA_Note_Info: { name: 'DIA_Note_Info', returnType: 'void', calls: [], actions: [note] }
+        },
+        dialogs: {}
+      },
+      { indentChar: '\t' as const, includeComments: true, sectionHeaders: false, uppercaseKeywords: true }
+    );
+    expect(code).toContain('\n\t// TODO: create the variable\n');
   });
 });
 
@@ -80,6 +117,6 @@ describe('CommentAction inside an action list', () => {
       />
     );
 
-    expect(screen.getByDisplayValue('// a note between two lines')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('a note between two lines')).toBeInTheDocument();
   });
 });

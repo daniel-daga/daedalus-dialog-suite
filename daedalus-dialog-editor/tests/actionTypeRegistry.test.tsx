@@ -5,7 +5,7 @@
  */
 import React from 'react';
 import { describe, test, expect, jest } from '@jest/globals';
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { ACTION_TYPE_REGISTRY, ADDABLE_ACTION_TYPES } from '../src/renderer/components/actionTypeRegistry';
 import { getActionTypeLabel } from '../src/renderer/components/actionRenderers';
 import ActionTypeMenu from '../src/renderer/components/common/ActionTypeMenu';
@@ -77,12 +77,19 @@ describe('actionTypeRegistry', () => {
     expect(items.map((item) => item.textContent)).toEqual(
       ADDABLE_ACTION_TYPES.map((id) => ACTION_TYPE_REGISTRY[id].label)
     );
-    // Comments are parser-preserved only: never offered, but still labelled.
-    expect(ADDABLE_ACTION_TYPES).not.toContain('commentAction');
+    // A note is an ordinary standalone comment line (#430), so it is offered.
+    expect(ADDABLE_ACTION_TYPES).toContain('commentAction');
     expect(getActionTypeLabel({ type: 'CommentAction' })).toBe('Comment');
     // Nor is the quest step card itself: its lines come from the quest entries.
     expect(ADDABLE_ACTION_TYPES).not.toContain('questStep');
     expect(getActionTypeLabel({ type: 'QuestStep' })).toBe('Quest Step');
+  });
+
+  test('the add menu offers the note and selects commentAction (#430)', () => {
+    const onSelect = jest.fn();
+    render(<ActionTypeMenu anchorEl={document.body} onClose={jest.fn()} onSelect={onSelect} />);
+    fireEvent.click(screen.getByText('Comment'));
+    expect(onSelect).toHaveBeenCalledWith('commentAction');
   });
 
   test('the menu renders the registry icon for each item', () => {
