@@ -3338,7 +3338,7 @@ confirm the staged file's hash, and keep a control run in the same session
 | 1 | The seven decal fields on `SetVobProp` — the three the viewport draws (`decalDimension`, `decalAlphaWeight`, `decalAlphaFunc`) and the four it does not | 2026-08-28 | Gate 2b remainder; architecture §7 |
 | 2 | **Any enum write at all.** `lightType`, `quality`, a sound's `mode` and `volumeType`, `soundMaterial`, a filter's two actions, a trigger list's `mode`, a mover's `behavior`, a mover controller's `message` | 2026-08-30 | Gate 2b remainder; architecture §7, *"Class properties"* |
 | 3 | 22 of the 27 authorable classes — five have been placed and seen | 2026-08-29 | Gate 2b remainder; §16.15 |
-| 4 | A written chest `contents` — the archive's `contains` string, spawning the items it names | 2026-09-03 | #223; §16.26 row 2 |
+| 4 | A written chest `contents` — the archive's `contains` string, spawning the items it names | 2026-09-03 | §16.26 row 2 |
 | 5 | A trigger firing **what it is wired to**: `target` and `vobTarget` on the `VTrigger` classes, `zCTriggerWorldStart` and `zCTriggerUntouch`, `zCMessageFilter.target`, `zCCodeMaster.target` and `failureTarget` | 2026-09-12 | architecture §7, *"What a trigger fires at"* |
 | 6 | A mob firing its `target` **when used**, which is the `VInteractiveObject` half of the same change | 2026-09-12 | #259 |
 | 7 | `zCMoverController` driving a mover to the keyframe its `key` names, under each `message` | 2026-09-12 | #260 |
@@ -3357,8 +3357,11 @@ confirm the staged file's hash, and keep a control run in the same session
 **Out of this list by decision, not by omission.** `oCZoneMusic.volume` is
 unclaimed rather than tested badly: no ear can rank two music volumes in a live
 world (§16.2). And the two things that need a real **GPU** rather than the engine
-— how the thumbnail grid looks, how the walk feels — are #223's, not this list's;
-both want the same machine and neither wants a candidate world.
+— how the thumbnail grid looks, how the walk feels — are unwitnessed and stay
+that way: they were carded, and the maintainer dropped the card on 2026-11-05
+(closed without the in-app pass) rather than keep a tracker for one look. Nothing
+here proves them; a thumbnail that looks wrong or a walk that feels wrong is an
+ordinary defect report when someone notices it.
 
 A row that fails here is a defect and gets its own issue; this list only records
 that nobody has looked.
