@@ -17,22 +17,25 @@ import { coverageOf, windowCovers, type RoutineWindow } from '../../../routines/
  * certainly did not mean it. So any minute covered twice is one, and there is
  * nothing left for a threshold to decide.
  *
- * **The measurement, and the decision it supports.** 8 of retail's 1,137
+ * **The measurement, and the decision it supports.** 8 of retail's 1,154
  * routines with an indexed entry cover a window twice, one window each — no
  * tail, which is why §16.22's precedent left this uncarded rather than killing
  * it as it killed occupancy. A rule that fires 8 times on the whole of Gothic
  * II is worth having as a **warning**: Maintainer, 2026-09-12, which is the half
  * §16.33 said was missing.
  *
- * **The gap half is not this rule** (#236). A hole in the day is legal and
- * common at half-day scale — an NPC with a twelve-hour routine is elsewhere
- * the other twelve — so it is a threshold question nobody has answered. An
- * overlap is a day the scripts do not determine, which is a different claim.
+ * **There is no gap rule (#236), and the measurement is why.** A hole is legal
+ * — outside the entries the schedule draws the NPC at his static spawn
+ * (architecture §8) — so unlike an overlap it is not a day the scripts leave
+ * undetermined. Retail's 1,154 routines leave eleven holes, 7 to 720 minutes
+ * with no cliff (720, 600, 540, 420, 240, 60, 50, 30, 30, 30, 7), so no cut-off
+ * is defensible; the gap stays the mark `RoutineEditor`'s timeline already
+ * draws.
  *
  * The arithmetic is `coverageOf`'s, unchanged: a minute at a time over 1,440
  * counters, so every wrap-around case is one this cannot get wrong. It is
  * called once per *routine* rather than once per entry — retail's index is
- * 1,137 routines over some 4,000 entries, and a sweep per entry would be four
+ * 1,154 routines over some 4,000 entries, and a sweep per entry would be four
  * times the work for the same answer.
  */
 export const routineOverlapRule: LintRule = (view): Problem[] => {

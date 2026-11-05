@@ -177,7 +177,7 @@ describe('orphanedFunctionRule', () => {
 /**
  * The engine reaches two function kinds through a C_NPC instance body rather
  * than through a dialog or a call: the routine in `daily_routine` and the
- * state in `start_aistate`. Retail names **1,137 routines** and nothing else,
+ * state in `start_aistate`. Retail names **1,154 routines** and nothing else,
  * so missing these reported every one of them (editor review 2026-11-01,
  * finding 2).
  */

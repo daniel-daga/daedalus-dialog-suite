@@ -3755,12 +3755,12 @@ fixed; the numbers are what the fixes are worth.
   corpus to **4**, all four story relocations. `dialogsByNpc` keys every C_NPC
   with an empty array, so the array's *length* is the test, never the key's
   presence.
-- **Gap and overlap are how the game is built, at the margin only.** Of 1,137
-  routines with an indexed entry, 1,126 cover the day exactly once; 11 leave one
+- **Gap and overlap are how the game is built, at the margin only.** Of 1,154
+  routines with an indexed entry, 1,143 cover the day exactly once; 11 leave one
   hole and 8 cover a window twice. No tail. `coverageOf` computes the
   distribution — a minute at a time, 1,440 counters, because the day is a circle
   and every wrap-around case an interval merge must get right is one this cannot
-  get wrong — and **no Problems rule was written on it**, on the §16.22
+  get wrong — and **no gap rule was written on it**, on the §16.22
   precedent: the number comes first, and the number is allowed to kill the
   check, as the occupancy measurement's did.
 - **States are events, not chapters.** 271 of the 663 NPCs with a declared
@@ -3954,9 +3954,10 @@ hold — it holds one world at a time.
   minute the scripts do not determine, which left only the saying, and it
   **landed 2026-09-12 as a warning** (#235) over `coverageOf` — any minute
   covered twice is one finding, because a precedence between two `TA` entries
-  would be a rule the game does not have. The gap is a threshold nobody has
-  set and is a measurement before it is a rule (§16.34). `coverageOf` and its
-  script compute what both rest on.
+  would be a rule the game does not have. The gap is legal — the schedule
+  falls back to the static spawn — and retail's eleven holes run 7 to 720
+  minutes with no cliff to cut at, so there is no gap rule (#236).
+  `coverageOf` and its script compute what both rest on.
 - **Chapter-conditional presence.** `B_Enter_OldWorld.d`'s 302 spawns are one
   `if (Kapitel …)` after another, indexed since the nested-call fix but drawn
   unconditionally at every minute and every state. It needs the guard, and

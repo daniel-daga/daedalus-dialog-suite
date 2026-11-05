@@ -172,7 +172,7 @@ export interface FileFacts {
    * Function names an instance body assigns to a property — the routine in
    * `daily_routine`, the state in `start_aistate`. The engine reaches both
    * without a dialog or a call, so `orphaned-function` cannot see them
-   * anywhere else, and retail names 1,137 routines this way and no other.
+   * anywhere else, and retail names 1,154 routines this way and no other.
    */
   instanceRefs: string[];
 }

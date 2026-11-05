@@ -11,7 +11,7 @@
  * minute covered twice is one finding: no threshold, no discriminator.
  *
  * The severity is a warning, decided by the maintainer 2026-09-12 on the measurement
- * §16.33 records: 8 of retail's 1,137 indexed routines overlap, one window
+ * §16.33 records: 8 of retail's 1,154 indexed routines overlap, one window
  * each, and there is no tail.
  *
  * The arithmetic itself belongs to `coverageOf` and is tested against the day
@@ -104,7 +104,7 @@ describe('routineOverlapRule', () => {
   });
 
   it('reads each routine once, however many entries name it', () => {
-    // `coverageOf` sweeps 1,440 minutes per call; retail's index is 1,137
+    // `coverageOf` sweeps 1,440 minutes per call; retail's index is 1,154
     // routines over ~4,000 entries, so a call per entry would be four times
     // the work for the same answer.
     const problems = routineOverlapRule(view([
