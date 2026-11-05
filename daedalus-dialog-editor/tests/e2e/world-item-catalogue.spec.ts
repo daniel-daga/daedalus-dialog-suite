@@ -33,16 +33,10 @@ const ITEMS_FILE = `//__MOCK_MODEL__${JSON.stringify({
   },
 })}\n`;
 
-// The surface's item index is the *merged* model — the global scripts plus the
-// selected NPC's files — which is the index `oCItem.instance` is checked
-// against (§7). Its globals are merged when an NPC is selected, so the project
-// has one to select.
-const NPC_FILE = `INSTANCE BAU_900_Onar (C_NPC)
-{
-	name = "Onar";
-	guild = GIL_BAU;
-};
-`;
+// The surface's item index is the *merged* model — the project's globals, the
+// dialog-less files that declare the items — which is the index `oCItem.instance`
+// is checked against (§7). Project load merges them with no NPC selected (#526),
+// so the spec picks none.
 
 interface Harness {
   ops: Array<Array<Record<string, unknown>>>;
@@ -53,21 +47,16 @@ interface Harness {
 async function openProjectWithItems(page: Page): Promise<void> {
   await page.goto('/');
   await expect(page.getByText('Welcome to Dandelion')).toBeVisible();
-  await page.evaluate(({ items, npc }) => {
+  await page.evaluate(({ items }) => {
     localStorage.setItem('mockapi_file_project/world.d', '// empty\n');
     localStorage.setItem('mockapi_file_project/Items.d', items);
-    localStorage.setItem('mockapi_file_project/NPC/BAU_900_Onar.d', npc);
-  }, { items: ITEMS_FILE, npc: NPC_FILE });
+  }, { items: ITEMS_FILE });
   page.on('dialog', async (dialog) => {
     if (dialog.message().includes('project folder path')) await dialog.accept('project');
     else await dialog.dismiss();
   });
   await page.getByRole('button', { name: /Open Project/i }).first().click();
   await expect(page.getByTestId('project-opening-overlay')).toBeHidden({ timeout: 15000 });
-
-  // Selecting the NPC is what merges the project's global scripts — the item
-  // declarations among them — into the model the World surface reads.
-  await page.getByRole('button', { name: /BAU_900_Onar/ }).first().click();
 
   // The World view is a view toggle of the main layout, which needs a project.
   await page.getByTestId('world-toggle').click();

@@ -186,8 +186,8 @@ interface ProjectActions {
   // Merge multiple semantic models into one
   mergeSemanticModels: (models: SemanticModel[]) => void;
 
-  // Load and merge semantic models for a specific NPC
-  loadAndMergeNpcModels: (npcId: string) => void;
+  // Load and merge semantic models for a specific NPC (null: the globals alone)
+  loadAndMergeNpcModels: (npcId: string | null) => void;
 
   // Load and merge quest data (global constants/vars)
   loadQuestData: () => Promise<void>;
@@ -802,15 +802,15 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
         // The merged model is derived from the cache, so a contributor that
         // lands here — a global file, or the selected NPC's own — has to be
         // merged in; nothing else re-derives it while ingestion runs (#466).
+        // Globals merge with no NPC selected: they carry the items and
+        // constants the Items tab and the pickers read (#526).
         const { selectedNpc, dialogIndex } = get();
-        if (selectedNpc) {
-          const filesWithDialogs = getFilesWithDialogs(dialogIndex);
-          const npcFiles = new Set(
-            (dialogIndex.get(selectedNpc.toUpperCase()) || []).map((meta) => meta.filePath)
-          );
-          if (flushed.some((filePath) => !filesWithDialogs.has(filePath) || npcFiles.has(filePath))) {
-            get().loadAndMergeNpcModels(selectedNpc);
-          }
+        const filesWithDialogs = getFilesWithDialogs(dialogIndex);
+        const npcFiles = new Set(
+          (selectedNpc ? dialogIndex.get(selectedNpc.toUpperCase()) || [] : []).map((meta) => meta.filePath)
+        );
+        if (flushed.some((filePath) => !filesWithDialogs.has(filePath) || npcFiles.has(filePath))) {
+          get().loadAndMergeNpcModels(selectedNpc);
         }
       }
     };
@@ -1234,11 +1234,11 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
     }
   },
 
-  loadAndMergeNpcModels: (npcId: string) => {
+  loadAndMergeNpcModels: (npcId: string | null) => {
     const { dialogIndex, parsedFiles, allDialogFiles } = get();
 
-    // 1. Identify NPC-specific files
-    const dialogMetadata = dialogIndex.get(npcId.toUpperCase()) || [];
+    // 1. Identify NPC-specific files (none when no NPC is selected)
+    const dialogMetadata = npcId ? dialogIndex.get(npcId.toUpperCase()) || [] : [];
     const npcFilePaths = new Set(dialogMetadata.map(m => m.filePath));
 
     // 2. Identify "Global" files (non-dialog files)
@@ -1423,22 +1423,20 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
     // Re-merge the semantic model for the currently selected NPC so that
     // description changes, renames, and deletes are reflected immediately —
     // once for the whole batch. Skip the (full) re-merge when no updated file
-    // participates in the selected NPC's merged model — i.e. none is one of
-    // that NPC's dialog files or a global (dialog-less) file. This avoids
-    // rebuilding the merged model on background file-watcher updates to
-    // unrelated NPC files.
+    // participates in that merged model — i.e. none is one of the selected
+    // NPC's dialog files or a global (dialog-less) file. This avoids rebuilding
+    // the merged model on background file-watcher updates to unrelated NPC
+    // files. With no NPC selected the globals still merge (#526).
     const { selectedNpc } = get();
-    if (selectedNpc) {
-      const selectedNpcFiles = new Set(
-        (newDialogIndex.get(selectedNpc.toUpperCase()) || []).map(d => d.filePath)
-      );
-      const filesWithDialogs = getFilesWithDialogs(newDialogIndex);
-      const relevant = updates.some(
-        ({ filePath }) => selectedNpcFiles.has(filePath) || !filesWithDialogs.has(filePath)
-      );
-      if (relevant) {
-        get().loadAndMergeNpcModels(selectedNpc);
-      }
+    const selectedNpcFiles = new Set(
+      (selectedNpc ? newDialogIndex.get(selectedNpc.toUpperCase()) || [] : []).map(d => d.filePath)
+    );
+    const filesWithDialogs = getFilesWithDialogs(newDialogIndex);
+    const relevant = updates.some(
+      ({ filePath }) => selectedNpcFiles.has(filePath) || !filesWithDialogs.has(filePath)
+    );
+    if (relevant) {
+      get().loadAndMergeNpcModels(selectedNpc);
     }
   },
 
