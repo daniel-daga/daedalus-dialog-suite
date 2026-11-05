@@ -5,10 +5,11 @@ import { launchApp, seedProjectDir, stubOpenDialog, type AppFixture } from './ha
 
 /**
  * Real-Electron E2E spec #3 (fix-08 §2). Fidelity of the editor save path: open
- * a fixture, make a model edit that codegen does not emit, let auto-save write,
- * and assert the bytes on disk are token-identical to the original (fix-01
- * Tier-1). The second case pins the other half of the same rule: undoing back to
- * the pristine model writes nothing at all.
+ * a fixture, edit the first dialog line's subtitle, let auto-save write, and
+ * assert the bytes on disk are the original with exactly that subtitle appended
+ * as a `//` comment — nothing else moved (fix-01 Tier-1, #514). The second case
+ * pins the other half of the same rule: undoing back to the pristine model
+ * writes nothing at all.
  *
  * TRIGGER NOTE — "save with zero edits" is unreachable through the visual
  * editor UI: manual save (Ctrl+S / the app-bar Save button) is a no-op on a
@@ -18,13 +19,14 @@ import { launchApp, seedProjectDir, stubOpenDialog, type AppFixture } from './ha
  * reference-equal to the one on disk is clean (`FileState.savedModel`) — so the
  * edit itself is the trigger, and the undo case asserts the absence of a write.
  *
- * The write is detected via the file's mtime (not a content marker): every
- * fixture's first AI_Output line has no subtitle comment, so the UI's Text field
- * shows the id fallback and a text edit is invisible to codegen — EVERY write
- * this test can produce is expected to be byte-identical, which is exactly the
- * fidelity claim under test. (This also means the test must not poll for
- * changed content; a content poll on unchanged-content writes passes vacuously
- * before any write happens — the CI failure mode of the first version.)
+ * The edit is the one the UI can commit without touching another field: every
+ * fixture's first AI_Output line carries no `//` comment, so the Text field
+ * shows the id fallback and typing a subtitle changes only `DialogLine.text`.
+ * #514 made that text the single token the save path adds — it used to be
+ * dropped when the source had no inline comment. Every other byte must come
+ * back untouched. The write is detected via mtime, not by polling content (a
+ * content poll passes vacuously before any write lands — the CI failure mode of
+ * the first version).
  *
  * RATCHET — each row asserts on a fixture that is byte-identical through the
  * editor's DEFAULT code settings (`sectionHeaders: true`, `preserveSourceStyle:
@@ -69,7 +71,7 @@ const EDIT_MARKER = 'ZZZ_TEMP_MARKER';
 const normalizeNewlines = (s: string): string => s.replace(/\r\n/g, '\n');
 
 for (const { fixtureFile, npc, dialog, expectedTextValue } of FIXTURES) {
-  test.describe(`Save fidelity (no-edit through codegen, disk truth) — ${fixtureFile}`, () => {
+  test.describe(`Save fidelity (edit through codegen, disk truth) — ${fixtureFile}`, () => {
     let fixture: AppFixture;
     let savedFile: string;
     let originalBytes: string;
@@ -96,7 +98,7 @@ for (const { fixtureFile, npc, dialog, expectedTextValue } of FIXTURES) {
       await fixture?.cleanup();
     });
 
-    /** Edit the first line — a field codegen never emits — and commit it. */
+    /** Edit the first line's subtitle and commit it. */
     const editFirstLine = async () => {
       const { page } = fixture;
       const firstLine = page.getByLabel('Text').first();
@@ -108,23 +110,32 @@ for (const { fixtureFile, npc, dialog, expectedTextValue } of FIXTURES) {
       }).toPass({ timeout: 10000 });
     };
 
-    test('an auto-save of the edited model writes bytes token-identical to the original', async () => {
+    /** The one byte change the save path is allowed to make (see the header). */
+    const withEditedSubtitle = (): string =>
+      originalBytes.replace(
+        `AI_Output (self, other, "${expectedTextValue}");`,
+        `AI_Output (self, other, "${expectedTextValue}"); //${EDIT_MARKER}`
+      );
+
+    test('an auto-save of the edited model writes the source plus that one subtitle', async () => {
       const firstLine = fixture.page.getByLabel('Text').first();
       await expect(firstLine).toHaveValue(expectedTextValue);
 
       // No write can have happened yet — the file was only opened (read).
       const mtimeBefore = fs.statSync(savedFile).mtimeMs;
+      const expectedBytes = withEditedSubtitle();
+      expect(expectedBytes).not.toBe(originalBytes);
 
       await editFirstLine();
 
       // Auto-save (2 s debounce) serializes the model through the real codegen +
       // FileService write. Wait for the write to actually land (mtime change),
-      // then assert the written bytes reproduce the original exactly (modulo
-      // line-ending normalization, per Tier-1).
+      // then assert the written bytes are the original with the new subtitle and
+      // nothing else (modulo line-ending normalization, per Tier-1).
       await expect(async () => {
         expect(fs.statSync(savedFile).mtimeMs).not.toBe(mtimeBefore);
         const disk = fs.readFileSync(savedFile, 'latin1');
-        expect(normalizeNewlines(disk)).toBe(normalizeNewlines(originalBytes));
+        expect(normalizeNewlines(disk)).toBe(normalizeNewlines(expectedBytes));
       }).toPass({ timeout: 20000 });
     });
 
