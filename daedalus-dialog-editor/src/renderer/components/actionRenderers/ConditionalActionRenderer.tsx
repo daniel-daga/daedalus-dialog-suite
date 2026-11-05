@@ -54,6 +54,16 @@ function hasTopLevelOr(expression: string): boolean {
   return false;
 }
 
+// The If/Effect/Else labels head the row each one names (#434), so they are
+// headings rather than captions sitting beside it.
+const SectionHeading: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+  <Divider sx={{ mb: 1 }}>
+    <Typography variant="caption" component="h4" sx={{ fontWeight: 700 }}>
+      {children}
+    </Typography>
+  </Divider>
+);
+
 const ConditionalActionRenderer: React.FC<BaseActionRendererProps> = ({
   action,
   path,
@@ -109,9 +119,9 @@ const ConditionalActionRenderer: React.FC<BaseActionRendererProps> = ({
   };
 
   const branchSections = useMemo(() => ([
-    { branch: 'then' as const, label: typedAction.elseIf ? 'Then' : 'If' },
+    { branch: 'then' as const, label: 'Effect' },
     { branch: 'else' as const, label: elseIfChain ? 'Else If' : 'Else' }
-  ]), [typedAction.elseIf, elseIfChain]);
+  ]), [elseIfChain]);
 
   const openBranchMenu = (event: React.MouseEvent<HTMLElement>, branch: ActionBranchKey) => {
     setActiveBranch(branch);
@@ -121,6 +131,7 @@ const ConditionalActionRenderer: React.FC<BaseActionRendererProps> = ({
   return (
     <Paper variant="outlined" sx={{ p: 1.5, bgcolor: 'background.default' }}>
       <Stack spacing={1.5}>
+        <SectionHeading>If</SectionHeading>
         <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1 }}>
           <TextField
             fullWidth
@@ -164,11 +175,7 @@ const ConditionalActionRenderer: React.FC<BaseActionRendererProps> = ({
           const branchActions = branch === 'then' ? typedAction.thenActions : typedAction.elseActions;
           return (
             <Box key={branch}>
-              <Divider sx={{ mb: 1 }}>
-                <Typography variant="caption" sx={{ fontWeight: 700 }}>
-                  {label}
-                </Typography>
-              </Divider>
+              <SectionHeading>{label}</SectionHeading>
 
               <ActionsList
                 actions={branchActions}

@@ -51,6 +51,28 @@ describe('ConditionalActionRenderer', () => {
     expect(screen.getByTestId('actions-list-1-else')).toHaveTextContent('0');
   });
 
+  // Issue #434: If, Effect and Else are headings over the row each one names —
+  // not labels that merely happen to sit next to something.
+  const precedes = (heading: HTMLElement, row: HTMLElement) =>
+    Boolean(heading.compareDocumentPosition(row) & Node.DOCUMENT_POSITION_FOLLOWING);
+
+  test('heads the condition row with If, the row under it with Effect, and the else row with Else', () => {
+    render(<ConditionalActionRenderer {...baseProps} />);
+
+    const ifHeading = screen.getByRole('heading', { name: 'If' });
+    const condition = screen.getByLabelText('Condition');
+    const effectHeading = screen.getByRole('heading', { name: 'Effect' });
+    const thenList = screen.getByTestId('actions-list-1-then');
+    const elseHeading = screen.getByRole('heading', { name: 'Else' });
+    const elseList = screen.getByTestId('actions-list-1-else');
+
+    expect(precedes(ifHeading, condition)).toBe(true);
+    expect(precedes(condition, effectHeading)).toBe(true);
+    expect(precedes(effectHeading, thenList)).toBe(true);
+    expect(precedes(thenList, elseHeading)).toBe(true);
+    expect(precedes(elseHeading, elseList)).toBe(true);
+  });
+
   test('updates condition text through handleUpdate', () => {
     render(<ConditionalActionRenderer {...baseProps} />);
 

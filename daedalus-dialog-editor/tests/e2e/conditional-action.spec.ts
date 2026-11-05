@@ -49,6 +49,7 @@ test.describe('Conditional action (If / Else block)', () => {
 
     await expect(page.getByLabel('Delete conditional block')).toBeVisible();
     await expect(page.getByText('If', { exact: true })).toBeVisible();
+    await expect(page.getByText('Effect', { exact: true })).toBeVisible();
     await expect(page.getByText('Else', { exact: true })).toBeVisible();
     // Both branches start empty.
     await expect(page.getByText('No actions in this branch.')).toHaveCount(2);
