@@ -13,7 +13,10 @@ import { displayNumericOrStringField, parseNumericOrStringField } from './numeri
 // Wide enough for the clear and follow-reference buttons side by side (#434).
 const GIVER_FIELD_SX = { width: 110 };
 const RECEIVER_FIELD_SX = { width: 110 };
-const ITEM_FIELD_SX = { flex: 1 };
+// The Item field carries the follow-reference, clear and popup icons. At 97px
+// in a 1280 window that pair spilled ~7px past its border, so the field keeps
+// this width and the row wraps rather than squeeze it (#434).
+const ITEM_FIELD_SX = { flex: 1, minWidth: 140 };
 
 const GiveInventoryItemsRenderer: React.FC<BaseActionRendererProps> = ({
   action,
@@ -45,7 +48,7 @@ const GiveInventoryItemsRenderer: React.FC<BaseActionRendererProps> = ({
   );
 
   return (
-    <ActionFieldContainer>
+    <ActionFieldContainer sx={{ flexWrap: 'wrap' }}>
       <VariableAutocomplete
         label="Giver"
         value={typedAction.giver || ''}

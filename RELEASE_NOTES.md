@@ -4,6 +4,7 @@
 
 - #530: A negated Npc_KnowsInfo in a quest condition stays structured instead of reading as unknown
 - #422: Space, X and PageUp/Down lift and lower a VOB in rotate mode instead of rolling it
+- #434: An If card heads its condition with If and the row under it with Effect
 - #434: An autocomplete field's clear and follow-reference buttons sit side by side instead of on top of each other
 - #499: Trialogue voice ids are no longer flagged as malformed
 - #417: A Locator tab lists the world's item VOBs within a radius, bad instances only, by name
