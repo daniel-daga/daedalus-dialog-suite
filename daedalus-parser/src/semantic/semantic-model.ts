@@ -1332,10 +1332,8 @@ export function deserializeSemanticModel(json: any): SemanticModel {
   for (const funcName in json.functions) {
     const funcJson = json.functions[funcName];
 
-    // Ensure types are present in actions and conditions for class-transformer
-    if (funcJson.actions) {
-        funcJson.actions.forEach((a: any) => ensureActionType(a));
-    }
+    // Ensure types are present in conditions for class-transformer. Actions are
+    // typed by deserializeAction, which each of them goes through below.
     if (funcJson.conditions) {
         funcJson.conditions.forEach((c: any) => ensureConditionType(c));
     }

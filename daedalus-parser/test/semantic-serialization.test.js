@@ -594,3 +594,41 @@ test('a dialog payload written before the body was deduplicated still hydrates (
   assert.strictEqual(model.dialogs.DIA_Legacy.actions, model.functions.DIA_Legacy_Info.actions);
   assert.equal(model.dialogs.DIA_Legacy.actions.length, 2, 'the function dictionary stays authoritative');
 });
+
+test('deserializeSemanticModel types typeless function actions in deserializeAction, including nested ones (#528)', () => {
+  const { ConditionalAction, StopProcessInfosAction, PlayAniAction, SetRefuseTalkAction } = require('../dist/semantic/semantic-visitor-index');
+
+  const plainJson = {
+    functions: {
+      DIA_Typeless_Info: {
+        name: 'DIA_Typeless_Info',
+        returnType: 'void',
+        actions: [
+          // Legacy IPC payload: no `type` on any action.
+          { speaker: 'other', text: 'Hi!', id: 'DIA_Typeless_15_00' },
+          // Only discriminated by being a lone `target` key.
+          { target: 'self' },
+          {
+            condition: 'HAS_GOLD',
+            thenActions: [{ target: 'self', animationName: 'T_STAND_2_SIT' }],
+            elseActions: [{ target: 'self', seconds: 300 }]
+          }
+        ],
+        conditions: [],
+        calls: []
+      }
+    },
+    dialogs: {}
+  };
+
+  const { actions } = deserializeSemanticModel(plainJson).functions.DIA_Typeless_Info;
+
+  assert.ok(actions[0] instanceof DialogLine);
+  assert.equal(actions[0].listener, 'self', 'ensureActionType normalises the hero-line listener');
+
+  assert.ok(actions[1] instanceof StopProcessInfosAction, 'a lone target is a StopProcessInfosAction');
+
+  assert.ok(actions[2] instanceof ConditionalAction);
+  assert.ok(actions[2].thenActions[0] instanceof PlayAniAction, 'nested then-actions are typed by the recursion');
+  assert.ok(actions[2].elseActions[0] instanceof SetRefuseTalkAction, 'nested else-actions are typed by the recursion');
+});
