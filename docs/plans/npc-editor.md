@@ -259,6 +259,12 @@ the preview is not claimed as an exact engine reproduction.
   left. Restoring it is the resolver reading the call again and
   `npcBodyRequest` passing it on; `zen-world`'s `NpcBodyRequest.fatness` and
   the main-process validator still accept it.
+- **The weapon's hand is unverified (#426).** The melee weapon hangs on
+  `BIP01 R HAND` of `HUMANS.MDH` — the node naming the head already uses — and
+  the item mesh is assumed authored in hand space. Neither has been compared
+  against retail assets, and ranged weapons are not drawn at all: the slice
+  takes the form's first melee equip. A retail `HUMANS.MDH` and one in-app look
+  settle the node name and the grip offset.
 - **Animation (#311):** selecting “Scrub idle animation” loads the `S_IDLE`
   `.MAN` referenced by the model's `.MDS` script and samples its frames through
   the existing skinning path. The normalized frame slider and native fixture
