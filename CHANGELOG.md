@@ -4,6 +4,19 @@ What each published Windows build changed, newest first. Build Windows adds a
 build here when it publishes it; write new notes in `RELEASE_NOTES.md`, not here.
 Builds before 31 had no release notes.
 
+## Build 42 — 2026-11-05
+
+- #424: Items in the World view draw as their mesh, resolved from the item's script instance
+- #425: Adding a waypoint selects it, and the dialog can place it in front of the camera
+- #423: A waypoint's facing turns with the rotate gizmo, and G drops it to the ground
+- #392: zParserExtender mods open — `META` headers, `test` blocks and `namespace` are preserved as written
+- #432: "Else If" is a real action — an "Else If" button chains it, and the file keeps the form it was written in
+- #441: The NPC preview keeps the camera where it was set when a head, body or armour changes
+- #435: A new NPC Knows Dialog condition defaults to the other NPC (the player), not self
+- #515: A .d file with a UTF-8 BOM opens without junk characters on its first line
+- #427: A new NPC lands in the mod's own Story/NPC folder, not the MDK's Monster folder
+- #442: A male NPC's head-mesh suggestions no longer offer the female HUM_HEAD_BABE* meshes
+
 ## Build 41 — 2026-11-04
 
 - #325: Named quest stages — declare a stage, set it in a dialog, and branch on it with a "Stage" condition card
