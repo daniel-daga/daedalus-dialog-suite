@@ -11,8 +11,11 @@ interface VoiceIdOccurrence {
   ordinal: number;
 }
 
-/** Vanilla voice ids end in `_<number>_<number>`, e.g. `DIA_Alrik_Teach_15_00`. */
-const VANILLA_PATTERN = /_\d+_\d+$/;
+/**
+ * Vanilla voice ids end in `_<number>_<number>`, e.g. `DIA_Alrik_Teach_15_00`, or
+ * in a single `_<number>` for trialogues, e.g. `TRIA_ArogAlchemist_00`.
+ */
+const VANILLA_PATTERN = /_\d+(?:_\d+)?$/;
 
 /**
  * `voice-id-duplicate` / `voice-id-malformed`: project-wide checks over every
@@ -72,7 +75,7 @@ export const voiceIdRule: LintRule = (view): Problem[] => {
       id: `voice-id-malformed:${occ.filePath}:${occ.functionName}:${occ.id.toUpperCase()}:${occ.ordinal}`,
       rule: 'voice-id-malformed',
       severity: 'warning',
-      message: `Voice ID "${occ.id}" does not match the expected naming pattern (…_<number>_<number>).`,
+      message: `Voice ID "${occ.id}" does not match the expected naming pattern (…_<number>_<number>, or …_<number> for a trialogue).`,
       locus: { kind: 'script', filePath: occ.filePath, functionName: occ.functionName, line: occ.line }
     });
   }
