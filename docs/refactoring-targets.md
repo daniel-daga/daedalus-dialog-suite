@@ -284,8 +284,15 @@ becomes a registration table.
 
 ---
 
-### 13. `deserializeSemanticModel` normalizes every action twice
+### 13. `deserializeSemanticModel` normalizes every action twice — done
 **File:** `daedalus-parser/src/semantic/semantic-model.ts` (`:1017-1026`)
+
+Landed 2026-11-05 (#528): the loop-level `ensureActionType` is gone and
+`deserializeAction` is the one place actions are typed. The conditions loop
+beside it is load-bearing and stays — `ensureConditionType` has no per-condition
+twin, and `deserializeCondition` has no callers. Held by the serialization test
+that hydrates a function payload with no `type` on any action, nested
+`thenActions`/`elseActions` included.
 
 The function loop runs `ensureActionType` over `funcJson.actions`, then maps
 the same array through `deserializeAction`, whose first line is
@@ -310,9 +317,15 @@ before it reads domain imports for violations.
 
 ---
 
-### 15. Cross-store wiring is split between `initStoreSync` and a module-level subscribe
+### 15. Cross-store wiring is split between `initStoreSync` and a module-level subscribe — done
 **Files:** `daedalus-dialog-editor/src/renderer/store/storeSync.ts` (`initStoreSync`, `:36`),
 `store/historyStore.ts` (`:263`)
+
+Landed 2026-11-05 (#532): the history cleanup subscription lives in
+`initStoreSync` as `unsubscribeHistory`, beside the editor → project and
+world → problems ones, and goes back out through the unsubscribe the function
+already returned. Held by the two tests that assert it does not run before
+`initStoreSync` and stops after its teardown.
 
 `initStoreSync` is the documented home for store-to-store subscriptions —
 editor → project model push, world → problems rescan — and returns the
@@ -325,8 +338,17 @@ subscription with its own lifecycle and stays where it is.
 
 ---
 
-### 16. `SetVobClassProp`'s switch copies each base class's fields per case
+### 16. `SetVobClassProp`'s switch copies each base class's fields per case — done
 **Files:** `zenkit-node/src/binding.cc` (`ApplyClassProps`' switch)
+
+Landed 2026-11-05 (#534): `ApplyTriggerProps`, `ApplyMovableObjectProps` and
+`ApplyInteractiveObjectProps` mirror `normalize.cc`'s readers, and the key lists
+are one array per family (`kTriggerKeys`, `kMovableObjectKeys`,
+`kInteractiveObjectFamilyKeys`) rather than a restatement per class. The
+mutation round-trip table is unchanged and still passes, and dropping one
+assignment from a helper fails it — the guard bites. The addon has to be rebuilt
+to take effect (the seeded `.node` in a worktree is a copy; see
+`environment-hazards.md`).
 
 Every class reads and assigns its inherited fields in full, so the `VTrigger`
 base is spelled out five times — `zCTrigger`, `zCTriggerList`, `zCMover`,
