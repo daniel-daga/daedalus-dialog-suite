@@ -2,6 +2,7 @@
 
 ## One line per change, newest on top, `- #123: Short description` (120 characters max). A build ships only the lines added since the last one, and CHANGELOG.md keeps them; old lines may be pruned at any time.
 
+- #434: An autocomplete field's clear and follow-reference buttons sit side by side instead of on top of each other
 - #417: A Locator tab lists the world's item VOBs within a radius, bad instances only, by name
 - #430: The "+" menu adds a Comment note — a // line in the function body, edited and saved with the script
 - #436: A dialog line inside an expanded choice can be dragged into a new order again

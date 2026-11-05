@@ -8,8 +8,9 @@ import { createRowTabHandlers } from './rowTabNavigation';
 import { displayNumericOrStringField, parseNumericOrStringField } from './numericStringField';
 
 // Hoisted so VariableAutocomplete's memo sees stable sx identities (slice 4).
-const ATTACKER_FIELD_SX = { width: 90 };
-const TARGET_FIELD_SX = { width: 80 };
+// Wide enough for the clear and follow-reference buttons side by side (#434).
+const ATTACKER_FIELD_SX = { width: 110 };
+const TARGET_FIELD_SX = { width: 110 };
 
 const AttackActionRenderer: React.FC<BaseActionRendererProps> = ({
   action,

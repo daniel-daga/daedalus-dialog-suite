@@ -10,8 +10,9 @@ import { createRowTabHandlers } from './rowTabNavigation';
 import { displayNumericOrStringField, parseNumericOrStringField } from './numericStringField';
 
 // Hoisted so VariableAutocomplete's memo sees stable sx identities (slice 4).
-const GIVER_FIELD_SX = { width: 80 };
-const RECEIVER_FIELD_SX = { width: 90 };
+// Wide enough for the clear and follow-reference buttons side by side (#434).
+const GIVER_FIELD_SX = { width: 110 };
+const RECEIVER_FIELD_SX = { width: 110 };
 const ITEM_FIELD_SX = { flex: 1 };
 
 const GiveInventoryItemsRenderer: React.FC<BaseActionRendererProps> = ({

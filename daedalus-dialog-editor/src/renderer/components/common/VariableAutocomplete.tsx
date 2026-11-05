@@ -63,6 +63,17 @@ const filter = createFilterOptions<OptionType>({
   limit: MAX_RESULTS
 });
 
+// MUI keeps the clear/popup buttons out of flow (absolutely positioned in the
+// input's reserved right padding), so the follow-reference button drawn as an
+// end adornment lands on top of them in a narrow field (#434). While that
+// button is shown, the whole end adornment goes back into flow and the space
+// MUI reserved for the floating icons goes away.
+const FOLLOW_IN_FLOW_SX = {
+  '& .MuiAutocomplete-endAdornment': { position: 'static', transform: 'none' },
+  '&.MuiAutocomplete-hasClearIcon .MuiAutocomplete-inputRoot': { paddingRight: '6px' },
+  '&.MuiAutocomplete-hasPopupIcon .MuiAutocomplete-inputRoot': { paddingRight: '6px' }
+};
+
 const VariableAutocomplete = React.memo<VariableAutocompleteProps>(({
   value,
   onChange,
@@ -275,12 +286,12 @@ const VariableAutocomplete = React.memo<VariableAutocompleteProps>(({
               endAdornment: (
                 <React.Fragment>
                   {showNavigation && canNavigate && (
-                    <InputAdornment position="end" sx={{ mr: 1 }}>
+                    <InputAdornment position="end" sx={{ ml: 0, flexShrink: 0 }}>
                       <Tooltip title="Follow reference" arrow>
                         <IconButton
                           size="small"
                           onClick={handleNavigate}
-                          edge="end"
+                          aria-label="Follow reference"
                           tabIndex={-1} // Mouse affordance only; keep it out of the field tab order (#183)
                           onMouseDown={(e) => e.preventDefault()} // Prevent blur when clicking icon
                         >
@@ -295,7 +306,7 @@ const VariableAutocomplete = React.memo<VariableAutocompleteProps>(({
             }}
           />
         )}
-        sx={sx}
+        sx={showNavigation && canNavigate ? [FOLLOW_IN_FLOW_SX, sx] : sx}
         disableClearable={!allowFreeInput}
       />
 
