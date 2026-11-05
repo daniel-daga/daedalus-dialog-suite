@@ -380,8 +380,12 @@ export function useWorldShortcuts({
           || (target instanceof Element && target.closest('button, a[href], [role="button"], [role="checkbox"], [role="switch"], [role="tab"]')))) return;
         // Read *before* `preventDefault`, as the Escape branch does: with
         // nothing selected this key is nobody's, and swallowing it would
-        // stop the asset list scrolling for a nudge that never happens.
-        if (held.size === 0 && useWorldStore.getState().selection.length === 0) return;
+        // stop the asset list scrolling for a nudge that never happens. A
+        // waypoint is a selection too (#521).
+        if (held.size === 0) {
+          const { selection: currentSelection, selectedWaypoint: currentWaypoint } = useWorldStore.getState();
+          if (currentSelection.length === 0 && currentWaypoint === null) return;
+        }
         // The gesture's verb is its first key's: a move and a turn are two
         // edits and two undo entries, so a key of the other verb waits for the
         // gesture to end rather than joining it.

@@ -2,6 +2,7 @@
 
 ## One line per change, newest on top, `- #123: Short description` (120 characters max). A build ships only the lines added since the last one, and CHANGELOG.md keeps them; old lines may be pruned at any time.
 
+- #521: A selected waypoint nudges and turns from the keyboard, as a VOB does
 - #522: A file that writes `};` before an `else` saves back that `;`
 - #424: Items in the World view draw as their mesh, resolved from the item's script instance
 - #425: Adding a waypoint selects it, and the dialog can place it in front of the camera

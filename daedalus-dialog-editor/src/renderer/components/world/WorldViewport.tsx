@@ -437,6 +437,9 @@ export interface WorldViewportHandle {
   /** Draw the selection turned by `delta` (row-major, ZenGin space) from where
    *  `beginNudge` found it — the keyboard turn (#387). A preview only. */
   previewTurn: (delta: ZenRotation) => void;
+  /** Commit the waypoint the nudge previewed — the `MoveWaypoint`/`TurnWaypoint`
+   *  the gizmo emits on its drag path (#521). A no-op with no waypoint under it. */
+  commitNudge: () => void;
   /**
    * A ray straight down from `origin` (ZenGin space) against the world mesh —
    * the terrain, a building, a cave wall. Returns the hit point and its
@@ -528,6 +531,7 @@ interface Gizmo {
   beginNudge: () => boolean;
   previewNudge: (delta: readonly [number, number, number]) => void;
   previewTurn: (delta: ZenRotation) => void;
+  commitNudge: () => void;
 }
 
 // One shared empty map: a fresh default each render is a new dependency each
@@ -619,6 +623,7 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
     beginNudge: () => gizmoRef.current?.beginNudge() ?? false,
     previewNudge: (delta) => gizmoRef.current?.previewNudge(delta),
     previewTurn: (delta) => gizmoRef.current?.previewTurn(delta),
+    commitNudge: () => gizmoRef.current?.commitNudge(),
     raycastDown,
     pointAhead: (reach) => {
       const world = sceneRef.current;
