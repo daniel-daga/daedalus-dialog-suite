@@ -16,7 +16,7 @@ import AutoSizer from 'react-virtualized-auto-sizer';
 import {
   ASSET_FORMATS, assetFormat, assetRole, compileState, isCompiledAsset, isFavorite,
   isSourceAsset, isSourceAssetFile, searchStem, sourceNameOf,
-  type AssetFormat,
+  type AssetFormat, type ContainerEntry,
 } from 'zen-world';
 import type { AssetCatalog, VfsEntry, VfsSearch } from '../../../shared/worldTypes';
 import type { AssetThumbnails } from '../../world/assetThumbnails';
@@ -294,6 +294,10 @@ export interface WorldAssetBrowserProps {
   items?: readonly CatalogueItem[];
   /** Arm a placement of `instance` as an `oCItem`. Absent with no world open. */
   onPlaceItem?: (instance: string) => void;
+  /** The selected `oCMobContainer`, by name, and the one write into it (#418).
+   *  Both absent when the tab is offered with no world. */
+  container?: string | null;
+  onAddItemsToContainer?: (entries: readonly ContainerEntry[]) => void;
 }
 
 export interface AssetCatalogProps {
@@ -315,6 +319,7 @@ export interface AssetCatalogProps {
 const WorldAssetBrowser: React.FC<WorldAssetBrowserProps> = ({
   listAssets, searchAssets, onPreview, thumbnails, catalog, sources = NO_SOURCES, placement,
   previewing = null, resolveAssets, compileAssets, items = NO_ITEMS, onPlaceItem,
+  container = null, onAddItemsToContainer,
 }) => {
   const [path, setPath] = useState('/');
   const [view, setView] = useState<'list' | 'grid'>('list');
@@ -604,7 +609,13 @@ const WorldAssetBrowser: React.FC<WorldAssetBrowserProps> = ({
         />
       )}
       {catalog !== undefined && thumbnails !== undefined && mode === 'items' && (
-        <WorldItemCatalogue items={items} thumbnails={thumbnails} onPlace={onPlaceItem ?? noPlacement} />
+        <WorldItemCatalogue
+          items={items}
+          thumbnails={thumbnails}
+          onPlace={onPlaceItem ?? noPlacement}
+          container={container}
+          onAddToContainer={onAddItemsToContainer}
+        />
       )}
       {mode === 'browse' && (<>
       <Box sx={{

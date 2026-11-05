@@ -42,3 +42,43 @@ export function isContainerContents(contents: string): boolean {
 export function formatContainerContents(entries: readonly ContainerEntry[]): string {
   return entries.map(({ instance, count }) => (count > 1 ? `${instance}:${count}` : instance)).join(',');
 }
+
+/**
+ * The archive's bound on this one string — `ipcValidation` refuses a
+ * `to.contents` over it, and it is fifteen times retail's longest chest.
+ */
+export const CONTAINER_CONTENTS_MAX = 4096;
+
+/**
+ * The contents string with `additions` written into it — the item catalogue's
+ * "Add to container" (#418).
+ *
+ * Existing entries keep their place and their spelling; a name the list already
+ * holds has the addition's count put on it, which is what the contents field's
+ * own picker does when an item it offers is already in the chest; new ones are
+ * appended in the order they were staged.
+ *
+ * Null when the string cannot take them, and neither case is a rewrite of
+ * something the editor could not read. An unreadable current string is left
+ * alone (the field shows it and offers Clear), and a result past
+ * {@link CONTAINER_CONTENTS_MAX} is refused rather than truncated — the IPC
+ * validator would refuse it anyway, and half a list on screen would be worse
+ * than a refusal.
+ */
+export function addContainerContents(
+  contents: string, additions: readonly ContainerEntry[],
+): string | null {
+  const entries = parseContainerContents(contents);
+  if (entries === null) return null;
+
+  const merged = [...entries];
+  for (const addition of additions) {
+    const at = merged.findIndex(
+      (entry) => entry.instance.toUpperCase() === addition.instance.toUpperCase(),
+    );
+    if (at === -1) merged.push({ ...addition });
+    else merged[at] = { ...merged[at], count: merged[at].count + addition.count };
+  }
+  const next = formatContainerContents(merged);
+  return next.length > CONTAINER_CONTENTS_MAX ? null : next;
+}
