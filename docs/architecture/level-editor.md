@@ -3591,8 +3591,19 @@ The pick, the gizmo and `positionOf` come from the marker at the decal's centre
 instead — which is why a decal is now marked, and why `moveVob` writes the quad
 and the marker together rather than one or the other.
 
-A particle effect gets the marker and nothing more: a `.PFX` is a Daedalus
-script, not geometry, so there is nothing to draw it as.
+**A particle effect is the same shape of thing, and is drawn as one.** A `.PFX`
+is not a file the VFS resolves: the world carries a name and the definition is
+an `INSTANCE … (C_PARTICLEFX)` in script source (`docs/plans/level-editor.md`
+§16.45, #410). The editor joins the two through the project index — name → file,
+then `file:read` and the existing instance reader — and draws the fields the
+definition states: one camera-facing textured quad per live particle, born at
+the rate the instance names, living the lifetime it names, growing toward
+`visSizeEndScale` and ramping between its colour keys, with the alpha fade
+OpenGothic's emitter applies. It is a plausible picture of a definition, not the
+engine's particle system: no emitter volume, no direction, no collision, no
+`zCEffect` chaining, no controller state, and nothing written to the `.zen`.
+A VOB whose effect the project does not declare keeps its marker, which is also
+the handle for every VOB that is drawn this way.
 
 **Four of a decal's seven fields are invisible, all four for a settled reason.**
 `decalDimension`, `decalAlphaWeight` and `decalAlphaFunc` are drawn. `decalTwoSided` cannot come

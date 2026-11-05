@@ -15,7 +15,7 @@
  */
 
 import * as THREE from 'three';
-import { ROOT_MATRIX, ZEN_TO_THREE_SCALE } from 'zen-world';
+import { ROOT_MATRIX, ZEN_TO_THREE_SCALE, particlesPerVob, type ParticleEffect } from 'zen-world';
 import type { DecodedTexture, DrawGroup, InstancedVisual } from '../src/shared/worldTypes';
 import { DEFAULT_EXPOSURE, WORLD_LAYER, WorldScene, textureCacheFor } from '../src/renderer/world/WorldScene';
 import { vobIndex } from './worldFixtures';
@@ -1679,6 +1679,52 @@ describe('WorldScene after a structural op', () => {
     const mesh = scene.instancedMeshes[0];
     expect([...mesh.geometry.getAttribute('instanceSelected').array].slice(0, 3)).toEqual([0, 0, 1]);
     expect([...mesh.geometry.getAttribute('instanceHidden').array].slice(0, 3)).toEqual([0, 1, 0]);
+  });
+
+  test('particle effects are drawn, filtered and moved with their VOB', () => {
+    // §16.45, #410: a `.PFX` VOB is not geometry the VFS can resolve, so the
+    // preview is the project's definition drawn as a swarm at the VOB — and it
+    // has to behave like every other layer: one material per effect through the
+    // ordinary texture slot, hidden with its class, carried by a drag.
+    const scene = new WorldScene();
+    scene.setWorldMesh({ groups: [group()], bbox: [] });
+    scene.setVobMarkers(markerIndex());
+
+    const effect: ParticleEffect = {
+      name: 'FIRE', texture: 'HUMANBURN.TGA', rate: 25, lifetimeMs: 1000,
+      sizeStart: [40, 40], sizeEndScale: 3, colorStart: [255, 255, 255], colorEnd: [0, 0, 255],
+      alphaStart: 1, alphaEnd: 1, additive: true,
+    };
+    scene.setParticles({
+      groups: [{
+        effect, count: 1, particles: particlesPerVob(effect),
+        positions: new Float32Array([800, 0, 0]).buffer,
+        vobIds: new Uint32Array([8]).buffer,
+      }],
+      stats: { effects: 1, vobs: 1, particles: particlesPerVob(effect) },
+    });
+
+    const swarm = scene.root.children.find(
+      (child) => child !== scene.markers!.markers && (child as THREE.InstancedMesh).isInstancedMesh,
+    ) as THREE.InstancedMesh;
+    expect(swarm.count).toBe(particlesPerVob(effect));
+    // The effect's `.TGA` is named like any other texture, so the world's one
+    // decode path fills it.
+    expect(scene.pendingTextureNames()).toContain('HUMANBURN.TGA');
+
+    const hidden = new Uint8Array(11);
+    hidden[8] = 1;
+    scene.setHiddenVobs(hidden);
+    expect([...swarm.geometry.getAttribute('instanceHidden').array].every((flag) => flag === 1)).toBe(true);
+
+    expect(scene.moveVob(8, [10, 20, 30])).toBe(true);
+    const matrix = new THREE.Matrix4();
+    swarm.getMatrixAt(0, matrix);
+    expect([matrix.elements[12], matrix.elements[13], matrix.elements[14]]).toEqual([10, 20, 30]);
+
+    // Replaced whole, not stacked: a structural op hands a fresh index.
+    scene.setParticles({ groups: [], stats: { effects: 0, vobs: 0, particles: 0 } });
+    expect(scene.root.children).not.toContain(swarm);
   });
 
   test('markers and decals are replaced, not stacked, and a decal keeps its material', () => {

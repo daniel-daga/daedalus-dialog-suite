@@ -89,6 +89,10 @@ interface ProjectState {
   // UPPERCASED NPC instance → the file declaring it; what the NPC editor opens.
   // Built at project load, and re-read per file when one changes (reindexFiles).
   npcFileIndex: Record<string, string>;
+  // UPPERCASED instance → the file declaring it, every instance and not only
+  // NPCs — where a particle effect's `C_PARTICLEFX` body is read from
+  // (level-editor.md §16.45). Same lifecycle as npcFileIndex.
+  instanceFileIndex: Record<string, string>;
   // AI_Output voice ids across the project, keyed by UPPERCASED id (built at
   // project load/reindex time — can be stale until the next reindex)
   voiceIdIndex: Record<string, Array<{ filePath: string; functionName: string }>>;
@@ -271,7 +275,7 @@ const REINDEX_CONCURRENCY = 8;
 const EMPTY_FILE_INDEX: FileIndex = { routineSites: [], spawnSites: [], exchangeSites: [], instances: [] };
 
 type FileIndexedState = Pick<ProjectState,
-  'npcList' | 'npcPrototypes' | 'npcFileIndex' | 'npcIdIndex' | 'routineNpcIndex'
+  'npcList' | 'npcPrototypes' | 'npcFileIndex' | 'instanceFileIndex' | 'npcIdIndex' | 'routineNpcIndex'
   | 'routineSiteIndex' | 'spawnSiteIndex' | 'exchangeSiteIndex' | 'dialogIndex'>;
 
 /**
@@ -288,6 +292,7 @@ function indexFields(rawIndex: ProjectIndex): Partial<ProjectState> {
     npcPrototypes: rawIndex.npcPrototypes || [],
     npcCoverage: rawIndex.npcCoverage ?? null,
     npcFileIndex: rawIndex.npcFiles || {},
+    instanceFileIndex: rawIndex.instanceFiles || {},
     voiceIdIndex: rawIndex.voiceIds || {},
     waypointSiteIndex: rawIndex.waypointSites || {},
     spawnSiteIndex: rawIndex.spawnSites || [],
@@ -318,15 +323,23 @@ function withFileIndexes(state: FileIndexedState, files: ReadonlyMap<string, Fil
   const npcFileIndex = kept(state.npcFileIndex);
   const npcIdIndex = kept(state.npcIdIndex);
   const routineNpcIndex = kept(state.routineNpcIndex);
+  // Every instance, not only NPCs — a `.PFX` preview's only way to the file it
+  // is declared in. Dropped by *file*, not by name, since no name list says
+  // which instances a changed file used to declare.
+  const instanceFileIndex = Object.fromEntries(
+    Object.entries(state.instanceFileIndex).filter(([, filePath]) => !files.has(filePath)),
+  );
   const npcPrototypes = new Set(state.npcPrototypes);
   const listed = new Set(state.npcList.map((npc) => npc.toUpperCase()));
   const added: string[] = [];
 
   for (const [filePath, file] of files) {
     for (const instance of file.instances) {
+      const key = instance.name.toUpperCase();
+      instanceFileIndex[key] = filePath;
+
       const parent = instance.parent.trim().toUpperCase();
       if (parent !== 'C_NPC' && !npcPrototypes.has(parent) && !instance.dailyRoutine) continue;
-      const key = instance.name.toUpperCase();
       npcFileIndex[key] = filePath;
       if (instance.npcId !== undefined) npcIdIndex[key] = instance.npcId;
       if (instance.dailyRoutine) routineNpcIndex[key] = instance.dailyRoutine.toUpperCase();
@@ -346,6 +359,7 @@ function withFileIndexes(state: FileIndexedState, files: ReadonlyMap<string, Fil
     .filter((npc) => npcFileIndex[npc.toUpperCase()] !== undefined || state.dialogIndex.has(npc.toUpperCase()));
   return {
     npcFileIndex,
+    instanceFileIndex,
     npcIdIndex,
     routineNpcIndex,
     npcList,
@@ -600,6 +614,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
   npcPrototypes: [],
   npcCoverage: null,
   npcFileIndex: {},
+  instanceFileIndex: {},
   voiceIdIndex: {},
   waypointSiteIndex: {},
   spawnSiteIndex: [],
@@ -921,6 +936,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
       npcPrototypes: [],
       npcCoverage: null,
       npcFileIndex: {},
+      instanceFileIndex: {},
       voiceIdIndex: {},
       waypointSiteIndex: {},
       spawnSiteIndex: [],

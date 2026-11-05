@@ -3533,9 +3533,43 @@ more slice before the renderer starts; the effort stops being slice-sized only i
 retail resolution is closed by indexing the MDK tree too, which is a separate
 question.
 
-**Two things are still the maintainer's:** whether a preview that resolves only
-project-declared effects is worth shipping — the retail case is what a modder
-looks at first — or the index has to reach the merged MDK tree before it; and
-whether the controller half rides along or waits.
+**Two things were the maintainer's, and both are settled (2026-11-05).**
+
+- **Project-declared effects only.** The index does not reach outside the opened
+  folder, and it does not need to: the scan is recursive, so a modder who opens
+  the install's `_work/Data` (the normal setup, and the one this decision was
+  measured on) gets every retail effect. A definition in a merged MDK tree
+  outside the scanned folder still falls back to the marker.
+- **The controller half waits.** `zCPFXController` stays a grey pip: its
+  `pfxName` costs one `world:vobProps` call per VOB and its state is a second
+  machine, which is a slice of its own if the preview earns it.
+
+**Step 0 was measured on a retail install, and the guess held.** The script tree
+at `_work/Data/Scripts` carries 481 `C_PARTICLEFX` bodies, 477 of them emitters
+(the other 4 carry `ppsValue < 0`, OpenGothic's *decal-driven* effects). Their
+fields fall into exactly the groups above, counted over all 481: `visName_s` 479,
+`lspPartAvg`
+479, `ppsValue`/`ppsFps` 477/376, `visSizeStart_s` 477 + `visSizeEndScale` 463 +
+`ppsScaleKeys_s` 432, the colour keys 477 and `visAlphaStart/End` 432/178,
+`shp*`/`dir*`/`velAvg`/`flyGravity_s` 472-189. Two data hazards the reader has
+to survive: `lspPartAvg` reaches 6e13 on two bodies (`FBNEW`, `FB2` — lifetimes
+no preview can step, clamped), and one body in three names `visAlphaFunc_s`
+`"BLENND"`, a retail typo that must not be read as additive.
+
+**Landed (2026-11-05).** `zen-world/scene/particles.ts` reads a body's fields and
+groups a world's particle VOBs by effect; `ProjectIndex.instanceFiles` points a
+name at its file (filled beside `npcFiles`, and moved by the incremental reindex);
+`renderer/world/particleDefinitions.ts` joins the two through the existing three
+calls; `renderer/world/ParticleLayer.ts` draws one instanced swarm per effect, its
+motion in the vertex shader off one clock. 64 particles per VOB at most, because
+retail's median effect holds 75 and its heavy ones thousands. No native code, no
+`.zen` write, and the marker stays where it was.
+
+Measured over the extracted retail worlds: NewWorld carries 666 particle VOBs
+over 26 distinct effects, OldWorld 263/20 and AddOn 462/16 — 1,391 in all, the
+figure this entry opened with — and **every** one of those effect names is
+declared by the retail script tree, so a project pointed at the install resolves
+all of them. With the cap applied that is 22,288 particle instances on NewWorld,
+9,340 on OldWorld and 11,700 on AddOn, and one draw call per effect.
 
 ---

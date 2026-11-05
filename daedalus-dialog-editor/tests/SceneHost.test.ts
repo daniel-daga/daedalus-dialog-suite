@@ -21,6 +21,7 @@
  */
 
 import * as THREE from 'three';
+import { particlesPerVob, type ParticleEffect } from 'zen-world';
 import { describe, it, expect, beforeEach } from '@jest/globals';
 import type {
   DecodedTexture, DrawGroup, InstancedPayload, InstancedVisual, WorldMeshPayload,
@@ -372,6 +373,34 @@ describe('SceneHost — a structural op, followed in place', () => {
 
     expect(asked.map((ask) => ask.name)).toEqual(['CRATE.TGA']);
     expect(host.visuals).toBe(payload);
+    host.dispose();
+  });
+
+  it('draws the particle effects the project resolved, and decodes their textures', async () => {
+    // §16.45, #410: the effects cannot be part of the constructor — they come
+    // from the project's scripts, which the worker that built the payload never
+    // reads. They arrive as a draw-time picture and must bring their own decode.
+    const { host, asked, scene } = harness();
+    answerBuilds();
+    await host.ready;
+    asked.length = 0;
+
+    const effect: ParticleEffect = {
+      name: 'FIRE', texture: 'HUMANBURN.TGA', rate: 25, lifetimeMs: 1000,
+      sizeStart: [40, 40], sizeEndScale: 3, colorStart: [255, 255, 255], colorEnd: [0, 0, 255],
+      alphaStart: 1, alphaEnd: 1, additive: true,
+    };
+    await host.setParticles({
+      groups: [{
+        effect, count: 1, particles: particlesPerVob(effect),
+        positions: new Float32Array([100, 0, 0]).buffer,
+        vobIds: new Uint32Array([0]).buffer,
+      }],
+      stats: { effects: 1, vobs: 1, particles: particlesPerVob(effect) },
+    });
+
+    expect(asked.map((ask) => ask.name)).toEqual(['HUMANBURN.TGA']);
+    expect(scene.children).toContain(host.world.root);
     host.dispose();
   });
 });

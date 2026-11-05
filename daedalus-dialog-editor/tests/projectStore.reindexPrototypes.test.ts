@@ -26,6 +26,7 @@ const projectIndex = (
   npcPrototypes,
   npcCoverage: { npcInstancesFound: npcs.length, missingPrototypes: [] },
   npcFiles,
+  instanceFiles: {},
   voiceIds: {},
   waypointSites: {},
   spawnSites: [],
@@ -94,6 +95,33 @@ describe('ProjectStore - reindexFiles and prototypes', () => {
     expect(state.npcList).toEqual(['BAU_900_Onar', 'SLD_Foo']);
     expect(state.npcFileIndex).toEqual({ BAU_900_ONAR: '/p/Onar.d', SLD_FOO: '/p/SLD.d' });
     expect(state.npcPrototypes).toContain('SLD_NEW');
+  });
+
+  it('moves the instances a changed file declares, and leaves another file share alone', async () => {
+    // §16.45, #410: the World surface finds a particle effect's body by the file
+    // the index says declares it, so a saved script has to move that answer in
+    // the same pass that moves the NPCs — and it must not touch a name another
+    // file still declares.
+    useProjectStore.setState({
+      instanceFileIndex: { FIRE: '/p/Old.d', TORCH: '/p/Old.d' },
+    });
+    window.editorAPI.indexFile = jest.fn(async () => ({
+      index: fileIndex({
+        instances: [{ name: 'FIRE', parent: 'C_PARTICLEFX' }],
+      }),
+      model: {} as SemanticModel,
+    }));
+    const build = rebuilds();
+
+    await useProjectStore.getState().reindexFiles(['/p/Onar.d']);
+
+    expect(build).not.toHaveBeenCalled();
+    const state = useProjectStore.getState();
+    // The effect moved with the file that now declares it, and a VOB naming it
+    // reads the body the editor would show.
+    expect(state.instanceFileIndex.FIRE).toBe('/p/Onar.d');
+    // A name this file does not declare keeps the file it had.
+    expect(state.instanceFileIndex.TORCH).toBe('/p/Old.d');
   });
 
   it('keeps an ordinary NPC edit incremental, with no project-wide rebuild', async () => {

@@ -165,6 +165,14 @@ export interface ProjectIndex {
    */
   npcFiles: Record<string, string>;
   /**
+   * UPPERCASED instance name to the file that declares it — **every** instance,
+   * not only NPCs (`npcFiles` is the NPC half of this). What the World surface
+   * follows to read a particle effect's `C_PARTICLEFX` body, which is a
+   * Daedalus instance in script source and not a file the VFS resolves
+   * (level-editor.md §16.45, #410).
+   */
+  instanceFiles: Record<string, string>;
+  /**
    * AI_Output voice ids across the project, keyed by UPPERCASED id (Daedalus is
    * case-insensitive); entries keep the original file/function locations.
    * Built at project load/reindex time — not refreshed on every save, so it can

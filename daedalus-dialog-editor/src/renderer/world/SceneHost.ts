@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import type {
   DecodedTexture, InstancedPayload, VobIndex, WorldMeshPayload,
 } from '../../shared/worldTypes';
+import type { ParticleScene } from 'zen-world';
 import type { BvhBuilder } from './BvhBuilder';
 import { VobPicker } from './VobPicker';
 import { WorldScene, type TextureCache } from './WorldScene';
@@ -162,6 +163,20 @@ export class SceneHost {
       (instanced, instance) => this.world.resolveInstance(instanced, instance),
       this.world.root.matrix,
     );
+    return this.loadTextures();
+  }
+
+  /**
+   * Draw the particle effects the project resolved (§16.45, #410), and decode
+   * the textures they brought.
+   *
+   * Called once the resolution has landed — it needs the project's scripts, so
+   * it cannot be part of the constructor — and again whenever the world's
+   * particle VOBs are renumbered. The model is draw-time: nothing here writes
+   * to the `.zen`.
+   */
+  setParticles(scene: ParticleScene): Promise<void> {
+    this.world.setParticles(scene);
     return this.loadTextures();
   }
 

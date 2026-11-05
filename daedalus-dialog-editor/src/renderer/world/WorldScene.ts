@@ -5,12 +5,14 @@ import {
 import type {
   DecalScene, DrawGroup, InstancedPayload, InstancedVisual, VobIndex, WorldMeshPayload, DecodedTexture,
 } from '../../shared/worldTypes';
+import type { ParticleEffect, ParticleScene } from 'zen-world';
 import { DecalLayer } from './DecalLayer';
 import { HIDDEN_ATTRIBUTE, SELECTED_ATTRIBUTE } from './instanceAttributes';
 import { LocatorRings } from './LocatorRings';
 import type { LocatorItem } from './itemLocator';
 import { VobExtentOverlay } from './VobExtentOverlay';
 import { PortalOutline } from './PortalOutline';
+import { ParticleLayer } from './ParticleLayer';
 import { SelectionBox } from './SelectionBox';
 import { VobMarkerLayer } from './VobMarkerLayer';
 
@@ -469,6 +471,20 @@ export class WorldScene {
   private decalLayer: DecalLayer | null = null;
 
   /**
+   * The particle effects the project declares, drawn as the swarms they are
+   * (level-editor.md §16.45, #410) — null until `setParticles`, which a world
+   * whose effects the project does not declare never gets.
+   *
+   * Beside the decals rather than in them: a decal is one quad of a stated
+   * size, and a particle effect is a birth rate, a lifetime and a colour ramp.
+   */
+  private particleLayer: ParticleLayer | null = null;
+
+  /** The clock every particle material reads, in seconds. One number per frame
+   *  rather than one uniform per effect per frame. */
+  private readonly particleTime = { value: 0 };
+
+  /**
    * The Item Locator's rings (#417) — one per match, drawn through geometry so
    * an item lost inside a wall or a rock can still be found.
    *
@@ -513,6 +529,9 @@ export class WorldScene {
   /** One per decal texture and alpha func, kept across the decal layer being
    *  replaced so a structural op does not leave a material behind each time. */
   private decalMaterials = new Map<string, THREE.MeshBasicMaterial>();
+  /** One per distinct effect — keyed by its fields as well as its name, so an
+   *  edited body does not keep drawing the definition it had at first open. */
+  private particleMaterials = new Map<string, THREE.MeshBasicMaterial>();
   private geometries: THREE.BufferGeometry[] = [];
   private materials: THREE.Material[] = [];
 
@@ -892,6 +911,36 @@ export class WorldScene {
     for (const mesh of this.decalLayer.meshes) this.root.add(mesh);
   }
 
+  /**
+   * Draw the particle effects the project declares (§16.45, #410).
+   *
+   * `buildParticleBillboards` has already joined the world's particle VOBs with
+   * the `C_PARTICLEFX` bodies they name and grouped them by effect, so this is
+   * one mesh per effect and a texture slot per name — the same slot machinery
+   * the decals take, which is what makes an effect's `.TGA` load through the
+   * path that was already loading the world's.
+   *
+   * Called once the resolution lands, and again after each structural op: the
+   * op renumbers the VOBs the particles are placed by.
+   */
+  setParticles(scene: ParticleScene): void {
+    if (this.particleLayer !== null) {
+      for (const mesh of this.particleLayer.meshes) this.root.remove(mesh);
+      this.particleLayer.dispose();
+    }
+    this.particleLayer = new ParticleLayer(
+      scene, (effect) => this.particleMaterial(effect), this.particleTime,
+    );
+    this.particleLayer.setHidden(this.hidden);
+    for (const mesh of this.particleLayer.meshes) this.root.add(mesh);
+  }
+
+  /** Advance the particle clock. Seconds, and monotonic — the phase is a fract
+   *  of `time / lifetime`, so a clock that went backwards would rewind a swarm. */
+  setParticleTime(seconds: number): void {
+    this.particleTime.value = seconds;
+  }
+
   /** The VOB an instance came from — a pick returns nothing else that identifies it. */
   /**
    * Move a VOB in the scene, in **ZenGin space** — an edit arriving from the op
@@ -947,6 +996,9 @@ export class WorldScene {
     // marker is the handle, so a drag has to carry the two together or the
     // preview leaves the quad where the decal used to be.
     if (this.decalLayer?.setPosition(vob, position) === true) moved = true;
+    // A particle VOB is the same shape of thing: a marker that is the handle and
+    // a picture that has to follow it.
+    if (this.particleLayer?.setPosition(vob, position) === true) moved = true;
 
     if (this.selected.includes(vob)) this.drawSelectionBoxes();
     return moved;
@@ -1051,6 +1103,7 @@ export class WorldScene {
 
     this.markerLayer?.setHidden(hidden);
     this.decalLayer?.setHidden(hidden);
+    this.particleLayer?.setHidden(hidden);
   }
 
   /**
@@ -1348,6 +1401,8 @@ export class WorldScene {
     // other one the scene made, and hold texture slots it owns.
     this.decalLayer?.dispose();
     this.decalLayer = null;
+    this.particleLayer?.dispose();
+    this.particleLayer = null;
     this.extentOverlay.dispose();
     this.portalOutline.dispose();
     this.selectionBox.dispose();
@@ -1358,6 +1413,7 @@ export class WorldScene {
     this.selectedInstances = [];
     this.visuals.clear();
     this.decalMaterials.clear();
+    this.particleMaterials.clear();
     this.textures.clear();
     this.worldMeshes.length = 0;
     this.instancedMeshes.length = 0;
@@ -1429,6 +1485,28 @@ export class WorldScene {
     this.texture(texture, material);
     this.materials.push(material);
     this.decalMaterials.set(key, material);
+    return material;
+  }
+
+  /**
+   * A particle effect's material: one per effect, because the size ramp, the
+   * colour keys and the lifetime are the definition's own and a material is
+   * what carries them into the shader. Keyed by the fields, so two VOBs of one
+   * effect share a draw and an edited body gets a material of its own.
+   *
+   * Made here rather than in `ParticleLayer` for the decal material's reason: an
+   * effect's `.TGA` goes through the one texture-slot funnel every other texture
+   * takes, and `loadPendingTextures` fills it without knowing what a particle
+   * effect is.
+   */
+  private particleMaterial(effect: ParticleEffect): THREE.MeshBasicMaterial {
+    const key = JSON.stringify(effect);
+    const kept = this.particleMaterials.get(key);
+    if (kept !== undefined) return kept;
+    const material = new THREE.MeshBasicMaterial();
+    this.texture(effect.texture, material);
+    this.materials.push(material);
+    this.particleMaterials.set(key, material);
     return material;
   }
 

@@ -20,6 +20,8 @@ import {
   topLevelVobs,
   translateSubtrees, vobAtIndexPath, vobExtentOf, vobIndexPath,
   type AuthorableVobClass, type ClassProps, type ContainerEntry, type NewVob, type ReadProps,
+  buildParticleBillboards, particleVisualNames,
+  type ParticleEffect,
   type VobExtent, type VobProps, type VobReader,
   type ZenBounds,
   type ZenPosition, type ZenRotation,
@@ -33,6 +35,7 @@ import { stateOptions, stateReach } from '../../routines/routineSchedule';
 import { useProjectStore } from '../../store/projectStore';
 import { vobModelOf } from '../../world/vobModel';
 import { itemVisualOfSource, visualOverridesOf } from '../../world/itemVisuals';
+import { resolveParticleEffects } from '../../world/particleDefinitions';
 import { itemCatalogueOf } from '../../world/itemCatalogue';
 import { LOCATOR_DEFAULT_RADIUS_M, locatorItemsOf } from '../../world/itemLocator';
 import { snapDelta } from '../../world/snapping';
@@ -175,6 +178,9 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
   const routineSiteIndex = useProjectStore((s) => s.routineSiteIndex);
   const routineNpcIndex = useProjectStore((s) => s.routineNpcIndex);
   const routineStateIndex = useProjectStore((s) => s.routineStateIndex);
+  // UPPERCASED instance → the file declaring it, every instance — how a particle
+  // effect's `C_PARTICLEFX` body is found (§16.45).
+  const instanceFileIndex = useProjectStore((s) => s.instanceFileIndex);
   const {
     beginOpen, openSucceeded, openFailed, selectVob, selectVobs, toggleVob, selectWaypoint,
   } = useWorldStore.getState();
@@ -487,6 +493,52 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
   // ref — the same reason `visualsRef` is one. Nothing renders from it.
   const itemVisualsRef = useRef(itemVisuals);
   itemVisualsRef.current = itemVisuals;
+
+  /**
+   * The effects the world's particle VOBs name, read out of the project's own
+   * scripts (§16.45, #410). The names come off the index rather than the
+   * payload: a particle effect is a `.PFX` the VFS cannot resolve, so nothing in
+   * the scene build ever names it.
+   *
+   * Keyed on the names as one string: a structural op hands back a fresh
+   * `vobIndex`, and re-reading and re-parsing the script that declares the
+   * effects on every placed VOB would be the whole cost of the feature.
+   */
+  // The fresh index a structural op hands back, so a memo depends on the
+  // columns rather than on the summary object around them.
+  const particleVobIndex = summary === null ? null : summary.vobIndex;
+  const particleNames = useMemo(
+    () => (particleVobIndex === null ? '' : particleVisualNames(particleVobIndex).sort().join(',')),
+    [particleVobIndex],
+  );
+  const [particleEffects, setParticleEffects] = useState<ReadonlyMap<string, ParticleEffect> | null>(null);
+  useEffect(() => {
+    if (particleNames === '') {
+      setParticleEffects(null);
+      return;
+    }
+    let cancelled = false;
+    void resolveParticleEffects(particleNames.split(','), instanceFileIndex, {
+      readFile: (filePath) => window.editorAPI.readFile(filePath),
+      parseSource: (source) => window.editorAPI.parseSource(source),
+      extractNpc: (sourceText) => window.editorAPI.extractNpc(sourceText),
+    }).then((effects) => {
+      if (!cancelled) setParticleEffects(effects);
+    });
+    return () => { cancelled = true; };
+  }, [particleNames, instanceFileIndex]);
+
+  /**
+   * The particle VOBs those effects draw, ready for the viewport. Rebuilt over
+   * the fresh index after a structural op, because the op renumbers every VOB
+   * the particles are placed by.
+   */
+  const particleScene = useMemo(
+    () => (particleVobIndex === null || particleEffects === null
+      ? null
+      : buildParticleBillboards(particleVobIndex, particleEffects)),
+    [particleVobIndex, particleEffects],
+  );
 
   /** The project's items as the Assets panel's Objects tab lists them (#412) —
    *  the same index the grid checks `oCItem.instance` against and the same
@@ -2972,6 +3024,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
               locator={locator.on ? { items: locatorItems, radiusCm: locator.radiusM * 100 } : null}
               spawns={shownSpawns}
               npcBodyRequests={spawnBodyRequests}
+              particles={particleScene}
               showSpawns={showSpawns}
               routines={routines}
               spawnTime={spawnTime}

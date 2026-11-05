@@ -247,6 +247,37 @@ INSTANCE DIA_Arog_Greeting (C_INFO)
       expect(index.allFiles).toHaveLength(1); // File still tracked
     });
 
+    it('records where every instance is declared, not just the NPCs', async () => {
+      // A particle effect is a `C_PARTICLEFX` instance, not a file the VFS can
+      // resolve (level-editor.md §16.45, #410): the World surface needs the
+      // declaring file to draw it, and an NPC-only map cannot answer.
+      const pfxDir = path.join(tempDir, 'System');
+      fs.mkdirSync(pfxDir, { recursive: true });
+      fs.writeFileSync(path.join(pfxDir, 'PfxInst.d'), `
+INSTANCE FIRE (C_PARTICLEFX)
+{
+    ppsvalue = 25;
+    visname_s = "HUMANBURN.TGA";
+};
+
+INSTANCE TORCH (C_PARTICLEFX)
+{
+    ppsvalue = 80;
+};
+      `);
+      fs.writeFileSync(path.join(tempDir, 'NPC.d'), 'INSTANCE SLD_1_Alpha (C_NPC) { daily_routine = Rtn_Alpha; };');
+
+      const service = new ProjectService();
+      const index = await service.buildProjectIndex(tempDir);
+
+      expect(index.instanceFiles.FIRE).toBe(path.join(pfxDir, 'PfxInst.d'));
+      expect(index.instanceFiles.TORCH).toBe(path.join(pfxDir, 'PfxInst.d'));
+      expect(index.instanceFiles.SLD_1_ALPHA).toBe(path.join(tempDir, 'NPC.d'));
+      // An effect is not an NPC, and indexing it must not make it one.
+      expect(index.npcs).not.toContain('FIRE');
+      expect(index.npcFiles.FIRE).toBeUndefined();
+    });
+
     it('records the syntax errors of a file, with their lines', async () => {
       // The index pass parses every file in the project, so it is the only
       // place that sees a broken file nobody has opened (#267). It already

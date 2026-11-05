@@ -732,6 +732,7 @@ export const mockEditorAPI: EditorAPI = {
     const files = MockFileSystem.listFiles();
     const npcs = new Set<string>();
     const npcFiles: Record<string, string> = {};
+    const instanceFiles: Record<string, string> = {};
     const dialogsByNpc: Record<string, any[]> = {};
     // Files carrying quest topic constants are prioritized by ingestion and merged
     // into the base model by loadQuestData so the QuestList can see the topics.
@@ -756,6 +757,9 @@ export const mockEditorAPI: EditorAPI = {
       exchangeSites.push(...mockExchangeSites(filePath, content));
       for (const inst of content.matchAll(/INSTANCE\s+(\w+)\s*\([^)]*\)\s*\{[^}]*?\bid\s*=\s*(\d+)\s*;/gi)) {
         npcIds.set(inst[1].toUpperCase(), Number(inst[2]));
+      }
+      for (const inst of content.matchAll(/^\s*INSTANCE\s+(\w+)\s*\(/gim)) {
+        instanceFiles[inst[1].toUpperCase()] = filePath;
       }
       for (const [npc, routine] of mockDailyRoutines(content)) {
         routinesByNpc[npc] = routine.toUpperCase();
@@ -803,6 +807,7 @@ export const mockEditorAPI: EditorAPI = {
       questFiles,
       npcPrototypes: [],
       npcFiles,
+      instanceFiles,
       routineSites,
       routinesByNpc,
       exchangeSites,

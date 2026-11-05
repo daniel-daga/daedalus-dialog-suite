@@ -24,6 +24,7 @@ import {
 import { type OutlineMode } from '../../world/VobOutline';
 import { BvhBuilder } from '../../world/BvhBuilder';
 import { SceneHost } from '../../world/SceneHost';
+import type { ParticleScene } from 'zen-world';
 import { ViewportRenderer } from '../../world/ViewportRenderer';
 import { PickController } from '../../world/PickController';
 import { GizmoController, type GizmoMode, type GizmoSpace } from '../../world/GizmoController';
@@ -192,6 +193,13 @@ export interface WorldViewportProps {
    */
   spawns: readonly SpawnSite[];
   npcBodyRequests?: ReadonlyMap<string, NpcBodyRequest>;
+  /**
+   * The world's particle effects as the project resolves them (§16.45, #410) —
+   * null until the resolution lands, and empty for a world whose effects the
+   * project does not declare. A draw-time picture: nothing here is written to
+   * the `.zen`.
+   */
+  particles?: ParticleScene | null;
   showSpawns: boolean;
   /**
    * The project's daily routines, for the time slider (§16.19 slice 5). Empty
@@ -555,7 +563,8 @@ const NO_BODY_REQUESTS: ReadonlyMap<string, NpcBodyRequest> = new Map();
 
 const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(({
   mesh, visuals, vobIndex, bbox, waynet, showWaynet, showMarkers = true, markerDistance = 100,
-  markerOcclusion = 'occluded', locator = null, spawns, npcBodyRequests = NO_BODY_REQUESTS, showSpawns, routines, spawnTime, spawnState,
+  markerOcclusion = 'occluded', locator = null, spawns, npcBodyRequests = NO_BODY_REQUESTS, particles = null,
+  showSpawns, routines, spawnTime, spawnState,
   showWaypointNames, loadTexture, onTextureFailures, onCameraSlot, onPick, onVobContextMenu, onCancelArmed,
   selection, onTranslateSelection, gizmoMode, gizmoSpace = 'local', onRotateSelection, membersOf, appliedOps,
   selectedWaypoint, terrainPoint, exposure, hiddenVobs, outlineMode, snapGrid, snapAngle,
@@ -1202,6 +1211,10 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
       // re-aim at a target neither of them is moving.
       if (!nav.step(performance.now())) controls.update();
 
+      // The particle clock (§16.45): one number the whole layer's shaders read,
+      // so a swarm moves without a buffer upload per frame.
+      world.setParticleTime(performance.now() / 1000);
+
       const markerView = updateMarkers();
 
       // Names, after `controls.update()` so they follow the camera in the same
@@ -1463,6 +1476,15 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
     if (host === null || host.visuals === visuals) return;
     void host.update(visuals, vobIndexRef.current);
   }, [visuals]);
+
+  // The particle effects, once the project has resolved them (§16.45, #410).
+  // Declared after the scene effect so it runs once that scene exists, and
+  // keyed on `bboxKey` because a new world is a new scene to draw them in.
+  useEffect(() => {
+    const host = sceneHostRef.current;
+    if (host === null || particles === null) return;
+    void host.setParticles(particles);
+  }, [particles, bboxKey]);
 
   // The other half of the scene effect's lifetime. Declared after it so that
   // its cleanup runs after the scene's — React unmounts effects in the order

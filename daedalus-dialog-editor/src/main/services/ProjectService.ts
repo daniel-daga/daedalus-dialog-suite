@@ -165,6 +165,9 @@ class ProjectService {
     let npcInstancesFound = 0;
     const missingNpcPrototypes = new Map<string, string>();
     const npcFiles: Record<string, string> = {};
+    // Every declared instance, NPC or not — what a `.PFX` preview needs to find
+    // the `C_PARTICLEFX` body a world's visual names (level-editor.md §16.45).
+    const instanceFiles: Record<string, string> = {};
 
     // Use worker pool to process files in parallel
     const pool = new MetadataWorkerPool();
@@ -249,6 +252,8 @@ class ProjectService {
         // prototype it needed is reported so the NPC list can say why others
         // may be missing.
         result.instances.forEach((instance) => {
+          instanceFiles[instance.name.toUpperCase()] = filePath;
+
           if (!isNpcParent(instance.parent)) {
             if (!instance.hasDailyRoutine) {
               return;
@@ -346,6 +351,7 @@ class ProjectService {
         missingPrototypes: Array.from(missingNpcPrototypes.values()).sort()
       },
       npcFiles,
+      instanceFiles,
       voiceIds,
       waypointSites: extractWaypointSites(fileModelsForSiteIndexes),
       spawnSites: extractSpawnSites(fileModelsForSiteIndexes),
