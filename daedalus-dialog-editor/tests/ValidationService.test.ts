@@ -1073,7 +1073,7 @@ describe('ValidationService', () => {
       expect(result.isValid).toBe(true);
     });
 
-    test('warns on malformed voice id not ending in two numeric segments', async () => {
+    test('warns on a malformed voice id with no numeric suffix', async () => {
       const model = modelWithFunctions({
         DIA_Test_Info: [line('DIA_Test_Hello')]
       });
@@ -1087,6 +1087,16 @@ describe('ValidationService', () => {
         })
       );
       expect(result.isValid).toBe(true);
+    });
+
+    test('accepts a trialogue voice id ending in one numeric segment', async () => {
+      const model = modelWithFunctions({
+        DIA_Test_Info: [line('TRIA_ArogAlchemist_00')]
+      });
+
+      const result = await validationService.validate(model, defaultSettings);
+
+      expect(result.warnings.filter(w => w.type === 'malformed_voice_id')).toHaveLength(0);
     });
 
     test('skips expression-valued ids entirely', async () => {

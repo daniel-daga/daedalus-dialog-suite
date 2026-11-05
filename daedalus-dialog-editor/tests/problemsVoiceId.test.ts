@@ -105,8 +105,22 @@ describe('voiceIdRule', () => {
       id: 'voice-id-malformed:a.d:DIA_A:DIA_ALRIK_HI:0'
     });
     expect(problems[0].message).toBe(
-      'Voice ID "DIA_Alrik_Hi" does not match the expected naming pattern (…_<number>_<number>).'
+      'Voice ID "DIA_Alrik_Hi" does not match the expected naming pattern (…_<number>_<number>, or …_<number> for a trialogue).'
     );
+  });
+
+  it('accepts trialogue ids ending _<number> and still flags an id with no numeric suffix', () => {
+    const view = viewOf([
+      file('a.d', { DIA_A: func('DIA_A', [line('TRIA_ArogAlchemist_00')]) }),
+      file('b.d', { DIA_B: func('DIA_B', [line('DIA_Alrik_Teach_15_00')]) }),
+      file('c.d', { DIA_C: func('DIA_C', [line('DIA_Alrik_Teach_15_x')]) })
+    ]);
+
+    const malformed = voiceIdRule(view).filter((p) => p.rule === 'voice-id-malformed');
+
+    expect(malformed.map((p) => p.id)).toEqual([
+      'voice-id-malformed:c.d:DIA_C:DIA_ALRIK_TEACH_15_X:0'
+    ]);
   });
 
   it('ignores DialogLines whose id is an expression', () => {

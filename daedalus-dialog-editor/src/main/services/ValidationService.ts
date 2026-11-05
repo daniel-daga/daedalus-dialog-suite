@@ -512,12 +512,12 @@ export class ValidationService {
     }
 
     // (c) Malformed ids: the vanilla convention ends in two numeric segments
-    // (e.g. DIA_Alrik_Teach_15_00).
+    // (e.g. DIA_Alrik_Teach_15_00), or in one for trialogues (e.g. TRIA_ArogAlchemist_00).
     for (const line of lines) {
-      if (!/_\d+_\d+$/.test(line.id)) {
+      if (!/_\d+(?:_\d+)?$/.test(line.id)) {
         warnings.push({
           type: 'malformed_voice_id',
-          message: `Voice ID '${line.id}' in function '${line.functionName}' does not end in two numeric segments (expected the vanilla convention, e.g. DIA_Alrik_Teach_15_00)`,
+          message: `Voice ID '${line.id}' in function '${line.functionName}' does not end in a numeric segment (expected the vanilla convention, e.g. DIA_Alrik_Teach_15_00 or TRIA_ArogAlchemist_00)`,
           functionName: line.functionName
         });
       }
