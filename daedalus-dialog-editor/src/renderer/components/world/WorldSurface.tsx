@@ -1562,7 +1562,10 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
       viewportRef.current?.commitNudge();
       return;
     }
-    if (delta !== null) handleRotateSelection(delta);
+    // A turn that snapped back to nothing still drew its interim pose, so the
+    // undo of the gesture is drawn the same way (#525).
+    if (delta === null) viewportRef.current?.previewTurn(IDENTITY);
+    else handleRotateSelection(delta);
   }, [handleRotateSelection]);
 
   /**

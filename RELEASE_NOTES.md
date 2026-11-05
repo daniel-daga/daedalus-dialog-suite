@@ -2,6 +2,7 @@
 
 ## One line per change, newest on top, `- #123: Short description` (120 characters max). A build ships only the lines added since the last one, and CHANGELOG.md keeps them; old lines may be pruned at any time.
 
+- #525: A keyboard turn that cancels itself out puts the VOBs back on screen instead of leaving them turned
 - #412: An Items tab lists the project's item instances with previews, and places one as an oCItem
 - #428: The New NPC dialog offers the project's `GIL_` guild constants, with autocomplete
 - #433: View Source shows the dialog's own .d file with the file's line numbers, scrolled to the dialog

@@ -633,6 +633,22 @@ describe('arrow-key nudge', () => {
     expect(ops[0].to).toEqual(rotationAboutUp(-turn).map((value) => expect.closeTo(value, 6)));
   });
 
+  it('puts a VOB back where it was when a Q-then-E turn cancels out (#525)', async () => {
+    // The previews drew the interim yaw Q left behind; the totals then cancel,
+    // so nothing commits — and the undo of the gesture has to be drawn too, or
+    // the selection stays visibly turned.
+    await openWorld();
+    await act(async () => { useWorldStore.getState().selectVob(1); });
+
+    fireEvent.keyDown(window, { key: 'q' });
+    fireEvent.keyDown(window, { key: 'e' });
+    fireEvent.keyUp(window, { key: 'e' });
+    fireEvent.keyUp(window, { key: 'q' });
+
+    expect(mockPreviewTurn).toHaveBeenLastCalledWith([1, 0, 0, 0, 1, 0, 0, 0, 1]);
+    expect(api.applyWorldOps).not.toHaveBeenCalled();
+  });
+
   it('leans the selection sideways with D in rotate mode, about camera-forward (#404)', async () => {
     await openWorld();
     fireEvent.click(screen.getByTestId('world-gizmo-rotate'));
