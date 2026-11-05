@@ -2802,13 +2802,18 @@ rock or a bush a `zCVob`.
   (`isSourceAssetFile` in `zen-world/src/assets/browsableAssets.ts`) — because
   that is what a modder works in and what a VOB's `visual` names, and a
   mounted install carries thousands of entries the surface has no verb for:
-  scripts, sounds, fonts, `.MAN`, and `.MDL`s that place nothing (no compiled
-  model has a single source name). The facet widens in two steps — `compiled`
+  scripts, sounds, fonts, `.MAN`, and a model script (`.MSB`) or a `.TEX`,
+  which place nothing. The facet widens in two steps — `compiled`
   adds what the asset compiler made of the sources (`.MRM`, `.MSH`, `.MDL`,
   `.MDM`, `.MDH`, `.MSB`, `.MMB`, `.TEX`; `isCompiledAsset`), which is all a
   retail install mounts, so its default listing is empty and accepted — and
   `all` drops the lens. Like the facets beside it it holds across a navigation;
-  directories always stay.
+  directories always stay. **A search hit the browser can place is the
+  exception (#406)**: a retail install mounts only the compiled form of a MOB
+  model (`CHESTBIG_OCBENCH.MDS`, the `BED_*` family), so the walk found the
+  name that was typed and the facet then answered "nothing matches" — for a
+  `.MDL`/`.MDM` `isPlaceableVisual` accepts like any mesh. While a search is
+  running, a hit it can place survives the facet; a listing is unchanged.
 - **A placement from the asset browser (#290)** arms the class, and the status
   bar says it (`CHESTBIG_OCCHESTLARGE.MDS as oCMobContainer`). A container or a
   door also gets retail's `focusName` — the measured example in

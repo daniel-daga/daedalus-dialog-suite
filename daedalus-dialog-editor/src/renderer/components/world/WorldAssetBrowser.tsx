@@ -439,10 +439,15 @@ const WorldAssetBrowser: React.FC<WorldAssetBrowserProps> = ({
   // #399: the browser holds the source files by default — what a modder
   // works in and what a VOB names. Everything else waits behind this facet:
   // a mounted install carries scripts, sounds and fonts by the thousand,
-  // and a `.MDL` places nothing anyway. `compiled` adds what the asset
+  // and a model script places nothing anyway. `compiled` adds what the asset
   // compiler made of the sources — the only thing a retail install mounts,
   // where the default listing is empty — and `all` drops the lens. A lens
   // like the facets beside it, so it holds across a navigation.
+  //
+  // A search hit the browser can *place* is the exception (#406): the walk
+  // found the name that was typed, and on a retail install the only form of
+  // it is the compiled one — a `.MDL`/`.MDM` model, which `isPlaceableVisual`
+  // accepts. Hiding it made an exact name answer "nothing matches".
   const [assets, setAssets] = useState<'source' | 'compiled' | 'all'>('source');
   const activeFilters = Number(role !== 'all') + Number(format !== 'all') + Number(only !== null)
     + Number(assets !== 'source');
@@ -451,11 +456,12 @@ const WorldAssetBrowser: React.FC<WorldAssetBrowserProps> = ({
     // shadowed copy is the whole point of asking about one mount.
     const fromSource = only === null ? base : base.filter((entry) => entry.sources?.includes(only) ?? false);
     return fromSource.filter((entry) => entry.type === 'directory' || (
-      (assets === 'all' || isSourceAssetFile(entry.name) || (assets === 'compiled' && isCompiledAsset(entry.name)))
+      (assets === 'all' || isSourceAssetFile(entry.name) || (assets === 'compiled' && isCompiledAsset(entry.name))
+        || (searching && isPlaceableVisual(entry.name)))
       && (role === 'all' || assetRole(entry.name) === role)
       && (format === 'all' || assetFormat(entry.name) === format)
     ));
-  }, [base, only, role, format, assets]);
+  }, [base, only, role, format, assets, searching]);
   // One status for the surface below, because a search and a listing are the
   // two things it can be showing and each has its own loading and its own
   // refusal.

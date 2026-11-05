@@ -1597,6 +1597,44 @@ describe('WorldAssetBrowser', () => {
       expect(await screen.findByTestId('world-asset-CHESTBIG.MDL')).toBeInTheDocument();
     });
 
+    // #406: the furniture a modder misses is a MOB *model* — `CHESTBIG_OCBENCH.MDS`,
+    // the `BED_*` family — and a retail install mounts the compiled `.MDL`, never
+    // the `.MDS` it was made from. The default facet is the source files, so the
+    // walk found the file and the facet threw it away: an exact name typed in
+    // answered "nothing in the mounted assets matches", though the browser places
+    // a `.MDL` like any other visual.
+    it('keeps a found model on the default filter, which can place it (#406)', async () => {
+      const user = userEvent.setup();
+      const { list } = listing();
+      const { search } = searching();
+      render(<WorldAssetBrowser listAssets={list} searchAssets={search} onPreview={jest.fn()} />);
+      await screen.findByTestId('world-asset-Meshes');
+      expect(isPlaceableVisual('CHESTBIG.MDL')).toBe(true);
+
+      await user.type(screen.getByTestId('world-asset-filter'), 'chest');
+
+      expect(await screen.findByTestId('world-asset-CHESTBIG.MDL')).toBeInTheDocument();
+    });
+
+    // The other half: the facet still holds what a search hit cannot be placed
+    // as. A model script is a compiled file and is not a visual.
+    it('leaves a found file it cannot place behind the source facet', async () => {
+      const user = userEvent.setup();
+      const { list } = listing();
+      const search = jest.fn(async () => ({
+        matches: [{ name: 'CHESTBIG.MSB', type: 'file' as const, directory: 'Meshes/_compiled' }],
+        truncated: false,
+      }));
+      render(<WorldAssetBrowser listAssets={list} searchAssets={search} onPreview={jest.fn()} />);
+      await screen.findByTestId('world-asset-Meshes');
+      expect(isPlaceableVisual('CHESTBIG.MSB')).toBe(false);
+
+      await user.type(screen.getByTestId('world-asset-filter'), 'chest');
+
+      expect(await screen.findByTestId('world-asset-filter-empty')).toBeInTheDocument();
+      expect(screen.queryByTestId('world-asset-CHESTBIG.MSB')).not.toBeInTheDocument();
+    });
+
     it('finds a mesh typed with its source extension', async () => {
       const user = userEvent.setup();
       const { list } = listing();
