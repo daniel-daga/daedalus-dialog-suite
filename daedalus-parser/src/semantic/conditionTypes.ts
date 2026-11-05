@@ -17,22 +17,44 @@ function formatComparisonValue(value: string | number | boolean, isStringLiteral
 }
 
 /**
- * Represents a condition that checks if the player knows a specific dialog
+ * Represents a condition that checks if the player knows a specific dialog,
+ * optionally with a comparison or negated.
  */
 export class NpcKnowsInfoCondition implements CodeGeneratable {
   public readonly type = 'NpcKnowsInfoCondition';
   public npc: string;
   public dialogRef: string;
   public negated: boolean;
+  public operator?: string;
+  public value?: string | number | boolean;
+  public valueIsStringLiteral: boolean;
 
-  constructor(npc: string, dialogRef: string, negated: boolean = false) {
+  constructor(
+    npc: string,
+    dialogRef: string,
+    negated: boolean = false,
+    operator?: string,
+    value?: string | number | boolean,
+    valueIsStringLiteral = false
+  ) {
     this.npc = npc;
     this.dialogRef = dialogRef;
     this.negated = negated;
+    if (operator !== undefined) {
+      this.operator = operator;
+    }
+    if (value !== undefined) {
+      this.value = value;
+    }
+    this.valueIsStringLiteral = valueIsStringLiteral;
   }
 
   generateCode(_options: CodeGenOptions): string {
     const call = generateCallExpression(this, 'Npc_KnowsInfo', [this.npc, this.dialogRef]);
+    // A compared call keeps the comparison it was written with (#529).
+    if (this.operator && this.value !== undefined) {
+      return `${call} ${this.operator} ${formatComparisonValue(this.value, this.valueIsStringLiteral)}`;
+    }
     return this.negated ? `!${call}` : call;
   }
 

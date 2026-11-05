@@ -6,8 +6,8 @@
  * (H1: a raw-mode condition function evaluating crisply true; H2: `!Npc_KnowsInfo`
  * landing un-negated and inverting availability) lived exactly in the gap
  * between that and what `daedalus-parser` actually produces. This suite parses
- * the parser's own corpus fixture `condition-idioms.d` — the three shapes the
- * findings cite — and asserts availability through the simulator domain.
+ * the parser's own corpus fixture `condition-idioms.d` — the shapes the findings
+ * cite — and asserts availability through the simulator domain.
  *
  * The fixture is a roundtrip-corpus file and holds no C_INFO instances, so the
  * instances that point at its condition functions are appended here rather than
@@ -31,6 +31,7 @@ const INSTANCES = `
 instance DIA_Foo (C_INFO) { npc = PC_Hero; nr = 1; condition = DIA_Foo_Condition; information = DIA_Foo_Info; };
 instance DIA_Bar (C_INFO) { npc = PC_Hero; nr = 2; condition = DIA_Bar_Condition; information = DIA_Bar_Info; };
 instance DIA_Baz (C_INFO) { npc = PC_Hero; nr = 3; condition = DIA_Baz_Condition; information = DIA_Baz_Info; };
+instance DIA_Qux (C_INFO) { npc = PC_Hero; nr = 4; condition = DIA_Qux_Condition; information = DIA_Qux_Info; };
 `;
 
 /**
@@ -82,12 +83,12 @@ const availabilityOf = (name: string, knownInfos: string[] = []) => {
 };
 
 describe('simulator fed real parser output (condition-idioms.d)', () => {
-  test('the parser projects all three fixture dialogs onto their condition functions', () => {
+  test('the parser projects all four fixture dialogs onto their condition functions', () => {
     expect(model.dialogs.map((entry) => entry.conditionFunction)).toEqual([
-      'DIA_Foo_Condition', 'DIA_Bar_Condition', 'DIA_Baz_Condition'
+      'DIA_Foo_Condition', 'DIA_Bar_Condition', 'DIA_Baz_Condition', 'DIA_Qux_Condition'
     ]);
     expect([...model.functions.keys()]).toEqual(
-      expect.arrayContaining(['dia_foo_condition', 'dia_bar_condition', 'dia_baz_condition'])
+      expect.arrayContaining(['dia_foo_condition', 'dia_bar_condition', 'dia_baz_condition', 'dia_qux_condition'])
     );
   });
 
@@ -126,6 +127,19 @@ describe('simulator fed real parser output (condition-idioms.d)', () => {
 
     expect(availabilityOf('DIA_Baz').value).toBe('true');
     expect(availabilityOf('DIA_Baz', ['dia_foo']).value).toBe('false');
+  });
+
+  // #529: the compared spelling of the same gate — `Npc_KnowsInfo(...) ==
+  // FALSE` — lands structured with its comparison kept, so it evaluates
+  // inverted instead of reporting the raw-condition unknown.
+  test('#529: a compared knows-info gate is available on a fresh session and closes once the topic is known', () => {
+    const gate = model.functions.get('dia_qux_condition');
+    expect(gate?.conditions).toEqual([
+      expect.objectContaining({ type: 'NpcKnowsInfoCondition', dialogRef: 'DIA_Foo', negated: true })
+    ]);
+
+    expect(availabilityOf('DIA_Qux').value).toBe('true');
+    expect(availabilityOf('DIA_Qux', ['dia_foo']).value).toBe('false');
   });
 });
 

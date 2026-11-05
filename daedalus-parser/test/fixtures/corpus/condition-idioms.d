@@ -27,3 +27,12 @@ func int DIA_Baz_Condition()
 		return TRUE;
 	};
 };
+
+func int DIA_Qux_Condition()
+{
+	// the same chain gate spelled as a comparison
+	if (Npc_KnowsInfo (other, DIA_Foo) == FALSE)
+	{
+		return TRUE;
+	};
+};

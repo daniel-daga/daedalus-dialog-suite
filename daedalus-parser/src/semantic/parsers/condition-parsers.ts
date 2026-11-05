@@ -47,9 +47,20 @@ const CONDITION_CALLS: Record<string, {
 }> = {
   npc_knowsinfo: {
     arity: 2,
-    // A compared Npc_KnowsInfo has no comparison slot; keep that form verbatim.
+    // `Npc_KnowsInfo(a, b) == FALSE` is the compared "not heard yet" spelling;
+    // keep the comparison so it regenerates as written (#529).
     construct: (args, comparison) =>
-      comparison ? null : new NpcKnowsInfoCondition(args[0], args[1])
+      withBoolComparison(
+        new NpcKnowsInfoCondition(
+          args[0],
+          args[1],
+          false,
+          comparison?.operator,
+          comparison?.value,
+          comparison?.valueIsStringLiteral
+        ),
+        comparison
+      )
   },
   npc_hasitems: {
     arity: 2,

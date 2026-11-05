@@ -136,3 +136,4 @@
 - #458: Save-time validation also checks actions nested inside an if/else branch
 - #459: Adding a choice or a quest step to an empty if/else branch works
 - #460: The Teach arguments field keeps a typed comma, so another argument can be added
+- #529: An Npc_KnowsInfo(...) == FALSE condition reads as "has not heard this yet", so the simulator evaluates it instead of reporting it unknown

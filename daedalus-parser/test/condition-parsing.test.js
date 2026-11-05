@@ -854,6 +854,60 @@ func void DIA_Test_NegatedKnowsInfo_Info() {};
   assert.strictEqual(reparsed.negated, true, 'Negation should survive a round-trip');
 });
 
+// #529: the compared spelling of the same gate — `Npc_KnowsInfo(...) == FALSE`
+// — is structured with the comparison kept, so it evaluates inverted and
+// regenerates as written instead of falling back to a raw `Condition`.
+test('Should structure a compared Npc_KnowsInfo and keep the comparison on round-trip', () => {
+  const forms = [
+    { comparison: '== FALSE', negated: true },
+    { comparison: '== TRUE', negated: false }
+  ];
+
+  for (const form of forms) {
+    const source = `
+instance DIA_Test_ComparedKnowsInfo(C_INFO)
+{
+	npc			= TestNpc;
+	nr			= 1;
+	condition	= DIA_Test_ComparedKnowsInfo_Condition;
+	information	= DIA_Test_ComparedKnowsInfo_Info;
+	description = "Test";
+};
+
+func int DIA_Test_ComparedKnowsInfo_Condition()
+{
+	if (Npc_KnowsInfo(other, DIA_Test_Prereq) ${form.comparison})
+	{
+		return TRUE;
+	};
+};
+
+func void DIA_Test_ComparedKnowsInfo_Info() {};
+`;
+
+    const model = parseAndBuildModel(source);
+    const conditionFunc = model.dialogs['DIA_Test_ComparedKnowsInfo'].properties.condition;
+
+    assert.strictEqual(conditionFunc.conditions.length, 1, `Should parse exactly one condition (${form.comparison})`);
+    const condition = conditionFunc.conditions[0];
+    assert.ok(condition instanceof NpcKnowsInfoCondition, `Condition should be NpcKnowsInfoCondition (${form.comparison})`);
+    assert.strictEqual(condition.npc, 'other');
+    assert.strictEqual(condition.dialogRef, 'DIA_Test_Prereq');
+    assert.strictEqual(condition.negated, form.negated, `${form.comparison} should normalize negation`);
+    assert.strictEqual(condition.operator, '==', `The comparison operator should be kept (${form.comparison})`);
+    assert.strictEqual(condition.value, form.comparison.slice(3), `The comparison value should be kept (${form.comparison})`);
+
+    const generated = new SemanticCodeGenerator().generateSemanticModel(model);
+    assert.ok(generated.includes(`Npc_KnowsInfo(other, DIA_Test_Prereq) ${form.comparison}`),
+      `Generated code should keep the comparison as written (${form.comparison}):\n${generated}`);
+
+    const reparsed = parseAndBuildModel(generated)
+      .dialogs['DIA_Test_ComparedKnowsInfo'].properties.condition.conditions[0];
+    assert.strictEqual(reparsed.negated, form.negated, `The negation should survive a round-trip (${form.comparison})`);
+    assert.strictEqual(reparsed.operator, '==', `The comparison should survive a round-trip (${form.comparison})`);
+  }
+});
+
 test('Should display a negated Npc_KnowsInfo condition', () => {
   const condition = new NpcKnowsInfoCondition('other', 'DIA_Farim_Hallo', true);
 

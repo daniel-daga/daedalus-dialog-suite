@@ -5,7 +5,15 @@ import { AUTOCOMPLETE_POLICIES } from '../common/autocompletePolicies';
 import type { ConditionEditorCondition } from '../dialogTypes';
 import type { ConditionFieldsProps } from './conditionRegistry';
 
-type C = { type: 'NpcKnowsInfoCondition'; npc: string; dialogRef: string; negated?: boolean; getTypeName?: () => string };
+type C = {
+  type: 'NpcKnowsInfoCondition';
+  npc: string;
+  dialogRef: string;
+  negated?: boolean;
+  operator?: string;
+  value?: string | number | boolean;
+  getTypeName?: () => string;
+};
 
 // Hoisted so VariableAutocomplete's memo sees stable sx identities (slice 4).
 const NPC_FIELD_SX = { flex: '1 1 30%', minWidth: 120 };
@@ -25,13 +33,19 @@ export default function NpcKnowsInfoFields({ condition, handleUpdate, handleImme
     (value: string) => handleUpdate(upd({ dialogRef: value })),
     [handleUpdate, upd]
   );
+  // A compared form (`... == FALSE`) carries its own spelling; the switch is
+  // what replaces that spelling, so drop the comparison with it (#529).
+  const handleNegatedChange = useCallback(
+    (checked: boolean) => handleImmediateUpdate(upd({ negated: checked, operator: undefined, value: undefined })),
+    [handleImmediateUpdate, upd]
+  );
   return (
     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flex: 1 }}>
       <FormControlLabel
         control={
           <Switch
             checked={c.negated || false}
-            onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleImmediateUpdate(upd({ negated: e.target.checked }))}
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleNegatedChange(e.target.checked)}
             size="small"
           />
         }
