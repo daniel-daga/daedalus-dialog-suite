@@ -25,9 +25,8 @@ import {
   validateNpcForm,
   type NpcFormField,
   type NpcFormValues,
-  type NpcItemCategoryLookup,
 } from '../npc/npcForm';
-import { itemCategoriesOf, itemNamesForCategory } from '../npc/npcItemCategories';
+import { fieldOptions, parsedModels, projectConstantLookup, projectItemCategoryLookup } from '../npc/npcFieldOptions';
 import { npcRoutines, formatMinute, type NpcRoutine } from '../npc/npcRoutines';
 import { useWorldStore } from '../store/worldStore';
 import { useUISelectionStore } from '../store/uiSelectionStore';
@@ -68,63 +67,6 @@ const DAILY_ROUTINE_FIELD = NPC_FORM_FIELDS.find((field) => field.key === 'daily
 function findInstanceKey(model: SemanticModel, npcName: string): string | undefined {
   const upper = npcName.toUpperCase();
   return Object.keys(model.instances ?? {}).find((name) => name.toUpperCase() === upper);
-}
-
-function optionsFor(field: NpcFormField): string[] {
-  const { options } = field;
-  if (!options) return [];
-  if ('assets' in options) return [];
-  if ('values' in options && !('constantPrefix' in options)) return options.values;
-  if ('itemCategory' in options) {
-    const names = itemNamesForCategory(parsedModels(), options.itemCategory, projectConstantLookup());
-    return options.itemCategory === 'armor' ? ['NO_ARMOR', ...names] : names;
-  }
-  const project = useProjectStore.getState();
-  if ('routines' in options) return project.routineList;
-  if ('npcField' in options) return npcFieldValues(options.npcField);
-  const names = 'constantPrefix' in options
-    ? parsedModels().flatMap((model) => Object.keys(model.constants ?? {}))
-    : parsedModels().flatMap((model) => Object.keys(model.items ?? {}));
-  const prefix = ('constantPrefix' in options ? options.constantPrefix : options.itemPrefix).toUpperCase();
-  const matched = names.filter((name) => name.toUpperCase().startsWith(prefix));
-  const additional = 'constantPrefix' in options ? options.values ?? [] : [];
-  return [...new Set([...matched, ...additional])].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
-}
-
-/** Values used by project NPCs, such as their numeric voice bank IDs. */
-function npcFieldValues(field: string): string[] {
-  const values = new Set<string>();
-  for (const model of parsedModels()) {
-    for (const npc of Object.values(model.npcs ?? {})) {
-      const expression = new RegExp(`\\b${field}\\s*=\\s*([^;\\r\\n]+)`, 'i').exec(npc.sourceText ?? '')?.[1]?.trim();
-      if (expression) values.add(expression);
-    }
-  }
-  return [...values].sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
-}
-
-/** Every ingested file's semantic model — the whole project, where
- *  `mergedSemanticModel` holds only the globals and the selected NPC's files. */
-function parsedModels(): SemanticModel[] {
-  return [...useProjectStore.getState().parsedFiles.values()].map((file) => file.semanticModel);
-}
-
-/** An integer constant's value in the project, by case-insensitive name. */
-function projectConstantLookup(): (name: string) => number | undefined {
-  const values = new Map<string, number>();
-  for (const model of parsedModels()) {
-    for (const [name, constant] of Object.entries(model.constants ?? {})) {
-      const value = Number(constant.value);
-      if (typeof constant.value !== 'boolean' && Number.isInteger(value)) values.set(name.toUpperCase(), value);
-    }
-  }
-  return (name) => values.get(name.toUpperCase());
-}
-
-/** A project item instance name to its parsed mainflag category. */
-function projectItemCategoryLookup(): NpcItemCategoryLookup {
-  const categories = itemCategoriesOf(parsedModels(), projectConstantLookup());
-  return (instance) => categories.get(instance.toUpperCase());
 }
 
 /** An item instance's source text in the project, by case-insensitive name. */
@@ -345,13 +287,13 @@ const NpcEditorDialog: React.FC<NpcEditorDialogProps> = ({ npcName, filePath, on
   }, [npcName, routineSites]);
   const options = useMemo(() => {
     const byKey: Record<string, string[]> = Object.fromEntries(
-      NPC_FORM_FIELDS.map((field) => [field.key, optionsFor(field)]),
+      NPC_FORM_FIELDS.map((field) => [field.key, fieldOptions(field)]),
     );
     // #429: a routine created in this dialog is not in the project's
     // routineList until the next index load, and it is the one to pick.
     byKey.dailyRoutine = [...new Set([...byKey.dailyRoutine, ...routines.map((r) => r.routine)])];
     return byKey;
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- parseGeneration invalidates optionsFor's project-store snapshot.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- parseGeneration invalidates fieldOptions' project-store snapshot.
   }, [parseGeneration, routines]);
   // #429: the first routine is the start routine, so it fills the field once
   // it exists — an NPC without one cannot spawn. A value the user cleared
