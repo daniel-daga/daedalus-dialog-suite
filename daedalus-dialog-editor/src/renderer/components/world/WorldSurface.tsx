@@ -10,6 +10,7 @@ import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import {
   AUTHORABLE_VOB_CLASSES,
+  addContainerContents,
   addVob, carriesVisual, classPropKeys, alignSubtreesToNormal, mobClassOf,
   deleteVobs, dropSubtreesToGround,
   duplicateVobs, emptyVobFolders,
@@ -18,7 +19,7 @@ import {
   landedPaths, reparentVob, reparentVobs, rotateSubtrees, rotateSubtreeTo, subtreeMembers, setVobClassProp, setVobProp, setVobProps,
   topLevelVobs,
   translateSubtrees, vobAtIndexPath, vobExtentOf, vobIndexPath,
-  type AuthorableVobClass, type ClassProps, type NewVob, type ReadProps,
+  type AuthorableVobClass, type ClassProps, type ContainerEntry, type NewVob, type ReadProps,
   type VobExtent, type VobProps, type VobReader,
   type ZenBounds,
   type ZenPosition, type ZenRotation,
@@ -1647,6 +1648,50 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
   }, [commitOps, classProps]);
 
   /**
+   * The chest the Items tab adds to (#418) — the selected VOB when it is an
+   * `oCMobContainer`, by the name the property grid shows. The target is the
+   * selection rather than a picker of its own: the chest's own contents field
+   * is on screen beside the tab, and that is what the add has to land in.
+   */
+  const contentsTarget = useMemo(() => {
+    if (summary === null || primary === null) return null;
+    const { reader } = vobModelOf(summary);
+    if (reader.className(primary) !== 'oCMobContainer') return null;
+    const name = reader.name(primary);
+    return name === '' ? `container ${primary}` : name;
+  }, [summary, primary]);
+
+  /**
+   * The Items tab's "Add to container": the staged entries written into the
+   * selected chest's `contents` in **one op**, therefore one undo entry, through
+   * the same `SetVobClassProp` the contents field takes.
+   *
+   * The merge is `zen-world`'s, the grammar the field reads and the validator
+   * bounds: entries the chest already holds keep their place, a name it already
+   * holds has the count added, and a list that would cross the archive's 4 KB is
+   * refused rather than truncated. A refused merge commits nothing and says so —
+   * the field itself shows an unreadable string with a Clear, and rewriting it
+   * behind the user's back is the one thing neither path does.
+   */
+  const addItemsToContainer = useCallback(async (additions: readonly ContainerEntry[]) => {
+    const { summary: current, selection: selected } = useWorldStore.getState();
+    const vob = primaryVob(selected);
+    // The fetched props are the whole `from` side, so the tag is load-bearing
+    // exactly as it is for every other class edit.
+    if (current === null || vob === null || additions.length === 0) return;
+    if (classProps === null || classProps.vob !== vob) return;
+
+    const contents = addContainerContents(String(classProps.props.contents), additions);
+    if (contents === null) {
+      useWorldStore.getState().editFailed(
+        'Nothing was added: the chest holds a list this editor cannot read, or the add would pass 4 KB.',
+      );
+      return;
+    }
+    await commitOps([setVobClassProp(vobModelOf(current).reader, vob, classProps.props, { contents })]);
+  }, [commitOps, classProps]);
+
+  /**
    * A base-field change from the grid — `presetName`, `visualCamAlign`, `bias`,
    * `dynamicShadows` or one of the seven decal fields, and the described VOB
    * alone.
@@ -2775,6 +2820,8 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
                     previewing={selectedAsset}
                     items={itemCatalogue}
                     onPlaceItem={placeItem}
+                    container={contentsTarget}
+                    onAddItemsToContainer={classProps?.vob === primary ? addItemsToContainer : undefined}
                   />
                 </Box>
               )}

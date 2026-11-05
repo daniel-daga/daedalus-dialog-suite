@@ -256,8 +256,17 @@ against again (§7).
   placement that lands through `AddVob` as an `oCItem` with its `instance` filled
   in and no visual, which is what the archive stores. The list is
   `mergedSemanticModel.items` — the index `oCItem.instance` is checked against —
-  so the tab offers only what the grid would accept. Left to their own issues:
-  adding items to a container with counts (#418) and the locator (#417).
+  so the tab offers only what the grid would accept. *Slice 2 landed 2026-11-05
+  (#418)*: the same list with the other verb, as an **Add to container** mode — a
+  click stages an item, each staged row takes a count, and one confirm writes
+  them all into the selected `oCMobContainer`'s `contents` through the field's
+  own `SetVobClassProp`, so the whole add is **one op and one undo entry**. The
+  merge is `zen-world`'s (`addContainerContents`, beside the grammar and the
+  4 KB bound the IPC validator now imports rather than repeating): entries the
+  chest already holds keep their place, a name it already holds has the count
+  added, an unreadable string is never rewritten, and a list that would cross
+  the bound is refused rather than truncated. Left to its own issue: the locator
+  (#417).
 - Engine preview ("play from here") — parked as later/kept-open (§11).
 - **A visual for a VOB that has no mesh** — Spacer draws a marker for a sound,
   a light, a zone or a trigger, and we drew nothing at all: 38.0 % of retail

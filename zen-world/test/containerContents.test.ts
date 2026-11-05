@@ -4,7 +4,10 @@
 // comma-separated, a count omitted for one, and — in two chests — a space
 // after the comma and a `;` for a comma. Read loosely, written canonically.
 
-import { formatContainerContents, isContainerContents, parseContainerContents } from '../src/model';
+import {
+  addContainerContents, CONTAINER_CONTENTS_MAX, formatContainerContents, isContainerContents,
+  parseContainerContents,
+} from '../src/model';
 
 describe('parseContainerContents', () => {
   it('reads the retail spellings', () => {
@@ -31,6 +34,35 @@ describe('parseContainerContents', () => {
       expect(isContainerContents(bad)).toBe(false);
     }
     expect(isContainerContents('ItMi_Gold:3,ItFo_Fish')).toBe(true);
+  });
+});
+
+describe('addContainerContents', () => {
+  it('appends what the chest does not hold yet, and leaves the rest alone', () => {
+    expect(addContainerContents('ItMi_Gold:26,ItFo_Fish', [
+      { instance: 'ItMw_1H_VLK_Dagger', count: 1 }, { instance: 'ItPo_Mana_02', count: 3 },
+    ])).toBe('ItMi_Gold:26,ItFo_Fish,ItMw_1H_VLK_Dagger,ItPo_Mana_02:3');
+    expect(addContainerContents('', [{ instance: 'ItMi_Gold', count: 5 }])).toBe('ItMi_Gold:5');
+  });
+
+  it('adds to the count of a name the chest already holds, in any case', () => {
+    expect(addContainerContents('ItMi_Gold:26', [
+      { instance: 'ItMi_Gold', count: 4 }, { instance: 'ITMI_GOLD', count: 1 },
+    ])).toBe('ItMi_Gold:31');
+  });
+
+  it('does not touch a string the grammar cannot read', () => {
+    expect(addContainerContents('nonsense!', [{ instance: 'ItMi_Gold', count: 1 }])).toBeNull();
+  });
+
+  it('refuses a result past the archive bound rather than truncating it', () => {
+    const list = (entries: number) => Array.from({ length: entries }, () => 'ItMi_Gold').join(',');
+    const roomy = list(400); // 3,999 characters
+    expect(addContainerContents(roomy, [{ instance: 'ItFo_Fish', count: 1 }]))
+      .toBe(`${roomy},ItFo_Fish`);
+    const full = list(409); // 4,089: one more entry does not fit
+    expect(full.length).toBeLessThan(CONTAINER_CONTENTS_MAX);
+    expect(addContainerContents(full, [{ instance: 'ItFo_Fish', count: 1 }])).toBeNull();
   });
 });
 

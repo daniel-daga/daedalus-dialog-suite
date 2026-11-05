@@ -50,7 +50,7 @@ interface Harness {
   thumbnails: string[];
 }
 
-async function openWorldWithItems(page: Page): Promise<void> {
+async function openProjectWithItems(page: Page): Promise<void> {
   await page.goto('/');
   await expect(page.getByText('Welcome to Dandelion')).toBeVisible();
   await page.evaluate(({ items, npc }) => {
@@ -71,7 +71,10 @@ async function openWorldWithItems(page: Page): Promise<void> {
 
   // The World view is a view toggle of the main layout, which needs a project.
   await page.getByTestId('world-toggle').click();
+}
 
+async function openWorldWithItems(page: Page): Promise<void> {
+  await openProjectWithItems(page);
   await page.evaluate(async (fixturePath) => {
     const { SUMMARY, vobIndex } = await import(/* @vite-ignore */ fixturePath);
     const window_ = window as unknown as { editorAPI: Record<string, unknown>; __ops: unknown[]; __thumbs: string[] };
@@ -165,5 +168,90 @@ test.describe('the Items tab', () => {
     });
     // An item carries no visual on disk: the instance supplies it.
     expect((add.to as Record<string, unknown>).visual).toBeUndefined();
+  });
+
+  /**
+   * Slice 2 (#418) — Spacer's other verb on the same window: pick items, give
+   * each a count, and write them into the selected chest's `contents`.
+   *
+   * The chest is the one VOB in the index, and `getVobProps` answers the
+   * archive's own string; `applyWorldOps` writes the op back into it, so the
+   * property grid re-reading it afterwards is the same thing a real world does
+   * — the assertion at the end is the field naming what was added, not just the
+   * op carrying it. One `applyWorldOps` call is one history entry, which is
+   * what "one undo for the whole add" means at this layer.
+   */
+  test('adds picked items to the selected container with counts, in one undo entry', async ({ page }) => {
+    await openProjectWithItems(page);
+    await page.evaluate(async (fixturePath) => {
+      const { SUMMARY, vobIndex, BASE_PROPS } = await import(/* @vite-ignore */ fixturePath);
+      const window_ = window as unknown as { editorAPI: Record<string, unknown>; __ops: unknown[][] };
+      const api = window_.editorAPI;
+      window_.__ops = [];
+      let contents = 'ItMi_Gold:2';
+      api.listWorlds = async () => [{ path: SUMMARY.worldPath, name: 'NewWorld.zen', source: 'C:/Gothic', isDefault: false }];
+      api.openWorld = async () => ({
+        ...SUMMARY, assetSources: [],
+        vobIndex: vobIndex([[0, 0, 0]], 'oCMobContainer', undefined, ['CHEST'], ['']),
+      });
+      api.getWorldMesh = async () => ({ groups: [], bbox: SUMMARY.bbox });
+      api.getWorldVisuals = async () => ({ visuals: [], decals: { groups: [], count: 0 }, stats: {
+        visualsSeen: 0, visualsResolved: 0, vobsPlaced: 0, instancedDrawGroups: 0,
+        levelCompos: 0, unresolvedByType: {}, unresolved: [],
+      } });
+      api.getWorldItemInstances = async () => ({ vobs: [], instances: [] });
+      api.getVobProps = async () => ({
+        class: 'oCMobContainer', focusName: 'CHEST', locked: false, contents, ...BASE_PROPS,
+      });
+      api.getWorldPortalFindings = async () => [];
+      api.getVobFolders = async () => ({ folders: [] });
+      api.getWorldHistoryDepth = async () => ({ undo: window_.__ops.length, redo: 0 });
+      api.applyWorldOps = async (ops: Array<Record<string, unknown>>) => {
+        window_.__ops.push(ops);
+        for (const op of ops) {
+          if (op.op === 'SetVobClassProp') contents = String((op.to as Record<string, unknown>).contents);
+        }
+      };
+      api.getAssetThumbnail = async () => ({ key: 'k', dataUrl: null });
+    }, viteFsUrl(resolve(__dirname, '../worldFixtures.ts')));
+    await openWorld(page);
+
+    // The target is the selection: the chest's own contents field is beside the
+    // tab and is what the add has to land in.
+    await page.getByRole('treeitem').filter({ hasText: 'CHEST' }).click();
+    await expect(page.getByTestId('world-prop-contents-row-ItMi_Gold')).toBeVisible();
+
+    await page.getByTestId('world-panel-assets').click();
+    await page.getByTestId('world-asset-mode-items').click();
+    await page.getByTestId('world-items-add-mode').click();
+    await expect(page.getByTestId('world-items-container-target')).toContainText('CHEST');
+
+    // Two items, each with its own count.
+    await page.getByTestId('world-item-ITFO_APPLE').click();
+    await page.getByTestId('world-item-ITMI_GOLD').click();
+    await page.getByTestId('world-items-count-ITFO_APPLE').fill('3');
+    await page.getByTestId('world-items-count-ITFO_APPLE').press('Enter');
+    await page.getByTestId('world-items-count-ITMI_GOLD').fill('4');
+    await page.getByTestId('world-items-count-ITMI_GOLD').press('Enter');
+    await page.getByTestId('world-items-container-confirm').click();
+
+    // One call, one op: the entries the chest held keep their place, the gold
+    // it already held takes the count that was given, and the apple is new.
+    await expect.poll(async () => (await readHarness(page)).ops).toHaveLength(1);
+    const batch = (await readHarness(page)).ops[0];
+    expect(batch).toHaveLength(1);
+    expect(batch[0]).toMatchObject({
+      op: 'SetVobClassProp',
+      className: 'oCMobContainer',
+      path: '0',
+      from: { contents: 'ItMi_Gold:2' },
+      to: { contents: 'ItMi_Gold:6,ItFo_Apple:3' },
+    });
+    // And the history has the one entry, from the main process's own count.
+    await expect(page.getByTestId('world-undo')).toBeEnabled();
+
+    // The field names what was added, re-read after the commit.
+    await expect(page.getByTestId('world-prop-contents-row-ItFo_Apple')).toBeVisible();
+    await expect(page.getByTestId('world-prop-contents-count-ItMi_Gold')).toHaveValue('6');
   });
 });

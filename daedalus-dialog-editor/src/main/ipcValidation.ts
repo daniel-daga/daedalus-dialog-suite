@@ -7,14 +7,11 @@
  */
 
 import {
-  ARRAY_ARITY, baseFieldOf, classPropKeys, decalFieldOf, fieldOf, isAuthorableVobClass,
-  isContainerContents,
+  ARRAY_ARITY, baseFieldOf, classPropKeys, CONTAINER_CONTENTS_MAX, decalFieldOf, fieldOf,
+  isAuthorableVobClass, isContainerContents,
   type FieldDescriptor,
 } from 'zen-world';
 
-/** `oCMobContainer.contents` is one archive string; retail's longest chest is
- *  under 200 characters. */
-const CONTAINER_CONTENTS_MAX = 4096;
 import type { NpcBodyRequest, VisualsRequest, WorldOp } from '../shared/worldTypes';
 import type { NpcEdit } from 'daedalus-parser/npc-definition';
 import type { RoutineArgIndex } from '../shared/types';
