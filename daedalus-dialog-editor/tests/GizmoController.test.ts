@@ -188,11 +188,76 @@ describe('GizmoController', () => {
     expect(translated).toEqual([]);
   });
 
-  it('has no nudge to begin with nothing, or only a waypoint, under it', () => {
+  it('has no nudge to begin with nothing under it', () => {
     const { gizmo } = harness();
     expect(gizmo.beginNudge()).toBe(false);
+  });
+
+  // #521: a waypoint is a selection too, and a keyboard nudge of one has to
+  // commit what a drag of one does — `MoveWaypoint`, from the point it began
+  // at to where the previews left it.
+  it('nudges a waypoint from the keyboard, then commits the move a drag would', () => {
+    const { gizmo, world, waypointMoves, waypoints, translated } = harness();
     gizmo.attachWaypoint(7);
-    expect(gizmo.beginNudge()).toBe(false);
+
+    expect(gizmo.beginNudge()).toBe(true);
+    gizmo.previewNudge([5, 0, 0]);
+    gizmo.previewNudge([10, 0, 2]);
+
+    // The preview writes the overlay's own positions, as a drag's does, and
+    // each one is measured from where the nudge began.
+    expect(waypoints[7]).toEqual([60, 60, 72]);
+    gizmo.commitNudge();
+
+    expect(waypointMoves).toEqual([[7, [50, 60, 70], [60, 60, 72]]]);
+    // A waypoint is not a VOB: nothing on the VOB path runs for it.
+    expect(translated).toEqual([]);
+    expect(world.moved).toEqual([]);
+  });
+
+  it('turns a waypoint from the keyboard, then commits the turn the ring would', () => {
+    const quarterTurnY: ZenRotation = [0, 0, 1, 0, 1, 0, -1, 0, 0];
+    const { gizmo, waypointTurns, waypointDirections } = harness({ mode: 'rotate' });
+    gizmo.attachWaypoint(7);
+
+    expect(gizmo.beginNudge()).toBe(true);
+    gizmo.previewTurn(quarterTurnY);
+
+    // The arrow turns in place, as it does for the ring.
+    expect(waypointDirections[7][2]).toBeCloseTo(-1, 6);
+    gizmo.commitNudge();
+
+    expect(waypointTurns).toHaveLength(1);
+    const [waypoint, from, to] = waypointTurns[0];
+    expect(waypoint).toBe(7);
+    expect(from).toEqual([1, 0, 0]);
+    [0, 0, -1].forEach((value, axis) => expect(to[axis]).toBeCloseTo(value, 6));
+  });
+
+  it('commits nothing for a waypoint nudge that snapped back to where it began', () => {
+    // A snapped gesture can round away to nothing, and a point left where it
+    // was is not an edit.
+    const { gizmo, waypointMoves } = harness();
+    gizmo.attachWaypoint(7);
+    gizmo.beginNudge();
+    gizmo.previewNudge([0, 0, 0]);
+    gizmo.commitNudge();
+
+    expect(waypointMoves).toEqual([]);
+
+    const quarterTurnY: ZenRotation = [0, 0, 1, 0, 1, 0, -1, 0, 0];
+    const turned = harness({ mode: 'rotate' });
+    turned.gizmo.attachWaypoint(7);
+    turned.gizmo.beginNudge();
+    turned.gizmo.previewTurn(quarterTurnY);
+    // The gesture's snapped total is nothing, so its last preview is the one
+    // that puts the pose back where it began — and the commit reads that pose.
+    turned.gizmo.previewTurn(IDENTITY);
+    turned.gizmo.commitNudge();
+
+    expect(turned.waypointTurns).toEqual([]);
+    [1, 0, 0].forEach((value, axis) =>
+      expect(turned.waypointDirections[7][axis]).toBeCloseTo(value, 6));
   });
 
   it('moves the gizmo when the mode changes, not only its handles', () => {

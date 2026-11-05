@@ -409,21 +409,29 @@ export class GizmoController {
    * A keyboard nudge (WASD held down) is drawn like a translate drag: it
    * records where the selection starts, then `previewNudge` moves the proxy
    * and the preview by a delta from there. No commit of its own — the caller
-   * already holds the delta and commits it as a drag's would be. False with
-   * no VOBs under the gizmo, a waypoint included: `MoveWaypoint` is not what
-   * a nudge commits.
+   * already holds the delta and commits it as a drag's would be; a waypoint's
+   * commit is `commitNudge`, because its op carries where the point ended
+   * rather than a delta. False with nothing under the gizmo.
    */
   beginNudge(): boolean {
-    if (this.vobs.length === 0) return false;
+    if (this.vobs.length === 0 && this.waypoint === null) return false;
     this.recordDragStart();
     return true;
   }
 
   previewNudge(delta: readonly [number, number, number]): void {
-    if (this.vobs.length === 0) return;
+    if (this.vobs.length === 0 && this.waypoint === null) return;
     this.proxy.position.set(
       this.proxyFrom.x + delta[0], this.proxyFrom.y + delta[1], this.proxyFrom.z + delta[2],
     );
+    if (this.waypoint !== null) {
+      // The same write a drag's preview makes, into the array the point cloud
+      // and the edge lines share.
+      this.options.overlay()?.setPosition(this.waypoint, [
+        this.proxy.position.x, this.proxy.position.y, this.proxy.position.z,
+      ]);
+      return;
+    }
     this.previewTranslation();
   }
 
@@ -431,8 +439,30 @@ export class GizmoController {
    *  by `beginNudge`, drawn as the selection turned by `delta` (row-major,
    *  ZenGin space) from where it began. */
   previewTurn(delta: ZenRotation): void {
+    if (this.waypoint !== null) {
+      // The commit reads the turn off the proxy, as it does after a ring drag,
+      // so the preview writes it there — conjugated into the proxy's frame the
+      // way `turnBy` does. A nudge reports the total turned, so this replaces
+      // the proxy's pose rather than accumulating onto it.
+      this.proxy.quaternion
+        .setFromRotationMatrix(this.turnOut
+          .multiplyMatrices(this.turnMirror, rotationMatrix(delta))
+          .multiply(this.turnMirror))
+        .multiply(this.proxyTurnFrom);
+      const to = this.turnedDirection(delta);
+      if (to !== null) this.options.overlay()?.setDirection(this.waypoint, to);
+      return;
+    }
     if (this.vobs.length === 0) return;
     this.previewRotation(delta);
+  }
+
+  /** The keyboard nudge's commit (#521) — `beginNudge` recorded where a
+   *  waypoint was and the previews wrote the proxy's pose, so it lands the
+   *  same `MoveWaypoint`/`TurnWaypoint` the ring or a drag does. Nothing else
+   *  is the gizmo's to commit: a VOB's delta went to the caller already. */
+  commitNudge(): void {
+    this.commitWaypoint();
   }
 
   private readonly onDraggingChanged = (event: { value: unknown }) => {
@@ -446,33 +476,7 @@ export class GizmoController {
 
     this.endedDrag = true;
 
-    if (this.waypoint !== null) {
-      if (this.transform.getMode() === 'rotate') {
-        const delta = this.turnDelta();
-        if (delta === null) return;
-        const from = this.waypointDirectionFrom;
-        const to = this.turnedDirection(delta);
-        if (from === null || to === null) return;
-        // A turn about the waypoint's own facing leaves it facing exactly where
-        // it did: no op, for the reason a click that dragged nothing commits
-        // none. Compared with a tolerance because the vector went through a
-        // matrix.
-        if (to.every((component, axis) => Math.abs(component - from[axis]) < 1e-6)) return;
-        this.options.onTurnWaypoint(this.waypoint, from, to);
-        return;
-      }
-
-      const from = this.waypointFrom;
-      if (from === null) return;
-      const to: [number, number, number] = [
-        this.proxy.position.x, this.proxy.position.y, this.proxy.position.z,
-      ];
-      // A click that dragged nothing. Committing it would put an op on the undo
-      // stack that undoes nothing.
-      if (to.every((component, axis) => component === from[axis])) return;
-      this.options.onMoveWaypoint(this.waypoint, from, to);
-      return;
-    }
+    if (this.waypoint !== null) { this.commitWaypoint(); return; }
 
     if (this.vobs.length === 0) return;
 
@@ -547,6 +551,39 @@ export class GizmoController {
     if (from === null) return null;
     const base: ZenPosition = from.some((component) => component !== 0) ? from : [0, 0, 1];
     return turnAbout(base, [0, 0, 0], delta);
+  }
+
+  /** The op a finished waypoint gesture leaves: `TurnWaypoint` in rotate mode,
+   *  `MoveWaypoint` otherwise. Shared by the drag and the keyboard nudge, so
+   *  both emit the same op from the same recorded start. */
+  private commitWaypoint(): void {
+    const waypoint = this.waypoint;
+    if (waypoint === null) return;
+
+    if (this.transform.getMode() === 'rotate') {
+      const delta = this.turnDelta();
+      if (delta === null) return;
+      const from = this.waypointDirectionFrom;
+      const to = this.turnedDirection(delta);
+      if (from === null || to === null) return;
+      // A turn about the waypoint's own facing leaves it facing exactly where
+      // it did: no op, for the reason a click that dragged nothing commits
+      // none. Compared with a tolerance because the vector went through a
+      // matrix.
+      if (to.every((component, axis) => Math.abs(component - from[axis]) < 1e-6)) return;
+      this.options.onTurnWaypoint(waypoint, from, to);
+      return;
+    }
+
+    const from = this.waypointFrom;
+    if (from === null) return;
+    const to: [number, number, number] = [
+      this.proxy.position.x, this.proxy.position.y, this.proxy.position.z,
+    ];
+    // A click that dragged nothing. Committing it would put an op on the undo
+    // stack that undoes nothing.
+    if (to.every((component, axis) => component === from[axis])) return;
+    this.options.onMoveWaypoint(waypoint, from, to);
   }
 
   /**

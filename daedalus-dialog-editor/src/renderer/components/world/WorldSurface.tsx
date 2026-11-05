@@ -1317,7 +1317,8 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
   const nudgeRef = useRef<{ total: [number, number, number]; grid: number } | null>(null);
 
   const handleNudgeBegin = useCallback((grid: number) => {
-    if (useWorldStore.getState().selection.length === 0) return false;
+    const { selection: selected, selectedWaypoint } = useWorldStore.getState();
+    if (selected.length === 0 && selectedWaypoint === null) return false;
     if (viewportRef.current?.beginNudge() !== true) return false;
     nudgeRef.current = { total: [0, 0, 0], grid };
     return true;
@@ -1337,12 +1338,19 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
   }, []);
 
   /** The last key is up: the whole nudge is one commit on the same subtree
-   *  translation path as a gizmo drag, so one undo entry. */
+   *  translation path as a gizmo drag, so one undo entry. A waypoint is not a
+   *  VOB and commits on the gizmo's own path instead — at the same snapped
+   *  total, pushed through the preview the commit reads (#521). */
   const handleNudgeEnd = useCallback(() => {
     const nudge = nudgeRef.current;
     nudgeRef.current = null;
     if (nudge === null) return;
     const delta = snapDelta(nudge.total, nudge.grid);
+    if (useWorldStore.getState().selectedWaypoint !== null) {
+      viewportRef.current?.previewNudge(delta);
+      viewportRef.current?.commitNudge();
+      return;
+    }
     if (delta.every((component) => component === 0)) return;
     handleTranslateSelection(delta);
   }, [handleTranslateSelection]);
@@ -1505,7 +1513,8 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
   const turnRef = useRef<KeyboardTurn | null>(null);
 
   const handleTurnBegin = useCallback((step: number) => {
-    if (useWorldStore.getState().selection.length === 0) return false;
+    const { selection: selected, selectedWaypoint } = useWorldStore.getState();
+    if (selected.length === 0 && selectedWaypoint === null) return false;
     const axes = viewportRef.current?.cameraNudgeAxes();
     if (axes === null || axes === undefined) return false;
     if (viewportRef.current?.beginNudge() !== true) return false;
@@ -1521,12 +1530,20 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
     if (delta !== null) viewportRef.current?.previewTurn(delta);
   }, []);
 
-  /** The last key is up: one commit on the gizmo's own rotate path. */
+  /** The last key is up: one commit on the gizmo's own rotate path — a
+   *  waypoint's turn included, and at the snapped total (#521). Identity for a
+   *  turn that snapped back to nothing, so the commit reads the point's own
+   *  facing rather than the last pose a preview left. */
   const handleTurnEnd = useCallback(() => {
     const turn = turnRef.current;
     turnRef.current = null;
     if (turn === null) return;
     const delta = turnSoFar(turn);
+    if (useWorldStore.getState().selectedWaypoint !== null) {
+      viewportRef.current?.previewTurn(delta ?? IDENTITY);
+      viewportRef.current?.commitNudge();
+      return;
+    }
     if (delta !== null) handleRotateSelection(delta);
   }, [handleRotateSelection]);
 

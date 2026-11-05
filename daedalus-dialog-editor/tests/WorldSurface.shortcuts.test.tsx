@@ -20,6 +20,10 @@ jest.mock('react-virtualized-auto-sizer', () => (props: {
   children: (size: { height: number; width: number }) => React.ReactNode;
 }) => props.children({ height: 600, width: 320 }));
 
+const mockCommitNudge = jest.fn();
+const mockPreviewNudge = jest.fn();
+const mockPreviewTurn = jest.fn();
+
 jest.mock('../src/renderer/components/world/WorldViewport', () => {
   const ReactActual = jest.requireActual('react') as typeof React;
   return {
@@ -30,8 +34,9 @@ jest.mock('../src/renderer/components/world/WorldViewport', () => {
         // A camera looking down ZenGin +Z: right is +X, forward is +Z.
         cameraNudgeAxes: () => ({ right: [1, 0, 0], forward: [0, 0, 1] }),
         beginNudge: () => true,
-        previewNudge: () => undefined,
-        previewTurn: () => undefined,
+        previewNudge: mockPreviewNudge,
+        previewTurn: mockPreviewTurn,
+        commitNudge: mockCommitNudge,
       }));
       return <div data-testid="world-viewport-stub" />;
     }),
@@ -319,6 +324,91 @@ describe('arrow-key nudge', () => {
 
     await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalled());
     expect(api.applyWorldOps.mock.calls[0][0]).toMatchObject([nudgeOp([11, 20, 30])]);
+  });
+
+  it('nudges a selected waypoint through the gizmo, never as a VOB (#521)', async () => {
+    // The VOB commit has nothing to move — a waypoint is not in the selection —
+    // so the nudge ends on the gizmo's own `MoveWaypoint` path.
+    await openWorld();
+    await act(async () => { useWorldStore.getState().selectWaypoint(1); });
+
+    tap('ArrowRight');
+
+    expect(mockCommitNudge).toHaveBeenCalledTimes(1);
+    expect(api.applyWorldOps).not.toHaveBeenCalled();
+  });
+
+  it('turns a selected waypoint from the keyboard through the gizmo too (#521)', async () => {
+    await openWorld();
+    await act(async () => { useWorldStore.getState().selectWaypoint(1); });
+
+    tap('q');
+
+    expect(mockCommitNudge).toHaveBeenCalledTimes(1);
+    expect(api.applyWorldOps).not.toHaveBeenCalled();
+  });
+
+  it('commits a waypoint nudge at the snapped total, and nothing for one that snapped away (#521)', async () => {
+    await openWorld();
+    await chooseStep('1 m');
+    await act(async () => { useWorldStore.getState().selectWaypoint(1); });
+
+    // 100 cm right, then 10 cm more off the grid while Ctrl is held: 110 cm
+    // asked for, 100 committed. What the preview is handed is what the gizmo's
+    // commit reads, so this is the `MoveWaypoint` it will carry.
+    fireEvent.keyDown(window, { key: 'ArrowRight' });
+    fireEvent.keyDown(window, { key: 'PageUp', ctrlKey: true });
+    const moved = mockPreviewNudge.mock.calls.length;
+    fireEvent.keyUp(window, { key: 'PageUp', ctrlKey: true });
+    fireEvent.keyUp(window, { key: 'ArrowRight' });
+
+    expect(mockPreviewNudge.mock.calls.length).toBe(moved + 1);
+    expect(mockPreviewNudge).toHaveBeenLastCalledWith([100, 0, 0]);
+    expect(mockCommitNudge).toHaveBeenCalledTimes(1);
+
+    // A fine Ctrl tap on a 1 m grid asks for 10 cm, which is not a grid step at
+    // all — the point is left where it was, so its commit finds no move.
+    mockPreviewNudge.mockClear();
+    mockCommitNudge.mockClear();
+    tap('ArrowRight', { ctrlKey: true });
+
+    expect(mockPreviewNudge).toHaveBeenLastCalledWith([0, 0, 0]);
+    expect(mockCommitNudge).toHaveBeenCalledTimes(1);
+    expect(api.applyWorldOps).not.toHaveBeenCalled();
+  });
+
+  it('commits a waypoint turn at the snapped step, and nothing for one that snapped away (#521)', async () => {
+    await openWorld();
+    fireEvent.click(screen.getByTestId('world-gizmo-rotate'));
+    await chooseStep('15°');
+    await act(async () => { useWorldStore.getState().selectWaypoint(1); });
+
+    // Q yaws 15°, and a Ctrl+PageUp adds 1.5° of pitch: the yaw is the step,
+    // the pitch is dropped by the snap.
+    fireEvent.keyDown(window, { key: 'q' });
+    fireEvent.keyDown(window, { key: 'PageUp', ctrlKey: true });
+    const turned = mockPreviewTurn.mock.calls.length;
+    fireEvent.keyUp(window, { key: 'PageUp', ctrlKey: true });
+    fireEvent.keyUp(window, { key: 'q' });
+
+    expect(mockPreviewTurn.mock.calls.length).toBe(turned + 1);
+    const last = mockPreviewTurn.mock.calls[mockPreviewTurn.mock.calls.length - 1][0] as number[];
+    rotationAboutUp((-15 * Math.PI) / 180).forEach((value, at) =>
+      expect(last[at]).toBeCloseTo(value, 6));
+    expect(mockCommitNudge).toHaveBeenCalledTimes(1);
+
+    // Q then E inside one gesture is a turn that snapped back to nothing: the
+    // preview returns to the facing it began with rather than keeping the
+    // yaw Q left on it, so the commit has no turn to send.
+    mockPreviewTurn.mockClear();
+    mockCommitNudge.mockClear();
+    fireEvent.keyDown(window, { key: 'q' });
+    fireEvent.keyDown(window, { key: 'e' });
+    fireEvent.keyUp(window, { key: 'e' });
+    fireEvent.keyUp(window, { key: 'q' });
+
+    expect(mockPreviewTurn).toHaveBeenLastCalledWith([1, 0, 0, 0, 1, 0, 0, 0, 1]);
+    expect(mockCommitNudge).toHaveBeenCalledTimes(1);
   });
 
   it.each([
