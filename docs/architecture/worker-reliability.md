@@ -37,6 +37,43 @@ alive for the session:
   (below) and the settlement guarantees ensure `terminate()` in the `finally` is
   always reached, so pools can no longer leak across builds.
 
+### What the spawn costs (#438, measured 2026-11-05)
+
+Measured before changing anything, on 24 cores (so 8 workers), plain Node, with
+the compiled `dist/main` and `scripts/generate-perf-fixture.js` projects. Three
+points over the same script:
+
+| fixture | `buildProjectIndex` | fork + boot + addon load |
+|---------|--------------------|--------------------------|
+| 57 files (1.7 MB)  | 1.2–1.5 s | 0.32–0.50 s |
+| 157 files (5 MB)   | 2.5–2.8 s | 0.32 s |
+| 507 files (17 MB)  | 9.7–10.2 s | 0.32–0.35 s |
+
+How: `new MetadataWorkerPool()` + `terminate()` alone is ~80 ms — that is the
+fork syscalls. Sending one file to each of the 8 children (forcing every child
+to boot and load tree-sitter, subtracting a warm single-file parse of ~48 ms)
+is ~320 ms; the children boot concurrently, so that is a fixed per-build cost,
+not one that scales with worker count or file count. The same delta shows in a
+warm comparison — all files through one pool is ~350 ms slower on its first
+pass than its second (57-file fixture), and indistinguishable on the 157- and
+507-file ones where the parse dominates.
+
+So the spawn is ~300 ms, ~3 % of a 500-file build and ~25 % of a 57-file one.
+That is not worth 8 more resident native parser instances: a keep-alive metadata
+pool leased from the registry would sit beside `ParserService`'s 8 and put up to
+16 native parser processes in the main process at once, double what the cap
+below exists to bound, for a saving on an operation that happens once per
+project open. The cheaper alternative — a smaller pool for the index pass — buys
+almost nothing of it: 80 ms of the 300 ms is fork, the rest is per-child boot
+and is already concurrent, while each dropped worker lengthens the parse of the
+file set (507 files take ~9.6 s at 8, so halving the pool would add seconds).
+**Decision: unchanged, per-build spawn.** The one unmeasured wrinkle is that
+under Electron the child is the app binary with `ELECTRON_RUN_AS_NODE=1`, whose
+startup is slower than plain Node's; the Electron binary was not installed in
+the checkout that measured this, so the shipped-app figure is unknown but is
+the same fixed ~300 ms class, and would have to be several times larger to
+change the conclusion above.
+
 ## Worker count caps
 
 Both pools cap at `Math.max(1, Math.min(os.cpus().length - 1, 8))` — one core is
