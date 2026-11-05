@@ -238,7 +238,7 @@ against again (§7).
 | 3.3 | **Merge/import another ZEN, export a selection** | planned (Phase 3) | Spacer's part workflow depends on it. |
 | 3.4 | **Portal / sector work** | planned (Phase 2) | Face selection, material assignment, leak detection. |
 | 3.5 | **World properties** | measured 2026-08-30, exposure unscheduled | `oCWorld` settings, start position, sky and time control. Nothing exposed, and the measurement changes what "expose them" would mean. `worldProperties` (binding) and `scripts/check-world-properties.js` (readout) report the world level: the `oCWorld:zCWorld` wrapper — `%` / `oCWorld:zCWorld` v64513, binsafe, on all four retail worlds — and every member `zenkit::World` models beyond vobs/mesh/BSP/waynet. **Those are `skyController`, `player` and the four NPC-spawn fields, and all of them are save-game members: `null`/zero in all four.** So sky and time of day are not in a world file at all — exposing them is not plumbing a parsed field, it is authoring an object the format does not carry here, and that is a scope question, not a wiring one. The one world-level thing a `.zen` does carry is the **start position**, and it is not an `oCWorld` field either: NewWorld has both a `zCVobStartpoint` (`START_GOTHIC2`) and a `START` waypoint, DragonIsland only the VOB (`START_DRAGONISLAND`), OldWorld only the waypoint, and AddonWorld **neither** — so an editor exposing "the start position" has to answer which of the two it edits and what it does when there is none. `test/worldProperties.test.js` pins the binding against the golden fixture and the start-position summarizer against fakes; the corpus half needs `worlds/`. |
-| 3.6 | **BSP / world-mesh compile** | out of scope (§11) | The Blender pipeline covers it. Restate it whenever "parity" comes up — the one thing Spacer does that we never will. |
+| 3.6 | **BSP / world-mesh compile** | out of scope (§11) | The one thing Spacer does that we never will, and the mesh it compiles is **in the ZEN**, not in the VFS like a prop's visual: we read it (`extractWorldMesh`) and never write it, and a swapped mesh would drag the BSP tree, the portals and the light bake with it. A hand-off — export for Blender, take the re-export back, drive `compile world outdoor` / `compile light high` — is the shape **if** it is ever picked up; long form in architecture §5, *"The world mesh itself is read and never written"*. Not #419, which is a VOB's visual. |
 
 ### 14.4 Editor UX
 
@@ -3369,7 +3369,8 @@ that nobody has looked.
 (`NW_CRATE.3DS`) and the geometry lives in the mounted VFS — a VDF, or a loose
 file in a mod. So replacing a *prop's* mesh is one of two edits, and **both
 already work**. (The world's own geometry is the other half of the question and
-is not this section's: it is inside the file, and §16.43 answers it.)
+is not this section's: it is inside the file, and architecture §5, *"The world
+mesh itself is read and never written"*, answers it.)
 
 1. **The same name, new contents.** Put the re-exported `.3DS` (and any changed
    `.TGA`) into one of the GMBT project's asset folders, then press **Compile**
@@ -3415,51 +3416,6 @@ which one) or only accepts files already inside a configured source; and whether
 Compile button has never run against a real GMBT project — nothing in it has
 been seen converting anything — so a swapped mesh is unwitnessed for the same
 reason, and a witness here starts by clearing that row.
-
-### 16.43 The world mesh itself — in the file, and out of scope by decision (2026-10-29; #420)
-
-**Every way different from §16.42.** A prop's `.3DS` is a name the world refers
-to; **the world's own geometry is in the file** — the `MeshAndBsp` blob, 67–94 %
-of a `*_Part_*.zen` and 69 MB of `NewWorld.zen` (§5, *"What the `*_Part_*` files
-actually are"*). So swapping *that* from a Blender export is not a property
-write, and the answer today is **no**: `zenkit-node` exposes `extractWorldMesh`
-(render-ready buffers) and `saveWorld`, and nothing writes into `MeshAndBsp` —
-the mesh and its BSP round-trip through ZenKit untouched, which is what makes
-the save corpus pass. That is not an oversight: brief §3 and §11 put *no BSP
-compiler, no terrain sculpting* out of scope.
-
-**What a swapped mesh drags with it, which is why "just write the polygons" is
-the trap:**
-
-- **The BSP tree is the collision structure**, not only the visibility one.
-  ZenGin uses it for physics, and its heuristics — plane choice, sector
-  detection, portal assignment — are undocumented; a home-grown compiler
-  produces worlds that are formally valid, load, and then play wrong (brief §4).
-- **Portals are not objects.** They are material names on polygons: `P:_<name>`
-  and `P:<name>_` for a portal face, `S:<name>` for a sector, `GHOSTOCCLUDER`
-  for an occluder. A new mesh whose materials happen to start with `P:` invents
-  portals nobody wanted — a documented forum case — and one that drops them
-  loses the sectors.
-- **Light is baked into the mesh vertices.** A reshaped surface needs
-  `compile light`, and its absence is invisible in any file diff.
-- **Spacer's own answer is a macro, not an edit:** `Load world …` /
-  `compile world outdoor` / `compile light high` (§5) — a global re-BSP and a
-  global bake, which is why a merged world is 23 % smaller than the sum of its
-  parts.
-
-**The structural half outlives any compiler we might write: our output is a
-leaf, not a source** (§5). A retail world is authored as part ZENs and compiled
-as a final step, so a mesh swapped into `NewWorld.zen` is destroyed by the next
-merge. The supported place to change world geometry is the source layer plus
-Spacer's compile — which also says what the honest feature here is: one that
-*validates and reports* (§16.18) and hands the geometry to the tools that
-compile, not one that owns the mesh.
-
-**So a card, if it ever is one, is a hand-off rather than a writer** — export
-the part ZEN's mesh for Blender, take the re-export back, and drive the compile
-step. Decided against today; recorded so the question stops being re-derived.
-
----
 
 ### 16.44 The fly's speed is a number, not a distance (2026-10-29; #405, #415)
 

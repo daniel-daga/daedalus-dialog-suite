@@ -1013,6 +1013,24 @@ rather than fatal, and they should be stated to users rather than discovered:
    us do anything useful with one. The ASCII series buys VOB editing in the
    source layer — nothing more.
 
+**The world mesh itself is read and never written, by decision (#420).** It is
+in the file, not a name in the VFS: `extractWorldMesh` hands out render-ready
+buffers and `saveWorld` never writes into `MeshAndBsp`, so the mesh and its BSP
+ride the load→save cycle untouched — part of why the save corpus holds. A mesh
+swapped in from Blender would drag the BSP tree with it (the collision
+structure, not only the visibility one, and its heuristics are undocumented —
+brief §4 — so a home-grown compiler yields worlds that load and play wrong),
+the portals (material names on polygons: `P:_…` / `P:…_`, `S:…`,
+`GHOSTOCCLUDER`, so a mesh whose materials happen to start with `P:` invents
+portals nobody wanted) and the light baked into the vertices; Spacer's own
+route is the macro `Load world …` / `compile world outdoor` / `compile light
+high`. That is plan §11's *no BSP compiler, no terrain sculpting* — a settled
+scope call, not a gap. If it is ever picked up the shape
+is a hand-off, never a writer of ours: export the mesh for Blender, take the
+re-export back, drive the compile step; the honest feature there validates and
+reports (plan §16.18), it does not own the mesh. The VOB-visual half is a
+different question and it is plan §16.42.
+
 Still open, and not to be reasoned about: whether the merge macro *preserves*
 VOBs already present on a compiled target or rebuilds the tree purely from the
 loaded parts (GMC does not say, and the count above is consistent with either);
