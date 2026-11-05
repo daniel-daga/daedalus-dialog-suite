@@ -18,6 +18,10 @@
  *   reads them from `worldStore` when it runs, and this module is what makes it
  *   run when they change (level-editor.md §16.8).
  *
+ *   The edit history's cleanup is here too (issue #532): closing a file or
+ *   saving its source drops that file's undo stack, and no other place owns a
+ *   teardown for it.
+ *
  *   A reference-equality guard on `semanticModel` ensures we only push to
  *   projectStore when a file's model has actually changed — not on every
  *   unrelated editorStore mutation (dirty-flag updates, history stack changes,
@@ -29,11 +33,46 @@
  */
 
 import { useEditorStore } from './editorStore';
+import { useFileStore } from './fileStore';
+import { useHistoryStore } from './historyStore';
 import { useProjectStore } from './projectStore';
 import { useProblemsStore } from './problemsStore';
 import { useWorldStore } from './worldStore';
 
 export function initStoreSync(): () => void {
+  /**
+   * Closing a file or reloading its source from disk drops its undo stack: the
+   * snapshots belong to the model that no longer exists.
+   */
+  const unsubscribeHistory = useFileStore.subscribe((state, prevState) => {
+    if (state.openFiles === prevState.openFiles) return;
+
+    const removedFiles: string[] = [];
+    prevState.openFiles.forEach((_, filePath) => {
+      if (!state.openFiles.has(filePath)) {
+        removedFiles.push(filePath);
+      }
+    });
+
+    if (removedFiles.length > 0) {
+      const historyState = useHistoryStore.getState();
+      removedFiles.forEach((fp) => historyState.clearHistoryForFile(fp));
+    }
+
+    // Detect source saves: existing file whose originalCode changed and is no
+    // longer dirty. Only the saved file's history is cleared.
+    state.openFiles.forEach((fileState, filePath) => {
+      const prevFileState = prevState.openFiles.get(filePath);
+      if (
+        prevFileState &&
+        prevFileState.originalCode !== fileState.originalCode &&
+        !fileState.isDirty
+      ) {
+        useHistoryStore.getState().clearHistoryForFile(filePath);
+      }
+    });
+  });
+
   /**
    * A world opening, closing, gaining/losing/renaming a waypoint, or gaining an
    * edit changes what the scan would say, so the project is re-scanned.
@@ -68,6 +107,7 @@ export function initStoreSync(): () => void {
   });
 
   return () => {
+    unsubscribeHistory();
     unsubscribeWorld();
     unsubscribeEditor();
   };

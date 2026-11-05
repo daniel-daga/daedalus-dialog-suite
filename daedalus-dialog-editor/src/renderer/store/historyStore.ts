@@ -260,42 +260,6 @@ export const useHistoryStore = create<HistoryStore>()(immer((set, get) => ({
   },
 })));
 
-// ---------------------------------------------------------------------------
-// File-store subscription: keep history in sync with open-file lifecycle
-// ---------------------------------------------------------------------------
-
-/**
- * Subscribe to fileStore changes to automatically clean up history when:
- *  - a file is closed (removed from openFiles)
- *  - the file is reloaded from disk (originalCode changes + isDirty=false)
- *
- * This wires historyStore to fileStore without creating a circular dependency.
- */
-useFileStore.subscribe((state, prevState) => {
-  if (state.openFiles === prevState.openFiles) return;
-
-  const removedFiles: string[] = [];
-  prevState.openFiles.forEach((_, filePath) => {
-    if (!state.openFiles.has(filePath)) {
-      removedFiles.push(filePath);
-    }
-  });
-
-  if (removedFiles.length > 0) {
-    const historyState = useHistoryStore.getState();
-    removedFiles.forEach((fp) => historyState.clearHistoryForFile(fp));
-  }
-
-  // Detect source saves: existing file whose originalCode changed and is no
-  // longer dirty. Only the saved file's history is cleared.
-  state.openFiles.forEach((fileState, filePath) => {
-    const prevFileState = prevState.openFiles.get(filePath);
-    if (
-      prevFileState &&
-      prevFileState.originalCode !== fileState.originalCode &&
-      !fileState.isDirty
-    ) {
-      useHistoryStore.getState().clearHistoryForFile(filePath);
-    }
-  });
-});
+// History cleanup on file close and on a source save is wired by
+// `initStoreSync` (store/storeSync.ts) — a module-scope subscription here could
+// never be torn down.

@@ -1,5 +1,6 @@
 import { useFileStore } from '../src/renderer/store/fileStore';
 import { useHistoryStore } from '../src/renderer/store/historyStore';
+import { initStoreSync } from '../src/renderer/store/storeSync';
 import type { Dialog, SemanticModel } from '../src/renderer/types/global';
 
 // ---------------------------------------------------------------------------
@@ -338,7 +339,14 @@ describe('historyStore – clearHistoryForFile', () => {
 // ---------------------------------------------------------------------------
 
 describe('historyStore – subscription: auto-clear on file close', () => {
-  beforeEach(resetStores);
+  let stopSync: () => void;
+
+  beforeEach(() => {
+    resetStores();
+    stopSync = initStoreSync();
+  });
+
+  afterEach(() => stopSync());
 
   it('clears edit history when a file is removed from openFiles', () => {
     useHistoryStore.getState().pushSnapshot(filePath);
@@ -352,6 +360,34 @@ describe('historyStore – subscription: auto-clear on file close', () => {
   });
 });
 
+/**
+ * The cleanup subscription belongs to `initStoreSync`, not to the historyStore
+ * module (issue #532): module-scope wiring cannot be torn down, so no test can
+ * prove the cleanup stops. The unsubscribe `initStoreSync` returns is that
+ * teardown, so after it a fileStore change must leave history alone.
+ */
+describe('historyStore – fileStore cleanup is wired by initStoreSync (#532)', () => {
+  beforeEach(resetStores);
+
+  it('does not clean up before initStoreSync has run', () => {
+    useHistoryStore.getState().pushSnapshot(filePath);
+
+    useFileStore.setState({ openFiles: new Map() });
+
+    expect(useHistoryStore.getState().canUndo(filePath)).toBe(true);
+  });
+
+  it('stops cleaning up after the unsubscribe initStoreSync returned', () => {
+    const stopSync = initStoreSync();
+    stopSync();
+
+    useHistoryStore.getState().pushSnapshot(filePath);
+    useFileStore.setState({ openFiles: new Map() });
+
+    expect(useHistoryStore.getState().canUndo(filePath)).toBe(true);
+  });
+});
+
 // ---------------------------------------------------------------------------
 // Subscription: saving one file must NOT wipe other files' history (F-B)
 // ---------------------------------------------------------------------------
@@ -359,6 +395,8 @@ describe('historyStore – subscription: auto-clear on file close', () => {
 describe('historyStore – save does not reset unrelated files\' history (F-B)', () => {
   const fileA = 'C:/tmp/A.d';
   const fileB = 'C:/tmp/B.d';
+
+  let stopSync: () => void;
 
   const openTwoFiles = () => {
     useFileStore.setState({
@@ -379,9 +417,14 @@ describe('historyStore – save does not reset unrelated files\' history (F-B)',
     });
   };
 
-  it('keeps file B\'s history undoable after file A is saved', () => {
+  beforeEach(() => {
     openTwoFiles();
+    stopSync = initStoreSync();
+  });
 
+  afterEach(() => stopSync());
+
+  it('keeps file B\'s history undoable after file A is saved', () => {
     useHistoryStore.getState().pushSnapshot(fileA);
     useHistoryStore.getState().pushSnapshot(fileB);
     expect(useHistoryStore.getState().canUndo(fileA)).toBe(true);
