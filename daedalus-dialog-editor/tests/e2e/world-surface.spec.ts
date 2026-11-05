@@ -1,5 +1,6 @@
 import { test, expect, Page } from '@playwright/test';
 import { resolve } from 'node:path';
+import { viteFsUrl } from '../viteFsUrl';
 
 /**
  * Browser mock-harness specs for the World surface (level-editor.md §6).
@@ -58,7 +59,7 @@ test.describe('World surface', () => {
       api.applyWorldOps = async (ops: typeof history[number]) => { history.push(ops); };
       api.getWorldHistoryDepth = async () => ({ undo: history.length, redo: 0 });
       api.undoWorldEdit = async () => history.pop()?.map((op) => ({ ...op, from: op.to, to: op.from })) ?? null;
-    }, `/@fs${resolve(__dirname, '../worldFixtures.ts')}`);
+    }, viteFsUrl(resolve(__dirname, '../worldFixtures.ts')));
     await page.getByTestId('world-open').click();
     await page.getByTestId('world-picker-entry-NewWorld.zen').click();
     await page.getByRole('treeitem').filter({ hasText: 'BARREL' }).click();
@@ -132,7 +133,7 @@ test.describe('World surface', () => {
       api.getWorldHistoryDepth = async () => ({ undo: 0, redo: 0 });
       api.getWorldPortalFindings = async () => [];
       api.getVobFolders = async () => ({ folders: [] });
-    }, `/@fs${resolve(__dirname, '../worldFixtures.ts')}`);
+    }, viteFsUrl(resolve(__dirname, '../worldFixtures.ts')));
     const open = async () => {
       await page.getByTestId('world-open').click();
       await page.getByTestId('world-picker-entry-NewWorld.zen').click();
@@ -252,7 +253,7 @@ test.describe('World surface', () => {
       api.getWorldPortalFindings = async () => [];
       api.getVobFolders = async () => ({ folders: [] });
       api.applyWorldOps = async (ops: unknown[]) => { window_.__ops.push(ops); };
-    }, `/@fs${resolve(__dirname, '../worldFixtures.ts')}`);
+    }, viteFsUrl(resolve(__dirname, '../worldFixtures.ts')));
     await page.getByTestId('world-open').click();
     await page.getByTestId('world-picker-entry-NewWorld.zen').click();
     await expect(page.getByTestId('world-viewport')).toBeVisible();
@@ -316,7 +317,7 @@ test.describe('World surface', () => {
       }];
       api.openWorld = async () => SUMMARY;
       api.getWorldMesh = () => new Promise(() => {});
-    }, `/@fs${resolve(__dirname, '../worldFixtures.ts')}`);
+    }, viteFsUrl(resolve(__dirname, '../worldFixtures.ts')));
     await page.getByTestId('world-open').click();
     await page.getByTestId('world-picker-entry-NewWorld.zen').click();
     const markers = page.getByRole('button', { name: 'VOB markers' });
