@@ -54,7 +54,7 @@ const START: DialogAction[] = [
 ];
 
 describe('useActionManagement – addActionToEnd matches addActionAfter', () => {
-  const SEEDED: ActionTypeId[] = ['dialogLine', 'choice', 'questStart', 'clearChoicesAction'];
+  const SEEDED: ActionTypeId[] = ['dialogLine', 'choice', 'questStart', 'commentAction', 'clearChoicesAction'];
 
   test.each(SEEDED)('%s: appending equals inserting after the last action', (actionType) => {
     const append = renderManagement([...START]);
@@ -91,7 +91,7 @@ describe('useActionManagement – addActionToBranchEnd into an empty branch', ()
     elseActions: []
   } as unknown as DialogAction);
 
-  const ADDABLE = ['dialogLine', 'choice', 'questStart', 'questNote', 'clearChoicesAction'] as ActionTypeId[];
+  const ADDABLE = ['dialogLine', 'choice', 'questStart', 'commentAction', 'clearChoicesAction'] as ActionTypeId[];
 
   test.each(ADDABLE)('%s: lands in the empty then branch', (actionType) => {
     const { result, getActions } = renderManagement([conditional()]);

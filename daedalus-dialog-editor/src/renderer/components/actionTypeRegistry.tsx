@@ -81,8 +81,8 @@ export const ACTION_TYPE_REGISTRY: Record<ActionTypeId, ActionTypeEntry> = {
   insertNpcAction: { label: 'Insert NPC', icon: PersonAddIcon },
   heroFollowsAction: { label: 'Hero Follows NPC', icon: DirectionsWalkIcon },
   conditionalAction: { label: 'If / Else Block', icon: CallSplitIcon },
-  // Parser-preserved only: never offered in the add-action menu.
-  commentAction: { label: 'Comment', icon: CommentIcon, addable: false },
+  // #430: a standalone `// note` line the user adds from this menu.
+  commentAction: { label: 'Comment', icon: CommentIcon },
   // A view over recognised quest lines (#322), never added as such.
   questStep: { label: 'Quest Step', icon: MenuBookIcon, addable: false },
   customAction: { label: 'Custom Action', icon: CodeIcon }

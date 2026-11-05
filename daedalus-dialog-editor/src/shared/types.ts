@@ -442,8 +442,8 @@ export interface Action {
 
 /**
  * A standalone comment inside a function or condition body, preserved in
- * source position (mirrors the parser's `CommentAction`). Read-only in the
- * editor UI; regenerates verbatim with no trailing `;`.
+ * source position (mirrors the parser's `CommentAction`). `text` is the source
+ * line verbatim, `//` marker included; regenerates with no trailing `;`.
  */
 export interface CommentActionType {
   type: 'CommentAction';

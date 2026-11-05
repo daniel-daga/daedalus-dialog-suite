@@ -184,6 +184,43 @@ test('a file ending in an EOF comment keeps its final newline (byte fidelity)', 
   assert.equal(generated, source, 'EOF-comment file regenerates byte-identical (final newline preserved)');
 });
 
+test('an added note round-trips: the empty note, the edited text, re-read unchanged (#430)', () => {
+  const source = `func void DIA_Foo_Info()
+{
+\tAI_Output (self, other, "DIA_Foo_15_00");
+\tAI_StopProcessInfos (self);
+};
+`;
+  const model = parseSemanticModel(source);
+  const { actions } = model.functions.DIA_Foo_Info;
+
+  // What the editor's "Add Note" inserts before the user types anything: an
+  // empty note still carries the `//` marker, so it is a comment line (not a
+  // blank line that read-back drops) — the trailing space is the marker's.
+  actions.splice(1, 0, new CommentAction('// '));
+
+  const emptyGenerated = generate(model);
+  assert.ok(emptyGenerated.includes('\n\t// \n'), 'an empty note is written as a comment line');
+  const emptyReparsed = parseSemanticModel(emptyGenerated);
+  assert.equal(emptyReparsed.hasErrors, false);
+  assert.equal(emptyReparsed.functions.DIA_Foo_Info.actions[1].text, '// ', 'the empty note comes back unchanged');
+
+  // Editing it writes the note text, in position, and it re-reads verbatim.
+  actions[1].text = '// TODO: create the variable for this condition';
+  const editedGenerated = generate(model);
+  assert.ok(
+    editedGenerated.includes('\n\t// TODO: create the variable for this condition\n'),
+    'the edited note is written into the function body'
+  );
+  const reparsed = parseSemanticModel(editedGenerated);
+  assert.equal(reparsed.hasErrors, false);
+  const [line, note, stop] = reparsed.functions.DIA_Foo_Info.actions;
+  assert.equal(line.type, 'DialogLine');
+  assert.ok(note instanceof CommentAction, 'the note comes back as a CommentAction');
+  assert.equal(note.text, '// TODO: create the variable for this condition');
+  assert.equal(stop.type, 'StopProcessInfosAction', 'the note stays where it was added');
+});
+
 test('empty void function does not gain an invented TODO placeholder', () => {
   const source = `func void B_Empty()
 {
