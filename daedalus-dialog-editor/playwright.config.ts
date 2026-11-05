@@ -12,6 +12,9 @@ import { defineConfig, devices } from '@playwright/test';
 export default defineConfig({
   testDir: './tests/e2e',
 
+  // Warm the dev server once before any worker opens a page (#524).
+  globalSetup: './playwright.globalSetup.ts',
+
   // Maximum time one test can run
   timeout: 30 * 1000,
 
