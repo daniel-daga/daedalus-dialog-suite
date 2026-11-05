@@ -740,6 +740,10 @@ export class LinkingVisitor {
     const keyword = node.child(0)?.text;
     if (keyword && keyword !== 'if') action.keyword = keyword;
     if (alternativeNode && elseActions?.length === 0) action.emptyElse = true;
+    // #522: the `;` written between the consequence block and `else` is the
+    // if's branch separator, not its terminator; keep it.
+    const elseIndex = node.children.findIndex(child => child.type === 'else');
+    if (elseIndex > 0 && node.children[elseIndex - 1].type === ';') action.thenTerminated = true;
     if (node.child(node.childCount - 1)?.type !== ';') action.unterminated = true;
     return action;
   }
