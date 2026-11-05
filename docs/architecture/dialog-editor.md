@@ -50,8 +50,8 @@ Established by the March 2026 review (see git history of
   state is never a recovery point: history lives in memory at the
   semantic-model level, and undo simply restores the model and re-triggers
   autosave (disk always reflects the current in-memory state). History for a
-  file is cleared when it is externally changed or replaced from a source
-  save.
+  file is cleared when the file is closed or reloaded from disk (an external
+  change, or a deliberate reload); a save does not clear it.
 - Bounds: `MAX_HISTORY_SIZE = 50` snapshots per file; edits within
   `COALESCE_MS = 300` ms merge into one undo step (`historyStore.ts`).
 - The global Ctrl+Z / Ctrl+Y handler (`MainLayout.tsx`) yields to Monaco's
@@ -71,9 +71,9 @@ Durable decisions from remediation slice 5 (fix-05, 2026-07-03):
   the coalescing path's `future = []` wipe, so a no-op edit can no longer consume a
   Ctrl+Z or destroy the redo stack. Reference equality is sound because fileStore
   is Immer-produced (a real change always allocates a new model object).
-- **No save-wipe of other files' history.** The fileStore save-detection branch
-  clears only the saved file's history (`clearHistoryForFile(savedFile)`) —
-  saving one file must not wipe undo state for other files.
+- **No reload-wipe of other files' history.** The fileStore reload-detection
+  branch clears only the reloaded file's history (`clearHistoryForFile(...)`) —
+  reloading one file must not wipe undo state for other files.
 - **Flush before undo/redo.** The Ctrl+Z/Ctrl+Y handler
   calls `flushAllPendingEdits()` (see the pending-edit flush registry in
   [save-pipeline.md](./save-pipeline.md)) inside `flushSync` before invoking
