@@ -284,15 +284,19 @@ becomes a registration table.
 
 ---
 
-### 13. `deserializeSemanticModel` normalizes every action twice — done
-**File:** `daedalus-parser/src/semantic/semantic-model.ts` (`:1017-1026`)
+### 13. `deserializeSemanticModel` normalizes every action twice — not a defect
+**File:** `daedalus-parser/src/semantic/semantic-model.ts`
 
-Landed 2026-11-05 (#528): the loop-level `ensureActionType` is gone and
-`deserializeAction` is the one place actions are typed. The conditions loop
-beside it is load-bearing and stays — `ensureConditionType` has no per-condition
-twin, and `deserializeCondition` has no callers. Held by the serialization test
-that hydrates a function payload with no `type` on any action, nested
-`thenActions`/`elseActions` included.
+Investigated 2026-11-05 (#528) and the change was reverted the same day: the two
+calls are not duplicates, they are *ordered*. Given a `type`, `plainToInstance`
+constructs a `DialogLine` before `deserializeAction` ever sees it, and its
+constructor fills the missing listener from an undefined speaker — so the later
+pass finds `listener` already present and leaves the line writing
+`(other, other)`, which Gothic skips (#115). The pre-pass has to stay ahead of
+the constructor; the one inside `deserializeAction` stays too, for typeless and
+nested actions. A parser test now pins a *typed* hero line's listener, and the
+editor's `CodeGeneratorService.test.ts` is what caught the regression — it only
+shows against a freshly built `dist/`, which is why the branch looked green.
 
 The function loop runs `ensureActionType` over `funcJson.actions`, then maps
 the same array through `deserializeAction`, whose first line is

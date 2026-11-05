@@ -1332,8 +1332,17 @@ export function deserializeSemanticModel(json: any): SemanticModel {
   for (const funcName in json.functions) {
     const funcJson = json.functions[funcName];
 
-    // Ensure types are present in conditions for class-transformer. Actions are
-    // typed by deserializeAction, which each of them goes through below.
+    // Actions are typed and normalised *before* class-transformer sees them.
+    // This is not the same work as the pass inside deserializeAction: given a
+    // `type`, plainToInstance constructs a DialogLine whose constructor fills
+    // the missing listener from an undefined speaker, and the later pass then
+    // finds a listener already present and leaves it — the line is written
+    // `(other, other)` and Gothic skips it. Keep this pass ahead of the
+    // constructor, and keep the one in deserializeAction too, which is what
+    // nested and typeless actions rely on (#115, #528).
+    if (funcJson.actions) {
+        funcJson.actions.forEach((a: any) => ensureActionType(a));
+    }
     if (funcJson.conditions) {
         funcJson.conditions.forEach((c: any) => ensureConditionType(c));
     }

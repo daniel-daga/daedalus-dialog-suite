@@ -595,6 +595,29 @@ test('a dialog payload written before the body was deduplicated still hydrates (
   assert.equal(model.dialogs.DIA_Legacy.actions.length, 2, 'the function dictionary stays authoritative');
 });
 
+test('a hero line that already carries its type keeps its listener when it is hydrated (#528)', () => {
+  // The type is present, so class-transformer constructs DialogLine from it and
+  // the constructor fills the missing listener from an undefined speaker — the
+  // pass that runs after plainToInstance then sees one already there.
+  const plainJson = {
+    functions: {
+      DIA_Typed_Hero_Info: {
+        name: 'DIA_Typed_Hero_Info',
+        returnType: 'void',
+        actions: [{ type: 'DialogLine', speaker: 'other', text: 'Hallo!', id: 'DIA_Test_Hero_01' }],
+        conditions: [],
+        calls: []
+      }
+    },
+    dialogs: {}
+  };
+
+  const { actions } = deserializeSemanticModel(plainJson).functions.DIA_Typed_Hero_Info;
+
+  assert.ok(actions[0] instanceof DialogLine);
+  assert.equal(actions[0].listener, 'self', 'the hero line must not come back as (other, other)');
+});
+
 test('deserializeSemanticModel types typeless function actions in deserializeAction, including nested ones (#528)', () => {
   const { ConditionalAction, StopProcessInfosAction, PlayAniAction, SetRefuseTalkAction } = require('../dist/semantic/semantic-visitor-index');
 
