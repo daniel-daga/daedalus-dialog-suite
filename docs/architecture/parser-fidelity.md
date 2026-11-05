@@ -198,7 +198,8 @@ the guard is its source text with only the edited clauses rewritten in place;
 otherwise the guard is regenerated around the unedited clauses' own text.
 Force-regenerating all 2,927 MDK guards (5,588 clauses) without any spelling
 parses and re-reads to the same conditions (2026-10-12). A conditional action likewise keeps a non-lowercase
-`keyword`, an `emptyElse` and an `unterminated` (no `;`) flag, and a raw
+`keyword`, an `emptyElse`, an `unterminated` (no `;`) flag and a
+`thenTerminated` (`;` between the consequence block and `else`, #522), and a raw
 block statement gains no `;`.
 
 Single-dialog export uses the shared choice-reachability walk. It includes

@@ -108,3 +108,15 @@ for (const statement of [
     assert.ok(collapse(generated).includes(`${collapse(statement)}AI_StopProcessInfos`), generated);
   });
 }
+
+// #522: NoKillSteal.d writes `};` between the consequence block and `else`
+// (the file's `};\n};` tail). That `;` separates the two branches, not the
+// statement, and regeneration dropped it.
+test('#522: a `;` written between the consequence block and `else` survives the round trip', () => {
+  for (const source of [
+    'func void NoKillSteal()\n{\n\tif (A)\n\t{\n\t\tB();\n\t};\n\telse\n\t{\n\t\tC();\n\t};\n};\n',
+    'func void NoKillSteal()\n{\n\tif (A)\n\t{\n\t\tB();\n\t};\n\telse if (C)\n\t{\n\t\tD();\n\t};\n};\n'
+  ]) {
+    assert.equal(roundTrip(source), source);
+  }
+});

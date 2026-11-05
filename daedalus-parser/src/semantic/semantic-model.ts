@@ -479,6 +479,12 @@ export class ConditionalAction implements CodeGeneratable {
   /** The source closed the statement without its optional `;` (#395). */
   public unterminated?: boolean;
   /**
+   * The source wrote `;` between the consequence block and `else` — `} ;`
+   * rather than `} else` (#522, NoKillSteal.d). That `;` separates the two
+   * branches and is not the statement terminator `unterminated` records.
+   */
+  public thenTerminated?: boolean;
+  /**
    * This conditional is the lone `elseActions` entry of its parent and was
    * written `else if` (#432); generation chains it instead of nesting a block.
    */
@@ -505,7 +511,7 @@ export class ConditionalAction implements CodeGeneratable {
     lines.push(...this.renderBranch(this.thenActions, indentUnit, options));
 
     if (this.elseActions.length > 0 || this.emptyElse) {
-      lines.push('}');
+      lines.push(this.thenTerminated ? '};' : '}');
       const chained = this.elseActions.length === 1
         && this.elseActions[0].type === 'ConditionalAction'
         && (this.elseActions[0] as ConditionalAction).elseIf
