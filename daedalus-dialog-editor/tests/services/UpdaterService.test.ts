@@ -604,7 +604,11 @@ describe('UpdaterService.installUpdate', () => {
 
     service.installUpdate(dest);
 
-    expect(mockSpawn).toHaveBeenCalledWith(dest, ['/S'], { detached: true, stdio: 'ignore' });
+    // `--force-run`: electron-builder's NSIS template starts the app after a
+    // silent install only when this flag is present (`installSection.nsh`,
+    // `${ifNot} ${Silent} ${orIf} ${isForceRun}`), so `/S` alone updates and
+    // leaves the user with no running app (#421).
+    expect(mockSpawn).toHaveBeenCalledWith(dest, ['/S', '--force-run'], { detached: true, stdio: 'ignore' });
     expect(app.exit).toHaveBeenCalledWith(0);
     // `quit` asks every window to close, and the guard vetoes that until the
     // renderer says yes — the install must not take that path.

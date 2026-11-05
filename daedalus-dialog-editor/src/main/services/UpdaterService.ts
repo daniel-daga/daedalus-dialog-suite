@@ -349,7 +349,10 @@ export class UpdaterService {
       }
     }
 
-    const child = spawn(installerPath, ['/S'], {
+    // `--force-run` because electron-builder's NSIS template launches the app
+    // after a silent install only when it is passed; `/S` alone installs and
+    // exits, so the user is left with no running app (#421).
+    const child = spawn(installerPath, ['/S', '--force-run'], {
       detached: true,
       stdio: 'ignore',
     });
