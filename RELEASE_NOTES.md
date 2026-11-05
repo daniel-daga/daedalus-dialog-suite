@@ -2,6 +2,7 @@
 
 ## One line per change, newest on top, `- #123: Short description` (120 characters max). A build ships only the lines added since the last one, and CHANGELOG.md keeps them; old lines may be pruned at any time.
 
+- #417: A Locator tab lists the world's item VOBs within a radius, bad instances only, by name
 - #436: A dialog line inside an expanded choice can be dragged into a new order again
 - #526: The Items tab lists the project's items as soon as it opens, with no NPC selected first
 - #418: The Items tab adds picked items to the selected chest with counts, as one undo
