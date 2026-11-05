@@ -102,7 +102,10 @@ trusting master for a release, not after.
   like when you forget: `typecheck:renderer` reporting a property that "does
   not exist" on a type you are looking at, or a Jest expectation failing
   against the *old* shape while the same assertion passes in `zen-world`'s own
-  suite. Seen twice in one session, 2026-09-12.
+  suite. Seen twice in one session, 2026-09-12. **A branch merged from a
+  worktree is the same case and reads as no edit at all**: the agent built its
+  own `dist/` there, this checkout never saw a change, and the merged code is
+  invisible to the editor until the build runs here. Seen 2026-11-05 (#426).
 - **`CI=1` also skips Electron's own binary download, and one editor suite
   needs it.** `appendInsertNpcFlow.test.ts` imports `FileService`, which
   imports `electron`, and the stub throws *"Electron failed to install
@@ -238,7 +241,11 @@ trusting master for a release, not after.
   was found for platform=…`. Jest counts both among the failed tests, so a
   fresh checkout reports dozens of failures that are one missing build each.
   `pnpm --filter daedalus-parser build`, then `npm run build:ts` and
-  `npx node-gyp rebuild` in that workspace.
+  `npx node-gyp rebuild` in that workspace. **After merging a branch, run
+  `build:ts` here again** — the agent compiled its own `dist/` in its worktree,
+  so this checkout still holds the old code. The symptom is a test that passes
+  on the branch and fails on `master` with a condition the merged parser
+  supposedly structures arriving as a raw `Condition`. Seen 2026-11-05 (#529).
 - **The renderer bundle is what `verify-world-edit.js` drives.** `build:main`
   alone leaves it stale, and the symptom is an edit refused by a validator that
   the renderer is a version behind. Run the full `build`.
