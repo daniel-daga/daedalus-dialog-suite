@@ -413,6 +413,9 @@ export function assertNpcBodyRequest(request: unknown): asserts request is NpcBo
   if (request.fatness !== undefined && (typeof request.fatness !== 'number' || !Number.isFinite(request.fatness))) {
     throw new Error('Invalid NPC body fatness: expected a finite number');
   }
+  if (request.weapon !== undefined && (typeof request.weapon !== 'string' || request.weapon.trim() === '')) {
+    throw new Error('Invalid NPC body weapon: expected a non-empty string');
+  }
   if (request.animationPhase !== undefined && (typeof request.animationPhase !== 'number' || !Number.isFinite(request.animationPhase) || request.animationPhase < 0 || request.animationPhase > 1)) {
     throw new Error('Invalid NPC body animation phase: expected a number from 0 to 1');
   }

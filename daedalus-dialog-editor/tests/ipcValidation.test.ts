@@ -474,6 +474,7 @@ describe('assertNpcBodyRequest', () => {
 
   it('accepts what resolveNpcVisual produces', () => {
     expect(() => assertNpcBodyRequest(GOOD)).not.toThrow();
+    expect(() => assertNpcBodyRequest({ ...GOOD, weapon: 'ItMw_1h_Sword_01.3DS' })).not.toThrow();
   });
 
   it('rejects an empty name, a non-integer variant and a scale that is not three finite numbers', () => {
@@ -484,6 +485,8 @@ describe('assertNpcBodyRequest', () => {
     expect(() => assertNpcBodyRequest({ ...GOOD, scale: [1, 1] })).toThrow(/scale/);
     expect(() => assertNpcBodyRequest({ ...GOOD, scale: [1, 1, Infinity] })).toThrow(/scale/);
     expect(() => assertNpcBodyRequest({ ...GOOD, fatness: Infinity })).toThrow(/fatness/);
+    expect(() => assertNpcBodyRequest({ ...GOOD, weapon: '' })).toThrow(/weapon/);
+    expect(() => assertNpcBodyRequest({ ...GOOD, weapon: 7 })).toThrow(/weapon/);
     expect(() => assertNpcBodyRequest('HUMANS.MDS')).toThrow(/plain object/);
   });
 });

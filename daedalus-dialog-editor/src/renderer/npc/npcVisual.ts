@@ -1,5 +1,6 @@
 import type { NpcDefinition, NpcCallStatement, NpcEdit, NpcStatement } from '../../shared/types';
 import type { NpcBodyRequest } from '../../shared/worldTypes';
+import { itemVisualOfSource } from '../world/itemVisuals';
 
 // What the NPC preview draws, read from the NPC's own statements
 // (docs/plans/npc-editor.md §4). Pure: no React, no IPC, no assets.
@@ -153,10 +154,13 @@ function expandHelpers(npc: NpcDefinition, int: (expr: string | undefined) => nu
  * What the worker assembles for `visual`. An armour item's `visual_change`
  * replaces the naked body mesh, as it does in the engine; `itemSource` answers
  * an item instance's source text, or undefined when the project has none.
+ * `weapon` is the melee weapon the form has selected — the item's own `visual`,
+ * hung in the preview's hand (#426).
  */
 export function npcBodyRequest(
   visual: NpcVisual,
   itemSource: (instance: string) => string | undefined,
+  weapon = '',
 ): { request: NpcBodyRequest; notes: string[] } {
   const notes = [...visual.notes];
   let body = visual.bodyMesh;
@@ -166,6 +170,15 @@ export function npcBodyRequest(
     if (source === undefined) notes.push(`Armour ${visual.armor} is not an item the project defines, so it is not drawn`);
     else if (change === null) notes.push(`Armour ${visual.armor} has no visual_change, so it is not drawn`);
     else body = change[1];
+  }
+  let weaponVisual: string | undefined;
+  const held = weapon.trim();
+  if (held !== '') {
+    const source = itemSource(held);
+    const resolved = source === undefined ? null : itemVisualOfSource(source);
+    if (source === undefined) notes.push(`Weapon ${held} is not an item the project defines, so it is not drawn`);
+    else if (resolved === null) notes.push(`Weapon ${held} has no visual, so it is not drawn`);
+    else weaponVisual = resolved;
   }
   return {
     request: {
@@ -177,6 +190,7 @@ export function npcBodyRequest(
       headTexture: visual.headTexture,
       teethTexture: visual.teethTexture,
       scale: visual.scale,
+      weapon: weaponVisual,
     },
     notes,
   };

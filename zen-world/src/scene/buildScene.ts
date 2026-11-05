@@ -375,6 +375,8 @@ export interface NpcBodyRequest {
   teethTexture: number;
   /** Procedural torso breadth, in Daedalus script units. */
   fatness?: number;
+  /** The weapon's own visual, as the item names it (`ItMw_1h_Sword_01.3DS`). */
+  weapon?: string;
   /** Normalized sample position in the S_IDLE clip, when set. */
   animationPhase?: number;
   /** Width, height, depth. */
@@ -387,6 +389,8 @@ export interface NpcBodyScene extends VisualScene {
 }
 
 const HEAD_NODE = 'BIP01 HEAD';
+/** Where a held weapon hangs — the item slots the retail `HUMANS.MDH` carries. */
+const WEAPON_NODE = 'BIP01 R HAND';
 
 /**
  * A texture as a body or head variant: ZenGin replaces the `_V0` (variation)
@@ -440,10 +444,11 @@ export function buildNpcBody(binding: NpcBinding, vfs: VfsHandle, request: NpcBo
   const missing: string[] = [];
   const bodyHierarchy = binding.extractHierarchy(vfs, request.body, animation, request.animationPhase);
   const headHierarchy = bodyHierarchy ?? binding.extractHierarchy(vfs, request.model, animation, request.animationPhase);
+  const hierarchyName = bodyHierarchy ? request.body : request.model;
   const node = headHierarchy?.nodes
     .find((candidate) => candidate.name.toUpperCase() === HEAD_NODE);
   if (node === undefined) {
-    missing.push(`${bodyHierarchy ? request.body : request.model} has no ${HEAD_NODE} node to hang the head on`);
+    missing.push(`${hierarchyName} has no ${HEAD_NODE} node to hang the head on`);
   } else {
     const head = binding.extractVisual(vfs, withExtension(request.head, '.MMS'));
     if (head === null) {
@@ -464,6 +469,22 @@ export function buildNpcBody(binding: NpcBinding, vfs: VfsHandle, request: NpcBo
           texture,
           transform: placed,
         });
+      }
+    }
+  }
+
+  if (request.weapon !== undefined) {
+    const hand = headHierarchy?.nodes
+      .find((candidate) => candidate.name.toUpperCase() === WEAPON_NODE);
+    if (hand === undefined) {
+      missing.push(`${hierarchyName} has no ${WEAPON_NODE} node to hang the weapon on`);
+    } else {
+      const weapon = binding.extractVisual(vfs, withExtension(request.weapon, '.3DS'));
+      if (weapon === null) {
+        missing.push(`Weapon mesh ${request.weapon} did not resolve`);
+      } else {
+        const placed = multiply(scale, hand.transform);
+        for (const chunk of weapon.chunks) chunks.push({ ...chunk, transform: placed });
       }
     }
   }

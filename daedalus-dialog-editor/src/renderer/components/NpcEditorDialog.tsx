@@ -486,6 +486,7 @@ const NpcEditorDialog: React.FC<NpcEditorDialogProps> = ({ npcName, filePath, on
                 edits={pendingEdits}
                 lookupConstant={lookupConstant}
                 itemSource={itemSource}
+                weapon={values.meleeWeapon ?? ''}
                 assetsReady={previewAssetsReady}
                 assetsError={previewAssetsError}
               />
