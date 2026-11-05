@@ -27,6 +27,10 @@ and the mock "parser" returns a canned model. Therefore:
 Assertions that are legitimate here: UI state after an edit/reload round-trip,
 AI_Output line counts/text, and dialog-property values.
 
+`playwright.globalSetup.ts` loads the app once before any worker starts: a cold
+Vite server charges its whole one-time module-transform bill to the first page,
+which is a test's own 30 s budget. Do not move that back into the specs (#524).
+
 For World control fixtures, override `window.editorAPI` and open through the
 World picker. Importing a store by its raw Vite URL can create a second store
 instance after hot reload, when the app uses a timestamped module URL. A
