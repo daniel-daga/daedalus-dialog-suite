@@ -20,6 +20,8 @@ import {
   renameNpcInstance,
   validateNewNpc,
 } from '../npc/npcTemplate';
+import { NPC_FORM_FIELDS } from '../npc/npcForm';
+import { fieldOptions } from '../npc/npcFieldOptions';
 
 // Create NPC (docs/plans/npc-editor.md §3, #285): a copy of an NPC the project
 // already has, written to a new file, then handed to the NPC editor. Copying
@@ -32,6 +34,8 @@ interface CreateNpcDialogProps {
   onClose: () => void;
   onCreated: (npc: string) => void;
 }
+
+const GUILD_FIELD = NPC_FORM_FIELDS.find((field) => field.key === 'guild')!;
 
 async function readTemplate(npc: string, filePath: string): Promise<string> {
   const model = await useProjectStore.getState().getSemanticModel(filePath);
@@ -47,6 +51,7 @@ const CreateNpcDialog: React.FC<CreateNpcDialogProps> = ({ initialTemplate, onCl
   const npcFileIndex = useProjectStore((s) => s.npcFileIndex);
   const projectPath = useProjectStore((s) => s.projectPath);
   const addNpcToIndex = useProjectStore((s) => s.addNpcToIndex);
+  const parseGeneration = useProjectStore((s) => s.parseGeneration);
 
   // Only an NPC with a declaring file can be copied.
   const templates = useMemo(
@@ -83,6 +88,18 @@ const CreateNpcDialog: React.FC<CreateNpcDialogProps> = ({ initialTemplate, onCl
 
   // Follows the instance name until the user types a path of their own.
   const shownFilePath = filePath ?? defaultNpcFilePath(npcFileIndex, instance || 'NewNpc', projectPath ?? '');
+
+  // #428: the guild is picked from the project's `GIL_` constants — the same
+  // options the NPC editor's Guild control offers. The copied NPC's own guild
+  // stays listed even when the project does not declare it.
+  const guildOptions = useMemo(
+    () => fieldOptions(GUILD_FIELD),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- parseGeneration invalidates fieldOptions' project-store snapshot.
+    [parseGeneration],
+  );
+  const guildChoices = guild && !guildOptions.some((option) => option.toUpperCase() === guild.toUpperCase())
+    ? [...guildOptions, guild]
+    : guildOptions;
 
   const handleCreate = async () => {
     const invalid = validateNewNpc({ template, instance, name, guild, id, filePath: shownFilePath }, npcList);
@@ -141,7 +158,18 @@ const CreateNpcDialog: React.FC<CreateNpcDialogProps> = ({ initialTemplate, onCl
           />
           <TextField label="Name" size="small" value={name} onChange={(e) => setName(e.target.value)} disabled={creating} />
           <Stack direction="row" spacing={2}>
-            <TextField label="Guild" size="small" value={guild} onChange={(e) => setGuild(e.target.value)} disabled={creating} />
+            <Autocomplete
+              freeSolo
+              openOnFocus
+              size="small"
+              options={guildChoices}
+              value={guild || null}
+              onChange={(_e, value) => setGuild(value ?? '')}
+              onInputChange={(_e, value) => setGuild(value)}
+              disabled={creating}
+              sx={{ flex: 1, minWidth: 0 }}
+              renderInput={(params) => <TextField {...params} label="Guild" />}
+            />
             <TextField label="Id" size="small" value={id} onChange={(e) => setId(e.target.value)} disabled={creating} />
           </Stack>
           <TextField
