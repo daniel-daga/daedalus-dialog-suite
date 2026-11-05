@@ -29,12 +29,16 @@ any code:
 **In:** create/rename/delete a folder; add one or more selected VOBs to a
 folder from the existing VOB context menu; remove a VOB from a folder; a
 "Folders" tab in the World surface's left panel listing folders and their
-resolved members; persistence to the sidecar, reloaded on reopen.
+resolved members; **selecting a folder's whole membership by clicking its row**
+(so the existing multi-selection transform and nudge keys move it as one, #519);
+persistence to the sidecar, reloaded on reopen.
 
 **Deliberately out, not an oversight:**
 - **No nesting.** A folder is a flat, named bucket. Not asked for, and it
   roughly doubles the domain/UI surface (parent chains, cycle checks, a
-  second drag target). The `VobFolder` shape has room for it later.
+  second drag target). The `VobFolder` shape has room for it later. #519 asked
+  for a hierarchy inside the group as well; that is still the maintainer's call,
+  not something this change took on.
 - **No undo/redo.** A folder edit is never a `WorldOp`, so it never touches
   `WorldService`'s history stack.
 - **No drag-and-drop into a folder.** The only path in is the VOB context

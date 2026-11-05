@@ -69,6 +69,7 @@ describe('WorldFolderTree', () => {
         summary={SUMMARY}
         selection={[]}
         onSelect={jest.fn()}
+        onSelectMany={jest.fn()}
         onCreateFolder={jest.fn()}
         onRenameFolder={jest.fn()}
         onDeleteFolder={jest.fn()}
@@ -85,6 +86,7 @@ describe('WorldFolderTree', () => {
         summary={SUMMARY}
         selection={[]}
         onSelect={jest.fn()}
+        onSelectMany={jest.fn()}
         onCreateFolder={jest.fn()}
         onRenameFolder={jest.fn()}
         onDeleteFolder={jest.fn()}
@@ -103,6 +105,7 @@ describe('WorldFolderTree', () => {
         summary={SUMMARY}
         selection={[]}
         onSelect={jest.fn()}
+        onSelectMany={jest.fn()}
         onCreateFolder={jest.fn()}
         onRenameFolder={jest.fn()}
         onDeleteFolder={jest.fn()}
@@ -120,6 +123,7 @@ describe('WorldFolderTree', () => {
         summary={SUMMARY}
         selection={[]}
         onSelect={jest.fn()}
+        onSelectMany={jest.fn()}
         onCreateFolder={jest.fn()}
         onRenameFolder={jest.fn()}
         onDeleteFolder={jest.fn()}
@@ -140,6 +144,7 @@ describe('WorldFolderTree', () => {
         summary={SUMMARY}
         selection={[]}
         onSelect={onSelect}
+        onSelectMany={jest.fn()}
         onCreateFolder={jest.fn()}
         onRenameFolder={jest.fn()}
         onDeleteFolder={jest.fn()}
@@ -159,6 +164,7 @@ describe('WorldFolderTree', () => {
         summary={SUMMARY}
         selection={[]}
         onSelect={jest.fn()}
+        onSelectMany={jest.fn()}
         onCreateFolder={onCreateFolder}
         onRenameFolder={jest.fn()}
         onDeleteFolder={jest.fn()}
@@ -178,6 +184,7 @@ describe('WorldFolderTree', () => {
         summary={SUMMARY}
         selection={[]}
         onSelect={jest.fn()}
+        onSelectMany={jest.fn()}
         onCreateFolder={onCreateFolder}
         onRenameFolder={jest.fn()}
         onDeleteFolder={jest.fn()}
@@ -196,6 +203,7 @@ describe('WorldFolderTree', () => {
         summary={SUMMARY}
         selection={[]}
         onSelect={jest.fn()}
+        onSelectMany={jest.fn()}
         onCreateFolder={jest.fn()}
         onRenameFolder={onRenameFolder}
         onDeleteFolder={jest.fn()}
@@ -220,6 +228,7 @@ describe('WorldFolderTree', () => {
         summary={SUMMARY}
         selection={[]}
         onSelect={jest.fn()}
+        onSelectMany={jest.fn()}
         onCreateFolder={jest.fn()}
         onRenameFolder={jest.fn()}
         onDeleteFolder={onDeleteFolder}
@@ -241,6 +250,7 @@ describe('WorldFolderTree', () => {
         summary={SUMMARY}
         selection={[]}
         onSelect={jest.fn()}
+        onSelectMany={jest.fn()}
         onCreateFolder={jest.fn()}
         onRenameFolder={jest.fn()}
         onDeleteFolder={onDeleteFolder}
@@ -265,6 +275,7 @@ describe('WorldFolderTree', () => {
         summary={SUMMARY}
         selection={[]}
         onSelect={jest.fn()}
+        onSelectMany={jest.fn()}
         onCreateFolder={jest.fn()}
         onRenameFolder={onRenameFolder}
         onDeleteFolder={jest.fn()}
@@ -290,6 +301,7 @@ describe('WorldFolderTree', () => {
         summary={SUMMARY}
         selection={[]}
         onSelect={jest.fn()}
+        onSelectMany={jest.fn()}
         onCreateFolder={jest.fn()}
         onRenameFolder={jest.fn()}
         onDeleteFolder={jest.fn()}
@@ -314,6 +326,7 @@ describe('WorldFolderTree', () => {
         summary={SUMMARY}
         selection={[]}
         onSelect={jest.fn()}
+        onSelectMany={jest.fn()}
         onCreateFolder={jest.fn()}
         onRenameFolder={jest.fn()}
         onDeleteFolder={jest.fn()}
@@ -333,6 +346,7 @@ describe('WorldFolderTree', () => {
         summary={SUMMARY}
         selection={[]}
         onSelect={jest.fn()}
+        onSelectMany={jest.fn()}
         onFocus={onFocus}
         onCreateFolder={jest.fn()}
         onRenameFolder={jest.fn()}
@@ -343,5 +357,81 @@ describe('WorldFolderTree', () => {
     fireEvent.click(screen.getByTestId('world-folder-toggle-f1'));
     fireEvent.click(screen.getByTestId('world-folder-member-locate-f1-0'));
     expect(onFocus).toHaveBeenCalledWith(0);
+  });
+
+  it('selects the whole folder when its row is clicked', () => {
+    const onSelectMany = jest.fn();
+    render(
+      <WorldFolderTree
+        folders={foldersOf([{ id: 'f1', name: 'A', vobPaths: ['0', '1', '9'] }])}
+        summary={SUMMARY}
+        selection={[]}
+        onSelect={jest.fn()}
+        onSelectMany={onSelectMany}
+        onCreateFolder={jest.fn()}
+        onRenameFolder={jest.fn()}
+        onDeleteFolder={jest.fn()}
+        onRemoveFromFolder={jest.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByTestId('world-folder-row-f1'));
+    // Resolved members only: "9" is a path the world no longer has.
+    expect(onSelectMany).toHaveBeenCalledWith([0, 1], false);
+  });
+
+  it('adds the folder to the selection with a modifier held', () => {
+    const onSelectMany = jest.fn();
+    render(
+      <WorldFolderTree
+        folders={foldersOf([{ id: 'f1', name: 'A', vobPaths: ['0', '1'] }])}
+        summary={SUMMARY}
+        selection={[]}
+        onSelect={jest.fn()}
+        onSelectMany={onSelectMany}
+        onCreateFolder={jest.fn()}
+        onRenameFolder={jest.fn()}
+        onDeleteFolder={jest.fn()}
+        onRemoveFromFolder={jest.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByTestId('world-folder-row-f1'), { ctrlKey: true });
+    expect(onSelectMany).toHaveBeenCalledWith([0, 1], true);
+  });
+
+  it('leaves expanding to the chevron, not the row', () => {
+    const onSelectMany = jest.fn();
+    render(
+      <WorldFolderTree
+        folders={foldersOf([{ id: 'f1', name: 'A', vobPaths: ['0'] }])}
+        summary={SUMMARY}
+        selection={[]}
+        onSelect={jest.fn()}
+        onSelectMany={onSelectMany}
+        onCreateFolder={jest.fn()}
+        onRenameFolder={jest.fn()}
+        onDeleteFolder={jest.fn()}
+        onRemoveFromFolder={jest.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByTestId('world-folder-toggle-f1'));
+    expect(onSelectMany).not.toHaveBeenCalled();
+    expect(screen.getByTestId('world-folder-member-f1-0')).toBeInTheDocument();
+  });
+
+  it('reads as selected exactly when all its members are', () => {
+    const props = {
+      folders: foldersOf([{ id: 'f1', name: 'A', vobPaths: ['0', '1'] }]),
+      summary: SUMMARY,
+      onSelect: jest.fn(),
+      onSelectMany: jest.fn(),
+      onCreateFolder: jest.fn(),
+      onRenameFolder: jest.fn(),
+      onDeleteFolder: jest.fn(),
+      onRemoveFromFolder: jest.fn(),
+    };
+    const { rerender } = render(<WorldFolderTree {...props} selection={[0]} />);
+    expect(screen.getByTestId('world-folder-row-f1')).toHaveAttribute('aria-selected', 'false');
+    rerender(<WorldFolderTree {...props} selection={[1, 0]} />);
+    expect(screen.getByTestId('world-folder-row-f1')).toHaveAttribute('aria-selected', 'true');
   });
 });
