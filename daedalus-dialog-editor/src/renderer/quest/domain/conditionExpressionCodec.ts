@@ -99,12 +99,13 @@ const normalizeLiteral = (rawValue: string): string | number | boolean => {
 const parseSimpleClause = (clause: string): DialogCondition | null => {
   const normalizedClause = trimOuterParens(clause);
 
-  const knowsMatch = normalizedClause.match(/^Npc_KnowsInfo\s*\(\s*([^,]+?)\s*,\s*([^)]+?)\s*\)$/i);
+  const knowsMatch = normalizedClause.match(/^(!)?\s*Npc_KnowsInfo\s*\(\s*([^,]+?)\s*,\s*([^)]+?)\s*\)$/i);
   if (knowsMatch) {
     return {
       type: 'NpcKnowsInfoCondition',
-      npc: knowsMatch[1].trim(),
-      dialogRef: knowsMatch[2].trim()
+      npc: knowsMatch[2].trim(),
+      dialogRef: knowsMatch[3].trim(),
+      ...(knowsMatch[1] ? { negated: true } : {})
     };
   }
 
@@ -211,7 +212,8 @@ const serializeClause = (
   condition: DialogCondition
 ): { ok: true; text: string } | { ok: false } => {
   if (condition.type === 'NpcKnowsInfoCondition' && 'npc' in condition && 'dialogRef' in condition) {
-    return { ok: true, text: `Npc_KnowsInfo(${condition.npc}, ${condition.dialogRef})` };
+    const negated = Boolean((condition as { negated?: boolean }).negated);
+    return { ok: true, text: `${negated ? '!' : ''}Npc_KnowsInfo(${condition.npc}, ${condition.dialogRef})` };
   }
   if (condition.type === 'NpcIsDeadCondition' && 'npc' in condition) {
     const negated = Boolean((condition as { negated?: boolean }).negated);
