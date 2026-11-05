@@ -248,6 +248,16 @@ against again (§7).
   filter's own predicate. *Landed 2026-08-28 (§7).*
 - Batch operations. Spacer has zSlang; our answer is
   [`mcp-server.md`](mcp-server.md) plus scripted ops. *Planned elsewhere.*
+- **Spacer's Objects window** — the placeable items rather than the files that
+  make them. *Slice 1 landed 2026-11-05 (#412)*: an **Items** tab beside Browse,
+  Favorites and Categories lists the loaded project's item instances by the
+  `name` their declaration carries and the visual it assigns, each drawn through
+  the asset browser's thumbnail queue, searched by either; a click arms a
+  placement that lands through `AddVob` as an `oCItem` with its `instance` filled
+  in and no visual, which is what the archive stores. The list is
+  `mergedSemanticModel.items` — the index `oCItem.instance` is checked against —
+  so the tab offers only what the grid would accept. Left to their own issues:
+  adding items to a container with counts (#418) and the locator (#417).
 - Engine preview ("play from here") — parked as later/kept-open (§11).
 - **A visual for a VOB that has no mesh** — Spacer draws a marker for a sound,
   a light, a zone or a trigger, and we drew nothing at all: 38.0 % of retail

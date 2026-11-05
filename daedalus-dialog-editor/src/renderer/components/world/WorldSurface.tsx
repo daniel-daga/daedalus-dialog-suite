@@ -32,6 +32,7 @@ import { stateOptions, stateReach } from '../../routines/routineSchedule';
 import { useProjectStore } from '../../store/projectStore';
 import { vobModelOf } from '../../world/vobModel';
 import { itemVisualOfSource, visualOverridesOf } from '../../world/itemVisuals';
+import { itemCatalogueOf } from '../../world/itemCatalogue';
 import { snapDelta } from '../../world/snapping';
 import { LiveTileContext } from './WorldAssetGrid';
 import { DEFAULT_EXPOSURE, type SelectionStyle } from '../../world/WorldScene';
@@ -270,6 +271,17 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
     onPlaceWithOptions: (name: string) => openPlaceDialog(placeSpecFor(name)),
   }), [openPlaceDialog]);
 
+  /**
+   * Placing an item from the Objects tab (#412): the class and the instance are
+   * the whole spec, since an `oCItem` carries no visual — the engine derives one
+   * from the instance — and the instance is one the catalogue just read out of
+   * the project, so the grid's refusal has nothing to object to. The gesture is
+   * the armed placement every add uses: the next ground click puts it down.
+   */
+  const placeItem = useCallback((instance: string) => {
+    setArmed({ kind: 'place', spec: { ...FRESH_PLACE, vobClass: 'oCItem', instance } });
+  }, []);
+
   /** The clipboard is cleared when a world opens, and `openWorldAt` is well
    *  above `commitOps` and the two readers a copy needs — so the hook is called
    *  here and handed its inputs further down, through this ref. */
@@ -466,6 +478,12 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
   // ref — the same reason `visualsRef` is one. Nothing renders from it.
   const itemVisualsRef = useRef(itemVisuals);
   itemVisualsRef.current = itemVisuals;
+
+  /** The project's items as the Assets panel's Objects tab lists them (#412) —
+   *  the same index the grid checks `oCItem.instance` against and the same
+   *  `itemVisuals` join #424 draws item VOBs from, so a name offered here is one
+   *  the field accepts and its picture is the one the viewport would draw. */
+  const itemCatalogue = useMemo(() => itemCatalogueOf(items, itemVisuals), [items, itemVisuals]);
 
   /**
    * The item VOBs the project resolves, as `vob → visual` — what the scene
@@ -2752,6 +2770,8 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
                     sources={summary?.assetSources}
                     placement={assetPlacement}
                     previewing={selectedAsset}
+                    items={itemCatalogue}
+                    onPlaceItem={placeItem}
                   />
                 </Box>
               )}

@@ -24,7 +24,9 @@ import WorldAssetGrid, {
   FavoriteStar, FileIntoMenu, RoleFacet, UncompiledTag, markClick, usePlaceGestures, type AssetRoleFilter, type AssetPlacement, type TileCatalogActions, type TileOrigin,
 } from './WorldAssetGrid';
 import WorldAssetCatalogView from './WorldAssetCatalogView';
+import WorldItemCatalogue from './WorldItemCatalogue';
 import { isPlaceableVisual } from './WorldAssetPreview';
+import type { CatalogueItem } from '../../world/itemCatalogue';
 
 // The asset browser over the mounted VFS (level-editor.md §6).
 //
@@ -59,6 +61,11 @@ const SEARCH_DEBOUNCE_MS = 150;
  *  every render against a fresh `[]`. */
 const NO_SOURCES: readonly string[] = [];
 
+/** The same, for a surface with no item index. */
+const NO_ITEMS: readonly CatalogueItem[] = [];
+
+/** A tab with no world to place into offers no placement. */
+const noPlacement = (): void => undefined;
 /**
  * How a mount is named in the facet and on a row. The tail of the path, except
  * for a loose tree, whose own name is `_compiled` under Meshes, Textures and
@@ -278,6 +285,15 @@ export interface WorldAssetBrowserProps {
    * and that is all.
    */
   compileAssets?: () => Promise<void>;
+  /**
+   * The project's item instances as the Items tab lists them (#412), and what a
+   * click on one does. Absent — no item index — the tab says so rather than
+   * disappearing: the modes beside it are the panel's, and a mode that comes and
+   * goes is one nobody can find.
+   */
+  items?: readonly CatalogueItem[];
+  /** Arm a placement of `instance` as an `oCItem`. Absent with no world open. */
+  onPlaceItem?: (instance: string) => void;
 }
 
 export interface AssetCatalogProps {
@@ -298,11 +314,11 @@ export interface AssetCatalogProps {
 
 const WorldAssetBrowser: React.FC<WorldAssetBrowserProps> = ({
   listAssets, searchAssets, onPreview, thumbnails, catalog, sources = NO_SOURCES, placement,
-  previewing = null, resolveAssets, compileAssets,
+  previewing = null, resolveAssets, compileAssets, items = NO_ITEMS, onPlaceItem,
 }) => {
   const [path, setPath] = useState('/');
   const [view, setView] = useState<'list' | 'grid'>('list');
-  const [mode, setMode] = useState<'browse' | 'favorites' | 'categories'>('browse');
+  const [mode, setMode] = useState<'browse' | 'favorites' | 'categories' | 'items'>('browse');
   const [filtersOpen, setFiltersOpen] = useState(false);
   const tileActions = useMemo<TileCatalogActions | undefined>(() => (
     catalog === undefined ? undefined : {
@@ -564,16 +580,17 @@ const WorldAssetBrowser: React.FC<WorldAssetBrowserProps> = ({
       {catalog !== undefined && thumbnails !== undefined && (
         <Tabs
           value={mode}
-          onChange={(_event, next: 'browse' | 'favorites' | 'categories') => setMode(next)}
+          onChange={(_event, next: 'browse' | 'favorites' | 'categories' | 'items') => setMode(next)}
           variant="fullWidth"
           sx={{ minHeight: 32, borderBottom: 1, borderColor: 'divider', '& .MuiTab-root': { minHeight: 32, fontSize: 12 } }}
         >
           <Tab value="browse" label="Browse" data-testid="world-asset-mode-browse" />
           <Tab value="favorites" label="Favorites" data-testid="world-asset-mode-favorites" />
           <Tab value="categories" label="Categories" data-testid="world-asset-mode-categories" />
+          <Tab value="items" label="Items" data-testid="world-asset-mode-items" />
         </Tabs>
       )}
-      {catalog !== undefined && thumbnails !== undefined && tileActions !== undefined && mode !== 'browse' && (
+      {catalog !== undefined && thumbnails !== undefined && tileActions !== undefined && mode !== 'browse' && mode !== 'items' && (
         <WorldAssetCatalogView
           mode={mode}
           catalog={catalog.catalog}
@@ -585,6 +602,9 @@ const WorldAssetBrowser: React.FC<WorldAssetBrowserProps> = ({
           onPreview={onPreview}
           placement={placement}
         />
+      )}
+      {catalog !== undefined && thumbnails !== undefined && mode === 'items' && (
+        <WorldItemCatalogue items={items} thumbnails={thumbnails} onPlace={onPlaceItem ?? noPlacement} />
       )}
       {mode === 'browse' && (<>
       <Box sx={{
