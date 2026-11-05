@@ -12,7 +12,7 @@ import { execFileSync } from 'child_process';
 import { useEditorStore } from '../src/renderer/store/editorStore';
 import { useHistoryStore } from '../src/renderer/store/historyStore';
 import { useProjectStore } from '../src/renderer/store/projectStore';
-import { upgradeImplicitQuest } from '../src/renderer/components/questDiarySave';
+import { upgradeImplicitQuest } from '../src/renderer/components/QuestEditor/questDiarySave';
 import { analyzeQuest } from '../src/renderer/quest/domain/analysis';
 import type { QuestDiaryItem } from '../src/renderer/quest/domain/questDiary';
 import type { SemanticModel } from '../src/renderer/types/global';

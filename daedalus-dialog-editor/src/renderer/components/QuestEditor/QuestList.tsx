@@ -29,15 +29,15 @@ import {
 } from '@mui/icons-material';
 import AutoSizer from 'react-virtualized-auto-sizer';
 import { FixedSizeList as VirtualizedList, ListChildComponentProps, areEqual } from 'react-window';
-import type { SemanticModel, GlobalConstant } from '../types/global';
-import RegisterTopicDialog from './RegisterTopicDialog';
-import { useNavigation } from '../hooks/useNavigation';
-import { analyzeQuests, getUsedQuestTopics, QuestAnalysis } from '../quest/domain';
+import type { SemanticModel, GlobalConstant } from '../../types/global';
+import RegisterTopicDialog from '../RegisterTopicDialog';
+import { useNavigation } from '../../hooks/useNavigation';
+import { analyzeQuests, getUsedQuestTopics, QuestAnalysis } from '../../quest/domain';
 import {
   DEFAULT_QUEST_TOPIC_FILTER_POLICY,
   getCanonicalQuestKey,
   isQuestTopicConstantByPolicy
-} from '../utils/questIdentity';
+} from '../../utils/questIdentity';
 import {
   SEARCHABLE_PANE_PATTERN,
   searchablePaneContentSx,
@@ -46,7 +46,7 @@ import {
   searchablePaneRowButtonSx,
   searchablePaneShellSx,
   searchablePaneTextFieldSx
-} from './common/searchablePaneStyles';
+} from '../common/searchablePaneStyles';
 
 interface QuestListProps {
   semanticModel: SemanticModel;

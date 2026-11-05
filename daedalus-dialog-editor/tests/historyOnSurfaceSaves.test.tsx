@@ -15,7 +15,7 @@ import { useProjectStore } from '../src/renderer/store/projectStore';
 import { seedMockFile, resetMockFileSystem } from '../src/renderer/utils/mockAPI';
 import { saveRoutine, createRoutine } from '../src/renderer/components/routineSave';
 import { readRoutine } from '../src/renderer/routines/routineEntries';
-import { saveDiaryEntryText } from '../src/renderer/components/questDiarySave';
+import { saveDiaryEntryText } from '../src/renderer/components/QuestEditor/questDiarySave';
 import NpcEditorDialog from '../src/renderer/components/NpcEditorDialog';
 
 // The bind-pose preview is a three.js view with nothing to do with the save.

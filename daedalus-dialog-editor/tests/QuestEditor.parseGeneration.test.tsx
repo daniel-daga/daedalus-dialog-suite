@@ -1,15 +1,15 @@
 import React from 'react';
 import { act, render, screen } from '@testing-library/react';
-import QuestEditor from '../src/renderer/components/QuestEditor';
+import QuestEditor from '../src/renderer/components/QuestEditor/QuestEditor';
 import { useProjectStore } from '../src/renderer/store/projectStore';
 import type { SemanticModel } from '../src/renderer/types/global';
 
-jest.mock('../src/renderer/components/QuestList', () => ({
+jest.mock('../src/renderer/components/QuestEditor/QuestList', () => ({
   __esModule: true,
   default: () => <div data-testid="quest-list" />
 }));
 
-jest.mock('../src/renderer/components/QuestDetails', () => ({
+jest.mock('../src/renderer/components/QuestEditor/QuestDetails', () => ({
   __esModule: true,
   default: () => <div data-testid="quest-details" />
 }));
