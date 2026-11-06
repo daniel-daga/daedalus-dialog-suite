@@ -4,6 +4,30 @@ What each published Windows build changed, newest first. Build Windows adds a
 build here when it publishes it; write new notes in `RELEASE_NOTES.md`, not here.
 Builds before 31 had no release notes.
 
+## Build 43 — 2026-11-06
+
+- #514: A dialog line's edited subtitle is saved even when the line carried no inline comment
+- #410: Particle effects draw in the World viewport from the project's own C_PARTICLEFX definitions
+- #426: The NPC editor's preview draws the melee weapon the form selects
+- #406: A searched asset that can be placed — a compiled MOB model included — stays in the Assets list
+- #530: A negated Npc_KnowsInfo in a quest condition stays structured instead of reading as unknown
+- #422: Space, X and PageUp/Down lift and lower a VOB in rotate mode instead of rolling it
+- #434: An If card heads its condition with If and the row under it with Effect
+- #434: An autocomplete field's clear and follow-reference buttons sit side by side instead of on top of each other
+- #499: Trialogue voice ids are no longer flagged as malformed
+- #417: A Locator tab lists the world's item VOBs within a radius, bad instances only, by name
+- #430: The "+" menu adds a Comment note — a // line in the function body, edited and saved with the script
+- #436: A dialog line inside an expanded choice can be dragged into a new order again
+- #526: The Items tab lists the project's items as soon as it opens, with no NPC selected first
+- #418: The Items tab adds picked items to the selected chest with counts, as one undo
+- #525: A keyboard turn that cancels itself out puts the VOBs back on screen instead of leaving them turned
+- #412: An Items tab lists the project's item instances with previews, and places one as an oCItem
+- #428: The New NPC dialog offers the project's `GIL_` guild constants, with autocomplete
+- #433: View Source shows the dialog's own .d file with the file's line numbers, scrolled to the dialog
+- #521: A selected waypoint nudges and turns from the keyboard, as a VOB does
+- #522: A file that writes `};` before an `else` saves back that `;`
+- #529: An Npc_KnowsInfo(...) == FALSE gate evaluates in the simulator instead of reading as unknown
+
 ## Build 42 — 2026-11-05
 
 - #424: Items in the World view draw as their mesh, resolved from the item's script instance
