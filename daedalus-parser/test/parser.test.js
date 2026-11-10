@@ -641,3 +641,36 @@ describe('identifier alphabet is Latin-1 letters, not every Latin-1 byte (#444)'
     assert.equal(parser.parse('var int x\u00A0= 1;').hasErrors, true);
   });
 });
+
+// #539: errors are collected from the subtrees that hold them. Measured before
+// the fix: 40,000 unclosed `(` took 8.7 s to collect (21 ms to parse), because
+// the walk visited every node and `child(i)` is linear in `i` on a flat ERROR
+// node; 200,000 took 204 s, past the editor worker's 30 s timeout.
+describe('collecting syntax errors (#539)', () => {
+  const parser = new DaedalusParser();
+  const unclosed = `func void f() {\n x = ${'('.repeat(40000)}1;\n};\n`;
+
+  test('a flat ERROR node with many children is collected in linear time', () => {
+    const start = process.hrtime.bigint();
+    const result = parser.parse(unclosed);
+    const elapsedMs = Number(process.hrtime.bigint() - start) / 1e6;
+    assert.equal(result.hasErrors, true);
+    assert.ok(result.errors.length > 0, 'the error is still reported');
+    assert.ok(elapsedMs < 1000, `parse took ${elapsedMs.toFixed(0)} ms`);
+  });
+
+  test('validate() reports the errors parse() collected', () => {
+    const start = process.hrtime.bigint();
+    const result = parser.validate(unclosed);
+    const elapsedMs = Number(process.hrtime.bigint() - start) / 1e6;
+    assert.deepEqual(result.errors, parser.parse(unclosed).errors);
+    assert.ok(elapsedMs < 1000, `validate took ${elapsedMs.toFixed(0)} ms`);
+  });
+
+  test('an error nested deeper than the JS stack is still collected', () => {
+    const source = `func void f() {\n${'if (a) {'.repeat(20000)} x = ;${'};'.repeat(20000)}\n};\n`;
+    const result = parser.parse(source);
+    assert.equal(result.hasErrors, true);
+    assert.ok(result.errors.length > 0);
+  });
+});

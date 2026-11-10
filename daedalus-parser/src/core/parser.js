@@ -241,14 +241,9 @@ class DaedalusParser {
   validate(sourceCode) {
     const parseResult = this.parse(sourceCode);
 
-    const errors = [];
-    if (parseResult.hasErrors) {
-      this.collectErrors(parseResult.rootNode, sourceCode, errors);
-    }
-
     return {
       isValid: !parseResult.hasErrors,
-      errors,
+      errors: parseResult.errors ?? [],
       parseTime: parseResult.parseTime,
       throughput: parseResult.throughput
     };
@@ -257,35 +252,47 @@ class DaedalusParser {
 
   /**
    * Collect syntax errors from parse tree
+   *
+   * Only subtrees that hold an error are entered, and siblings are reached
+   * through the cursor: `child(i)` is linear in `i`, so indexing a flat ERROR
+   * node's children made collection quadratic (#539). Iterative, so an error
+   * nested deeper than the JS stack is still collected.
    * @private
    */
   collectErrors(node, sourceCode, errors) {
-    // Positions are 1-based, matching ErrorVisitor and the message text.
-    const position = {
-      row: node.startPosition.row + 1,
-      column: node.startPosition.column + 1
-    };
+    const cursor = node.walk();
+    for (;;) {
+      const current = cursor.currentNode;
+      // An ERROR leaf can report `hasError: false`, so a node is reported by
+      // its own type and `hasError` only decides whether to descend.
+      // Positions are 1-based, matching ErrorVisitor and the message text.
+      const position = {
+        row: current.startPosition.row + 1,
+        column: current.startPosition.column + 1
+      };
 
-    if (node.type === 'ERROR') {
-      errors.push({
-        type: 'syntax_error',
-        message: `Syntax error at line ${position.row}, column ${position.column}`,
-        position,
-        text: sourceCode.slice(node.startIndex, node.endIndex)
-      });
-    }
+      if (current.type === 'ERROR') {
+        errors.push({
+          type: 'syntax_error',
+          message: `Syntax error at line ${position.row}, column ${position.column}`,
+          position,
+          text: sourceCode.slice(current.startIndex, current.endIndex)
+        });
+      }
 
-    if (node.isMissing) {
-      errors.push({
-        type: 'missing_token',
-        message: `Missing ${node.type} at line ${position.row}, column ${position.column}`,
-        position,
-        text: ''
-      });
-    }
+      if (current.isMissing) {
+        errors.push({
+          type: 'missing_token',
+          message: `Missing ${current.type} at line ${position.row}, column ${position.column}`,
+          position,
+          text: ''
+        });
+      }
 
-    for (let i = 0; i < node.childCount; i++) {
-      this.collectErrors(node.child(i), sourceCode, errors);
+      if (current.hasError && cursor.gotoFirstChild()) { continue; }
+      while (!cursor.gotoNextSibling()) {
+        if (!cursor.gotoParent()) { return; }
+      }
     }
   }
 
