@@ -445,6 +445,15 @@ Ten of fourteen regressions failed before the fix. The existing 28 NPC tests
 remain green. The actual editor parser worker also rejects a conflicting batch;
 the NPC dialog surfaces that error before assigning the result to sourceText.
 
+Values, field names, call names and arguments are spliced in as given, so the
+writer checks its own result (#540): it re-extracts the edited source and
+requires one instance with the same name and parent, holding the statement
+count the batch implies (one more per insertion, one fewer per removal). A
+value carrying `;`, `}` or a line comment that ends its statement early, and
+one that closes the instance and declares more, are refused with an
+`NPC edit …` error instead of reaching the save's syntax check, which
+accepts any well-formed file.
+
 ## Comments
 
 - An AI_Output subtitle comment must be on the **same line** as the completed statement;

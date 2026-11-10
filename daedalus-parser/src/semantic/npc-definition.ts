@@ -269,7 +269,27 @@ export function applyNpcEdits(source: string, edits: NpcEdit[]): string {
   for (const s of patches) {
     out = out.slice(0, s.start) + s.text + out.slice(s.end);
   }
+
+  // #540: values, names and arguments are spliced in as given, so a `;`, a
+  // `}` or a comment in one can end its statement early or close the
+  // instance. Each pure insertion adds one statement and each removal takes
+  // one away; anything else means an edit wrote more than its own statement.
+  const insertions = patches.filter(p => p.start === p.end).length;
+  const removals = patches.filter(p => p.start !== p.end && p.text === '').length;
+  assertSameInstance(npc, out, npc.statements.length + insertions - removals);
   return out;
+}
+
+function assertSameInstance(npc: ParsedNpcDefinition, out: string, statementCount: number): void {
+  let edited: ParsedNpcDefinition;
+  try {
+    edited = parseNpcDefinition(out);
+  } catch (error) {
+    throw new Error(`NPC edit would not leave a valid instance: ${(error as Error).message}`);
+  }
+  if (edited.name !== npc.name || edited.parent !== npc.parent || edited.statements.length !== statementCount) {
+    throw new Error('NPC edit would write more than the statements it targets; a value, name or argument holds a `;`, `}` or comment that ends it early');
+  }
 }
 
 function conflictingEdits(first: number, second: number): Error {

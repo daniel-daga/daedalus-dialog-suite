@@ -2,6 +2,7 @@
 
 ## One line per change, newest on top, `- #123: Short description` (120 characters max). A build ships only the lines added since the last one, and CHANGELOG.md keeps them; old lines may be pruned at any time.
 
+- #540: The NPC editor refuses a value that would break the instance instead of saving it
 - #539: A file with a syntax error opens without a long stall, however the error is shaped
 - #514: A dialog line's edited subtitle is saved even when the line carried no inline comment
 - #410: Particle effects draw in the World viewport from the project's own C_PARTICLEFX definitions
