@@ -494,6 +494,19 @@ hand-built partial models. Editor contract: the save path must surface this
 error and gate auto-save on parse-errored files (slice 2 / E3 owns that UX;
 until it lands, such saves fail visibly rather than silently corrupting).
 
+**Nesting is bounded (#538).** The linking pass, hydration
+(`deserializeSemanticModel`) and generation recurse once per conditional, and
+the save path runs all three. Hydration overflowed the JS stack from about
+900 nested `if`s, below the ~1,840 the build reached, so a file could open and
+then fail to save. The build now refuses `if`/`else if` nesting past
+`MAX_CONDITIONAL_DEPTH` (256) with a `nesting_too_deep` error at the
+conditional that crosses it, and any other overflow of the linking walk (a
+6,000-term expression) with the same error at the deepest node. Either is an
+errored model like a syntax error: it opens, names the line, and refuses a
+save. Every model the build returns hydrates and generates. The error walks
+(`DaedalusParser.collectErrors`, `ErrorVisitor`) are iterative, so a syntax
+error nested past the stack keeps its own line.
+
 ## Case-insensitive references
 
 Daedalus is case-insensitive; the model preserves source casing but all

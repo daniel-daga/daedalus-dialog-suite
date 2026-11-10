@@ -1,6 +1,5 @@
 import {
   TreeSitterNode,
-  TreeCursor,
   SemanticModel
 } from '../semantic-model';
 
@@ -15,8 +14,7 @@ export class ErrorVisitor {
    * Check for syntax errors in the parse tree and populate semantic model errors
    */
   checkForSyntaxErrors(node: TreeSitterNode, sourceCode?: string): void {
-    const cursor = node.walk();
-    this.checkForSyntaxErrorsRecursively(cursor, sourceCode);
+    this.collectErrors(node, sourceCode);
     // A missing token can sit under a zero-width node the cursor never descends
     // into (`identifier` with `childCount: 0`), which leaves `hasErrors` with an
     // empty error list: a file that cannot be saved and says nothing why (#447).
@@ -42,25 +40,41 @@ export class ErrorVisitor {
     });
   }
 
-  private findZeroWidthErrorNode(node: TreeSitterNode): TreeSitterNode | undefined {
-    if (node.hasError && node.startIndex === node.endIndex) return node;
-    for (let index = 0; index < node.childCount; index++) {
-      const child = node.child(index);
-      if (!child.hasError) continue;
-      const found = this.findZeroWidthErrorNode(child);
-      if (found) return found;
+  /** Pre-order, entering only nodes with `hasError`; iterative, like `collectErrors` (#538). */
+  private findZeroWidthErrorNode(root: TreeSitterNode): TreeSitterNode | undefined {
+    const cursor = root.walk();
+    for (;;) {
+      const node = cursor.currentNode;
+      if (node.hasError) {
+        if (node.startIndex === node.endIndex) return node;
+        if (cursor.gotoFirstChild()) continue;
+      }
+      while (!cursor.gotoNextSibling()) {
+        if (!cursor.gotoParent()) return undefined;
+      }
     }
-    return undefined;
   }
 
-  private checkForSyntaxErrorsRecursively(cursor: TreeCursor, sourceCode?: string): void {
-    const node = cursor.currentNode;
-
-    // Optimization: Skip subtrees that don't contain errors
-    if (!node.hasError) {
-      return;
+  /**
+   * Record every ERROR and missing node, entering only subtrees with
+   * `hasError`. Iterative, so an error nested deeper than the JS stack is
+   * still reported with its own line (#538).
+   */
+  private collectErrors(root: TreeSitterNode, sourceCode?: string): void {
+    const cursor = root.walk();
+    for (;;) {
+      const node = cursor.currentNode;
+      if (node.hasError) {
+        this.recordError(node, sourceCode);
+        if (cursor.gotoFirstChild()) continue;
+      }
+      while (!cursor.gotoNextSibling()) {
+        if (!cursor.gotoParent()) return;
+      }
     }
+  }
 
+  private recordError(node: TreeSitterNode, sourceCode?: string): void {
     this.semanticModel.hasErrors = true;
 
     if (node.type === 'ERROR') {
@@ -93,13 +107,6 @@ export class ErrorVisitor {
         },
         text: ''
       });
-    }
-
-    if (cursor.gotoFirstChild()) {
-      do {
-        this.checkForSyntaxErrorsRecursively(cursor, sourceCode);
-      } while (cursor.gotoNextSibling());
-      cursor.gotoParent();
     }
   }
 }

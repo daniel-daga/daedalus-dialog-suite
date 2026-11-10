@@ -1,6 +1,7 @@
-const { test } = require('node:test');
+const { test, describe } = require('node:test');
 const assert = require('node:assert');
 const { parseSemanticModel, SemanticModelBuilderVisitor, createDaedalusParser } = require('../dist/semantic/semantic-visitor-index');
+const DaedalusParser = require('../src/core/parser');
 
 // ===================================================================
 // SYNTAX ERROR DETECTION TESTS
@@ -207,7 +208,7 @@ test('finds errors nested inside deeper blocks', () => {
 // ===================================================================
 
 const { SemanticCodeGenerator } = require('../dist/codegen/generator');
-const { DialogFunction, DialogLine } = require('../dist/semantic/semantic-model');
+const { DialogFunction, DialogLine, deserializeSemanticModel } = require('../dist/semantic/semantic-model');
 
 test('generateSemanticModel throws on a model with parse errors', () => {
   const model = parseSemanticModel(`
@@ -439,4 +440,90 @@ test('a file that cannot be saved never has an empty error list (#447)', () => {
   const generator = new SemanticCodeGenerator();
   assert.throws(() => generator.generateSemanticModel(model), /1 parse error/,
     'the save error counts the error the user is shown');
+});
+
+// #538: the visitors walk the tree recursively, so a file nested deeper than
+// the JS stack used to throw `Maximum call stack size exceeded` out of the
+// model build — at 1,842 nested ifs, or a 6,251-term expression — though
+// tree-sitter parses it cleanly. It is reported as an error with a line now,
+// both through parseSemanticModel and through the visitor calls the editor's
+// parser worker makes itself.
+describe('nesting deeper than the JS stack (#538)', () => {
+  const nestedIfs = (depth, inner = 'x = 1;') =>
+    `func void f()\n{\n${'if (a) {\n'.repeat(depth)}${inner}\n${'};\n'.repeat(depth)}};\n`;
+  const longSum = `func void f()\n{\n\tx = ${'1+'.repeat(20000)}1;\n};\n`;
+
+  const buildLikeTheWorker = (source) => {
+    const { tree } = DaedalusParser.parseSource(source);
+    const visitor = new SemanticModelBuilderVisitor();
+    visitor.checkForSyntaxErrors(tree.rootNode, source);
+    if (!visitor.semanticModel.hasErrors) {
+      visitor.pass1_createObjects(tree.rootNode);
+      visitor.pass2_analyzeAndLink(tree.rootNode);
+    }
+    return visitor.semanticModel;
+  };
+
+  for (const [label, source] of [['5,000 nested ifs', nestedIfs(5000)], ['a 20,000-term sum', longSum]]) {
+    test(`${label}: an error with a line, not a thrown RangeError`, () => {
+      for (const model of [parseSemanticModel(source), buildLikeTheWorker(source)]) {
+        assert.equal(model.hasErrors, true);
+        const error = model.errors.find(e => e.type === 'nesting_too_deep');
+        assert.ok(error, `errors: ${JSON.stringify(model.errors)}`);
+        assert.match(error.message, /too deeply nested.*line \d+/i);
+        assert.ok(error.position.row > 2, 'points into the body, not at the file start');
+      }
+    });
+  }
+
+  test('a syntax error nested deeper than the JS stack keeps its own line', () => {
+    const source = nestedIfs(20000, 'x = ;');
+    const model = buildLikeTheWorker(source);
+    assert.equal(model.hasErrors, true);
+    assert.ok(model.errors.some(e => e.position.row === 20003), JSON.stringify(model.errors.slice(0, 3)));
+  });
+
+  test('a file within the limit still builds a model', () => {
+    const model = parseSemanticModel(nestedIfs(200));
+    assert.equal(model.hasErrors, false);
+    assert.equal(model.functions.f.actions[0].type, 'ConditionalAction');
+  });
+
+  // The save path hydrates the model (deserializeSemanticModel) and generates
+  // from it, and both recurse per conditional: hydration overflowed from ~900
+  // nested ifs, below the ~1,840 the build reached. So the build refuses
+  // nesting past a fixed bound, and everything under it saves.
+  test('the deepest conditional the build accepts hydrates and generates as the save path does', () => {
+    const model = parseSemanticModel(nestedIfs(256));
+    assert.equal(model.hasErrors, false);
+    const hydrated = deserializeSemanticModel(JSON.parse(JSON.stringify(model)));
+    const generator = new SemanticCodeGenerator();
+    assert.equal(generator.generateSemanticModel(hydrated), generator.generateSemanticModel(model));
+  });
+
+  for (const [label, source, row] of [
+    ['one if past the bound', nestedIfs(257), 259],
+    ['900 nested ifs', nestedIfs(900), 259],
+    ['an else-if chain past the bound', `func void f()\n{\n\tif (a) {}${' else if (a) {}'.repeat(300)};\n};\n`, 3]
+  ]) {
+    test(`${label} is refused where it crosses the bound`, () => {
+      const model = parseSemanticModel(source);
+      const error = model.errors.find(e => e.type === 'nesting_too_deep');
+      assert.ok(error, JSON.stringify(model.errors));
+      assert.equal(error.position.row, row);
+    });
+  }
+
+  test('a RangeError that is not a stack overflow is not swallowed', () => {
+    const visitor = new SemanticModelBuilderVisitor();
+    const { tree } = DaedalusParser.parseSource('func void f() { x = 1; };');
+    const node = new Proxy(tree.rootNode, {
+      get(target, key) {
+        if (key === 'walk') { return () => { throw new RangeError('Invalid array length'); }; }
+        const value = Reflect.get(target, key, target);
+        return typeof value === 'function' ? value.bind(target) : value;
+      }
+    });
+    assert.throws(() => visitor.pass2_analyzeAndLink(node), /Invalid array length/);
+  });
 });

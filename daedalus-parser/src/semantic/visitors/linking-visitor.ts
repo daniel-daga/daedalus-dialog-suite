@@ -56,6 +56,21 @@ function multiLineIndent(node: TreeSitterNode): string | undefined {
   return indent && /^[ \t]+$/.test(indent) ? indent : undefined;
 }
 
+/**
+ * The deepest `if`/`else if` nesting the model holds (#538). Hydrating and
+ * generating a model recurse once per conditional and overflowed the stack
+ * from ~900 levels, so the build refuses past this bound and every model it
+ * returns can be saved. Retail scripts nest a handful of levels.
+ */
+export const MAX_CONDITIONAL_DEPTH = 256;
+
+/** Thrown by the linking pass at the conditional that crosses the bound. */
+export class NestingTooDeepError extends Error {
+  constructor(public readonly node: TreeSitterNode) {
+    super(`Conditionals nested deeper than ${MAX_CONDITIONAL_DEPTH} levels`);
+  }
+}
+
 export class LinkingVisitor {
   private dialogs: SemanticModel['dialogs'];
   private functions: SemanticModel['functions'];
@@ -66,6 +81,7 @@ export class LinkingVisitor {
   // Ranges (`startIndex:endIndex`) of comment nodes already consumed as an
   // AI_Output subtitle, so they are not also re-emitted as standalone comments.
   private consumedCommentRanges: Set<string>;
+  private conditionalDepth = 0;
 
   constructor(semanticModel: SemanticModel, functionNameMap: Map<string, string>) {
     this.dialogs = semanticModel.dialogs;
@@ -691,6 +707,16 @@ export class LinkingVisitor {
   }
 
   private parseConditionalAction(node: TreeSitterNode): ConditionalAction | null {
+    if (this.conditionalDepth >= MAX_CONDITIONAL_DEPTH) throw new NestingTooDeepError(node);
+    this.conditionalDepth++;
+    try {
+      return this.parseConditionalActionAt(node);
+    } finally {
+      this.conditionalDepth--;
+    }
+  }
+
+  private parseConditionalActionAt(node: TreeSitterNode): ConditionalAction | null {
     const conditionNode = node.childForFieldName('condition');
     const consequenceNode = node.childForFieldName('consequence');
     const alternativeNode = node.childForFieldName('alternative');
