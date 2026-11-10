@@ -1,7 +1,15 @@
 import type { TreeSitterNode } from '../semantic-model';
 
+/** Any comment in `node`'s subtree, itself included. Reads the cursor, so no node is materialised (#541). */
 export function hasComment(node: TreeSitterNode): boolean {
-  return node.type === 'comment' || node.namedChildren.some(hasComment);
+  const cursor = node.walk();
+  for (;;) {
+    if (cursor.nodeType === 'comment') return true;
+    if (cursor.gotoFirstChild()) continue;
+    while (!cursor.gotoNextSibling()) {
+      if (!cursor.gotoParent()) return false;
+    }
+  }
 }
 
 export const COMPARISON_OPERATORS = new Set(['==', '!=', '<', '>', '<=', '>=']);

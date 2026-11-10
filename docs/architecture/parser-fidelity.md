@@ -498,12 +498,16 @@ until it lands, such saves fail visibly rather than silently corrupting).
 (`deserializeSemanticModel`) and generation recurse once per conditional, and
 the save path runs all three. Hydration overflowed the JS stack from about
 900 nested `if`s, below the ~1,840 the build reached, so a file could open and
-then fail to save. The build now refuses `if`/`else if` nesting past
-`MAX_CONDITIONAL_DEPTH` (256) with a `nesting_too_deep` error at the
-conditional that crosses it, and any other overflow of the linking walk (a
-6,000-term expression) with the same error at the deepest node. Either is an
+then fail to save. Calls inside calls are the other unbounded shape: every
+call site keeps its arguments' text, so `f(f(f(…)))` grows the model
+quadratically (10,000 levels made 287 MB). The build refuses either past
+`MAX_NESTING_DEPTH` (256) with a `nesting_too_deep` error at the node that
+crosses it, and any other overflow of the linking walk (a 20,000-clause
+condition guard) with the same error at the deepest node. Either is an
 errored model like a syntax error: it opens, names the line, and refuses a
-save. Every model the build returns hydrates and generates. The error walks
+save. Every model the build returns hydrates and generates. An expression is
+no nesting at all: the walk does not descend into one (#541), so a
+20,000-term sum builds and saves. The error walks
 (`DaedalusParser.collectErrors`, `ErrorVisitor`) are iterative, so a syntax
 error nested past the stack keeps its own line.
 

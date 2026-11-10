@@ -452,6 +452,15 @@ describe('nesting deeper than the JS stack (#538)', () => {
   const nestedIfs = (depth, inner = 'x = 1;') =>
     `func void f()\n{\n${'if (a) {\n'.repeat(depth)}${inner}\n${'};\n'.repeat(depth)}};\n`;
   const longSum = `func void f()\n{\n\tx = ${'1+'.repeat(20000)}1;\n};\n`;
+  // The linking walk still recurses through a condition function's guard.
+  const longGuard = 'instance D(C_INFO)\n{\n\tcondition = D_C;\n};\n'
+    + `func int D_C()\n{\n\tif (${'a && '.repeat(20000)}a)\n\t{\n\t\treturn TRUE;\n\t};\n};\n`;
+  const nestedCalls = (depth) => `func void f()\n{\n\t${'f('.repeat(depth)}1${')'.repeat(depth)};\n};\n`;
+  const savesLikeTheEditor = (model) => {
+    const hydrated = deserializeSemanticModel(JSON.parse(JSON.stringify(model)));
+    const generator = new SemanticCodeGenerator();
+    assert.equal(generator.generateSemanticModel(hydrated), generator.generateSemanticModel(model));
+  };
 
   const buildLikeTheWorker = (source) => {
     const { tree } = DaedalusParser.parseSource(source);
@@ -464,7 +473,7 @@ describe('nesting deeper than the JS stack (#538)', () => {
     return visitor.semanticModel;
   };
 
-  for (const [label, source] of [['5,000 nested ifs', nestedIfs(5000)], ['a 20,000-term sum', longSum]]) {
+  for (const [label, source] of [['5,000 nested ifs', nestedIfs(5000)], ['a 20,000-clause guard', longGuard]]) {
     test(`${label}: an error with a line, not a thrown RangeError`, () => {
       for (const model of [parseSemanticModel(source), buildLikeTheWorker(source)]) {
         assert.equal(model.hasErrors, true);
@@ -496,15 +505,31 @@ describe('nesting deeper than the JS stack (#538)', () => {
   test('the deepest conditional the build accepts hydrates and generates as the save path does', () => {
     const model = parseSemanticModel(nestedIfs(256));
     assert.equal(model.hasErrors, false);
-    const hydrated = deserializeSemanticModel(JSON.parse(JSON.stringify(model)));
-    const generator = new SemanticCodeGenerator();
-    assert.equal(generator.generateSemanticModel(hydrated), generator.generateSemanticModel(model));
+    savesLikeTheEditor(model);
+  });
+
+  // #541: the walk no longer descends into an expression, so a long one is
+  // no nesting at all and builds; it must save too.
+  test('a 20,000-term sum builds and saves', () => {
+    const model = parseSemanticModel(longSum);
+    assert.equal(model.hasErrors, false);
+    savesLikeTheEditor(model);
+  });
+
+  // Every call site keeps its arguments' text, so f(f(f(...))) is quadratic:
+  // 10,000 levels made a 287 MB model and 20,000 overflowed a string.
+  test('the deepest call nesting the build accepts saves', () => {
+    const model = parseSemanticModel(nestedCalls(256));
+    assert.equal(model.hasErrors, false);
+    savesLikeTheEditor(model);
   });
 
   for (const [label, source, row] of [
     ['one if past the bound', nestedIfs(257), 259],
     ['900 nested ifs', nestedIfs(900), 259],
-    ['an else-if chain past the bound', `func void f()\n{\n\tif (a) {}${' else if (a) {}'.repeat(300)};\n};\n`, 3]
+    ['an else-if chain past the bound', `func void f()\n{\n\tif (a) {}${' else if (a) {}'.repeat(300)};\n};\n`, 3],
+    ['one call past the bound', nestedCalls(257), 3],
+    ['20,000 nested calls', nestedCalls(20000), 3]
   ]) {
     test(`${label} is refused where it crosses the bound`, () => {
       const model = parseSemanticModel(source);

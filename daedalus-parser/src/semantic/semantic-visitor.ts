@@ -6,7 +6,7 @@ import {
 } from './semantic-model';
 import { ErrorVisitor } from './visitors/error-visitor';
 import { DeclarationVisitor } from './visitors/declaration-visitor';
-import { LinkingVisitor, NestingTooDeepError, MAX_CONDITIONAL_DEPTH } from './visitors/linking-visitor';
+import { LinkingVisitor, NestingTooDeepError, MAX_NESTING_DEPTH } from './visitors/linking-visitor';
 import { createNameRecord } from './name-utils';
 
 export class SemanticModelBuilderVisitor {
@@ -65,11 +65,11 @@ export class SemanticModelBuilderVisitor {
       linkingVisitor.visit(node);
     } catch (error) {
       // #538: a file nested deeper than the model can carry is reported, not
-      // analysed. Conditionals have a fixed bound; anything else that nests
-      // past the JS stack (a 6,000-term expression) overflows a walk that
-      // recurses per tree level. Any other error is a bug and is rethrown.
+      // analysed. Conditionals and nested calls have a fixed bound; anything
+      // else that nests past the JS stack (a 20,000-clause guard) overflows a
+      // walk that recurses per tree level. Any other error is rethrown.
       if (error instanceof NestingTooDeepError) {
-        this.recordNestingTooDeep(error.node, `more than ${MAX_CONDITIONAL_DEPTH} if/else levels`);
+        this.recordNestingTooDeep(error.node, `more than ${MAX_NESTING_DEPTH} ${error.what} levels`);
       } else if (error instanceof RangeError && /call stack/i.test(error.message)) {
         const { node: deepest, depth } = deepestNode(node);
         this.recordNestingTooDeep(deepest, `${depth} levels`);
