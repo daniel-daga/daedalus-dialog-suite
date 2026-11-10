@@ -6,7 +6,7 @@ import {
 } from './semantic-model';
 import { ErrorVisitor } from './visitors/error-visitor';
 import { DeclarationVisitor } from './visitors/declaration-visitor';
-import { LinkingVisitor } from './visitors/linking-visitor';
+import { LinkingVisitor, NestingTooDeepError, MAX_NESTING_DEPTH } from './visitors/linking-visitor';
 import { createNameRecord } from './name-utils';
 
 export class SemanticModelBuilderVisitor {
@@ -61,6 +61,51 @@ export class SemanticModelBuilderVisitor {
    */
   pass2_analyzeAndLink(node: TreeSitterNode): void {
     const linkingVisitor = new LinkingVisitor(this.semanticModel, this.functionNameMap);
-    linkingVisitor.visit(node);
+    try {
+      linkingVisitor.visit(node);
+    } catch (error) {
+      // #538: a file nested deeper than the model can carry is reported, not
+      // analysed. Conditionals and nested calls have a fixed bound; anything
+      // else that nests past the JS stack (a 20,000-clause guard) overflows a
+      // walk that recurses per tree level. Any other error is rethrown.
+      if (error instanceof NestingTooDeepError) {
+        this.recordNestingTooDeep(error.node, `more than ${MAX_NESTING_DEPTH} ${error.what} levels`);
+      } else if (error instanceof RangeError && /call stack/i.test(error.message)) {
+        const { node: deepest, depth } = deepestNode(node);
+        this.recordNestingTooDeep(deepest, `${depth} levels`);
+      } else {
+        throw error;
+      }
+    }
+  }
+
+  private recordNestingTooDeep(node: TreeSitterNode, extent: string): void {
+    const row = node.startPosition.row + 1;
+    const column = node.startPosition.column + 1;
+    this.semanticModel.hasErrors = true;
+    (this.semanticModel.errors ??= []).push({
+      type: 'nesting_too_deep',
+      message: `Too deeply nested to analyse (${extent}) at line ${row}, column ${column}`,
+      position: { row, column },
+      text: ''
+    });
+  }
+}
+
+/** The first node at the tree's greatest depth, found without recursion. */
+function deepestNode(root: TreeSitterNode): { node: TreeSitterNode; depth: number } {
+  const cursor = root.walk();
+  let depth = 0;
+  let deepest = { node: root, depth: 0 };
+  for (;;) {
+    if (depth > deepest.depth) deepest = { node: cursor.currentNode, depth };
+    if (cursor.gotoFirstChild()) {
+      depth++;
+      continue;
+    }
+    while (!cursor.gotoNextSibling()) {
+      if (!cursor.gotoParent()) return deepest;
+      depth--;
+    }
   }
 }

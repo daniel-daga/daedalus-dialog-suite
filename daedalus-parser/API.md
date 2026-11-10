@@ -393,6 +393,10 @@ instance.sourceText = applyNpcEdits(instance.sourceText, [
   a removed anchor line. Apply sequential or conflicting changes in separate
   calls against the returned source. Independent insertions at the same point
   retain batch order; repeated `addCall` operations remain valid.
+- The result is re-extracted before it is returned: it must still be one
+  instance with the same name and parent and the statements the batch implies.
+  A value, name or argument holding a `;`, `}` or comment that ends it early
+  throws instead of writing more than its own statement.
 - `setCall`/`removeCall` take an optional 0-based `occurrence` (default 0) to
   address one of several calls of a name, such as retail's one `EquipItem` per
   weapon; `addCall` always inserts, after the last call of that name.

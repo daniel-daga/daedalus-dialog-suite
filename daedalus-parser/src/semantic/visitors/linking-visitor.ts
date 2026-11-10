@@ -56,6 +56,23 @@ function multiLineIndent(node: TreeSitterNode): string | undefined {
   return indent && /^[ \t]+$/.test(indent) ? indent : undefined;
 }
 
+/**
+ * The deepest nesting of `if`/`else if`, and of calls inside calls, the model
+ * holds (#538). Hydrating and generating recurse once per conditional and
+ * overflowed the stack from ~900 levels; every call site keeps its arguments'
+ * text, so nested calls grow the model quadratically (10,000 levels: 287 MB).
+ * The build refuses past this bound, so every model it returns can be saved.
+ * Retail scripts nest a handful of levels.
+ */
+export const MAX_NESTING_DEPTH = 256;
+
+/** Thrown by the linking pass at the node that crosses the bound. */
+export class NestingTooDeepError extends Error {
+  constructor(public readonly node: TreeSitterNode, public readonly what: 'if/else' | 'nested call') {
+    super(`${what} nesting deeper than ${MAX_NESTING_DEPTH} levels`);
+  }
+}
+
 export class LinkingVisitor {
   private dialogs: SemanticModel['dialogs'];
   private functions: SemanticModel['functions'];
@@ -66,6 +83,7 @@ export class LinkingVisitor {
   // Ranges (`startIndex:endIndex`) of comment nodes already consumed as an
   // AI_Output subtitle, so they are not also re-emitted as standalone comments.
   private consumedCommentRanges: Set<string>;
+  private conditionalDepth = 0;
 
   constructor(semanticModel: SemanticModel, functionNameMap: Map<string, string>) {
     this.dialogs = semanticModel.dialogs;
@@ -266,6 +284,15 @@ export class LinkingVisitor {
         this.preserveUnsupportedStatement(node);
         return true;
       }
+    }
+
+    // Below a call or an assignment there is nothing left to project: a
+    // nested call is no action, a comment there is no top-level comment, and
+    // an assignment never nests in an expression. Handle the node itself and
+    // stop, instead of materialising every argument and operand (#541).
+    if (this.currentFunction && (type === 'call_expression' || type === 'assignment_statement')) {
+      this.handleStatementNode(type, node);
+      return true;
     }
 
     if (this.currentFunction && !isConditionFunc && isConditionModeBlockingStatement(type)) {
@@ -633,12 +660,30 @@ export class LinkingVisitor {
    * project index's only view of a call, including calls in local initializers
    * and raw statements that semantic extraction does not descend into.
    */
-  private recordCallSitesInSubtree(node: TreeSitterNode): void {
-    for (const child of node.namedChildren) {
-      if (child.type === 'call_expression') {
-        this.recordCallSite(child);
+  private recordCallSitesInSubtree(root: TreeSitterNode): void {
+    // Pre-order, as the calls appear in the source. Only a call is
+    // materialised as a node; every other step reads the cursor (#541).
+    // `openCalls` holds the tree depth of each enclosing call, popped as the
+    // walk leaves it, so call-in-call nesting is bounded (#538).
+    const cursor = root.walk();
+    const openCalls: number[] = [];
+    let depth = 0;
+    for (;;) {
+      if (cursor.nodeType === 'call_expression') {
+        if (openCalls.length >= MAX_NESTING_DEPTH) throw new NestingTooDeepError(cursor.currentNode, 'nested call');
+        openCalls.push(depth);
+        this.recordCallSite(cursor.currentNode);
       }
-      this.recordCallSitesInSubtree(child);
+      if (cursor.gotoFirstChild()) {
+        depth++;
+        continue;
+      }
+      for (;;) {
+        if (openCalls[openCalls.length - 1] === depth) openCalls.pop();
+        if (cursor.gotoNextSibling()) break;
+        if (!cursor.gotoParent()) return;
+        depth--;
+      }
     }
   }
 
@@ -691,6 +736,16 @@ export class LinkingVisitor {
   }
 
   private parseConditionalAction(node: TreeSitterNode): ConditionalAction | null {
+    if (this.conditionalDepth >= MAX_NESTING_DEPTH) throw new NestingTooDeepError(node, 'if/else');
+    this.conditionalDepth++;
+    try {
+      return this.parseConditionalActionAt(node);
+    } finally {
+      this.conditionalDepth--;
+    }
+  }
+
+  private parseConditionalActionAt(node: TreeSitterNode): ConditionalAction | null {
     const conditionNode = node.childForFieldName('condition');
     const consequenceNode = node.childForFieldName('consequence');
     const alternativeNode = node.childForFieldName('alternative');

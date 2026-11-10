@@ -445,6 +445,15 @@ Ten of fourteen regressions failed before the fix. The existing 28 NPC tests
 remain green. The actual editor parser worker also rejects a conflicting batch;
 the NPC dialog surfaces that error before assigning the result to sourceText.
 
+Values, field names, call names and arguments are spliced in as given, so the
+writer checks its own result (#540): it re-extracts the edited source and
+requires one instance with the same name and parent, holding the statement
+count the batch implies (one more per insertion, one fewer per removal). A
+value carrying `;`, `}` or a line comment that ends its statement early, and
+one that closes the instance and declares more, are refused with an
+`NPC edit …` error instead of reaching the save's syntax check, which
+accepts any well-formed file.
+
 ## Comments
 
 - An AI_Output subtitle comment must be on the **same line** as the completed statement;
@@ -484,6 +493,23 @@ whole-model entry point only; `generateFunction`/`generateDialog` accept
 hand-built partial models. Editor contract: the save path must surface this
 error and gate auto-save on parse-errored files (slice 2 / E3 owns that UX;
 until it lands, such saves fail visibly rather than silently corrupting).
+
+**Nesting is bounded (#538).** The linking pass, hydration
+(`deserializeSemanticModel`) and generation recurse once per conditional, and
+the save path runs all three. Hydration overflowed the JS stack from about
+900 nested `if`s, below the ~1,840 the build reached, so a file could open and
+then fail to save. Calls inside calls are the other unbounded shape: every
+call site keeps its arguments' text, so `f(f(f(…)))` grows the model
+quadratically (10,000 levels made 287 MB). The build refuses either past
+`MAX_NESTING_DEPTH` (256) with a `nesting_too_deep` error at the node that
+crosses it, and any other overflow of the linking walk (a 20,000-clause
+condition guard) with the same error at the deepest node. Either is an
+errored model like a syntax error: it opens, names the line, and refuses a
+save. Every model the build returns hydrates and generates. An expression is
+no nesting at all: the walk does not descend into one (#541), so a
+20,000-term sum builds and saves. The error walks
+(`DaedalusParser.collectErrors`, `ErrorVisitor`) are iterative, so a syntax
+error nested past the stack keeps its own line.
 
 ## Case-insensitive references
 

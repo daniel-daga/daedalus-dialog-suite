@@ -369,3 +369,41 @@ test('refuses source that is not a single well-formed instance', () => {
   assert.throws(() => extractNpcDefinition('func void X() {};'), /instance/);
   assert.throws(() => extractNpcDefinition('instance A (C_Npc) { name = ; };'), /syntax/i);
 });
+
+// #540: values, names and arguments are spliced in as given, so the writer
+// checks that what it returns is still the one instance it was handed, with
+// exactly the statements the batch asked for.
+const ESCAPE_SOURCE = 'instance X (Npc_Default)\n{\n\tname = "a";\n\tid = 1;\n\tEquipItem (self, Sword);\n};\n';
+const escapes = [
+  ['a value that closes the instance and declares more',
+    { op: 'set', field: 'id', value: '1;\n};\nfunc void pwn() { Wld_InsertNpc(a, "b"); };\ninstance Y(C_NPC) {\n\tid = 2' }],
+  ['an empty value', { op: 'set', field: 'guild', value: '' }],
+  ['a value that ends in a line comment', { op: 'set', field: 'name', value: '"a" // c' }],
+  ['a value holding a second statement', { op: 'set', field: 'id', value: '1; level = 2' }],
+  ['a field name holding a second statement', { op: 'set', field: 'level = 2; guild', value: 'GIL_NONE' }],
+  ['a call argument that closes the call', { op: 'addCall', name: 'Foo', args: ['1); Bar(2'] }],
+  ['a call name holding a second call', { op: 'addCall', name: 'Foo(1); Bar', args: ['2'] }],
+  ['setCall arguments that close the call', { op: 'setCall', name: 'EquipItem', args: ['self, Sword); Baz(1'] }]
+];
+
+for (const [label, edit] of escapes) {
+  test(`applyNpcEdits refuses ${label} (#540)`, () => {
+    assert.throws(() => applyNpcEdits(ESCAPE_SOURCE, [edit]), /NPC edit/);
+  });
+}
+
+test('applyNpcEdits still accepts an ordinary batch that adds, sets and removes (#540)', () => {
+  const out = applyNpcEdits(ESCAPE_SOURCE, [
+    { op: 'set', field: 'id', value: '2 /* was 1 */' },
+    { op: 'set', field: 'guild', value: 'GIL_NONE' },
+    { op: 'remove', field: 'name' },
+    { op: 'setCall', name: 'EquipItem', args: ['self', 'Bow'] },
+    { op: 'addCall', name: 'EquipItem', args: ['self', 'Axe'] },
+    { op: 'removeCall', name: 'Missing' }
+  ]);
+  const npc = extractNpcDefinition(out);
+  assert.equal(npc.name, 'X');
+  assert.deepEqual(npc.statements.map(s => s.text), [
+    'id = 2 /* was 1 */;', 'guild = GIL_NONE;', 'EquipItem (self, Bow);', 'EquipItem (self, Axe);'
+  ]);
+});

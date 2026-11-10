@@ -1258,7 +1258,7 @@ export class Dialog {
 // ===================================================================
 
 export interface SyntaxError {
-  type: 'syntax_error' | 'missing_token' | 'duplicate_declaration';
+  type: 'syntax_error' | 'missing_token' | 'duplicate_declaration' | 'nesting_too_deep';
   message: string;
   position: {
     row: number;
