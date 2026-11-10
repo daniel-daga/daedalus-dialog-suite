@@ -3314,14 +3314,20 @@ decal as a full billboard. Counted 2026-10-12 over the three retail worlds:
 other 1,293 NONE (0). What either value does to a decal in the engine is
 unwitnessed (§16.41 row 1), so neither is drawn differently yet.
 
-### 16.41 The standing engine-witness list (2026-09-12; #261)
+### 16.41 The engine-witness inventory (2026-09-12; #261, closed 2026-11-10)
 
 **One place to collect what only a Gothic install can answer, so it stops being
 re-derived per session.** Gate 2 and Gate 2b proved every op the editor shipped
 *then*; this section carries what has landed since, plus the remainder those
-gates left. It is a running list: a change that writes something new to a world
-adds its row here in the same commit, and a row leaves when it has been seen.
-The issue that points here stays open until the list is empty.
+gates left. A change that writes something new to a world adds its row here in
+the same commit, and a row leaves when it has been seen.
+
+**#261 is closed with the list still full, by the maintainer's decision on
+2026-11-10**: nobody on the project has the Gothic installs these rows need, and
+the editor is in use, so a tracker that only one machine could advance was not
+earning its slot in the queue. Nothing below has been witnessed — the rows are
+an inventory, not a to-do, and a row that turns out wrong is an ordinary defect
+report from a user who hit it.
 
 **The staging is no longer the expensive part.** Gate 2b built candidate worlds
 with `zenkit-node/tools/mutate.js` and played them through
