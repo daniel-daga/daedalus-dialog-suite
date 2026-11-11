@@ -143,3 +143,4 @@
 - #459: Adding a choice or a quest step to an empty if/else branch works
 - #460: The Teach arguments field keeps a typed comma, so another argument can be added
 - #529: An Npc_KnowsInfo(...) == FALSE gate evaluates in the simulator instead of reading as unknown
+- #546: Saving a large constants or globals file no longer freezes the window while the code is generated

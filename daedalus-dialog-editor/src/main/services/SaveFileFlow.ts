@@ -1,12 +1,10 @@
 import type { FileService } from './FileService';
 import type { ParserService } from './ParserService';
-import type { CodeGeneratorService } from './CodeGeneratorService';
-import type { ValidationService } from './ValidationService';
 import { PathValidationError, type PathValidationService } from './PathValidationService';
 import {
   assertCodeGenerationSettings, assertFilePath, assertModelShape, assertSaveFileOptions,
 } from '../ipcValidation';
-import type { ParseError, SaveResult } from '../../shared/types';
+import type { SaveResult } from '../../shared/types';
 
 /**
  * The save pipeline: assert the payload, validate the path, validate the
@@ -16,12 +14,15 @@ import type { ParseError, SaveResult } from '../../shared/types';
  * here so a second main-side caller shares the pipeline instead of copying it
  * (mcp-server.md §2). Behavior is unchanged — including that the caller sees a
  * refusal as a returned `ValidationResult` and a failure as a thrown Error.
+ *
+ * Validation, generation and the parse-back all run in the forked parser
+ * pool (#546): the model crosses to a worker once and only the generated text
+ * and the verdict come back, so this process asserts, checks the path and
+ * writes, and never normalizes or generates on its own thread.
  */
 export interface SaveFileDeps {
   pathValidator: Pick<PathValidationService, 'validatePathResolved'>;
-  validationService: Pick<ValidationService, 'validate'>;
-  codeGeneratorService: Pick<CodeGeneratorService, 'generateCode'>;
-  parserService: Pick<ParserService, 'parseSource'>;
+  parserService: Pick<ParserService, 'validateModel' | 'generateCheckedCode'>;
   fileService: Pick<FileService, 'writeFile'>;
 }
 
@@ -57,7 +58,7 @@ export async function saveFileFlow(
 
     // Validate model unless explicitly skipped
     if (!options?.skipValidation) {
-      const validationResult = await deps.validationService.validate(model, settings, {
+      const validationResult = await deps.parserService.validateModel(model, settings, {
         existingVoiceIds: options?.existingVoiceIds
       });
 
@@ -81,23 +82,26 @@ export async function saveFileFlow(
     }
 
     // Fallback: generate code directly (only if validation skipped or didn't provide code)
-    const code = deps.codeGeneratorService.generateCode(model, settings, { allowPartialModel: options?.forceOnErrors === true });
-
-    // Final sanity check for generated code - ALWAYS run this if we are falling back
-    const syntaxResult = await deps.parserService.parseSource(code);
-    if (syntaxResult.hasErrors && !options?.forceOnErrors) {
+    // Final sanity check for generated code - ALWAYS run this if we are falling back;
+    // the worker parses it back and answers with the verdict only.
+    const { code, hasErrors, errors } = await deps.parserService.generateCheckedCode(model, settings, {
+      allowPartialModel: options?.forceOnErrors === true,
+    });
+    if (hasErrors && !options?.forceOnErrors) {
         return {
             success: false,
             validationResult: {
                 isValid: false,
-                errors: syntaxResult.errors?.map((e: ParseError) => ({
-                    type: 'syntax_error' as const,
-                    message: e.message || 'Syntax error',
-                    position: e.position
-                })) || [{
-                    type: 'syntax_error' as const,
-                    message: 'Syntax error detected (sanity check)',
-                }],
+                errors: errors.length > 0
+                  ? errors.map((e) => ({
+                      type: 'syntax_error' as const,
+                      message: e.message || 'Syntax error',
+                      position: e.position
+                    }))
+                  : [{
+                      type: 'syntax_error' as const,
+                      message: 'Syntax error detected (sanity check)',
+                    }],
                 warnings: []
             }
         };

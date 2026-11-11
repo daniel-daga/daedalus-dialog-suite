@@ -30,7 +30,7 @@ jest.mock('../src/main/services/serviceRegistry', () => ({
   },
   getServiceRegistry: () => ({
     fileService: {}, parserService: (jest.requireMock('../src/main/services/serviceRegistry') as any).__parser,
-    codeGeneratorService: {}, validationService: {}, projectService: {}, settingsService: {},
+    projectService: {}, settingsService: {},
     fileWatcherService: {}, updaterService: {}, worldService: {}, worldFoldersService: {},
     logService: { log: jest.fn(), getLogFilePath: jest.fn() },
     pathValidator: {},

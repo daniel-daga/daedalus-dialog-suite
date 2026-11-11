@@ -24,8 +24,8 @@ dialog editor.
 300 ms, then goes into the file's `semanticModel` in `fileStore` (through
 `historyActions`, which records a snapshot first and marks the file dirty).
 Auto-save or Ctrl+S flushes any pending keystroke, validates and regenerates the
-whole file in the main process (`SaveFileFlow` → `ValidationService` →
-`CodeGeneratorService`), and `FileService` stages it to a sibling temp file,
+whole file (`SaveFileFlow` → `ValidationService` → `CodeGeneratorService`; in
+the main process when this was written, in the forked parser pool since #546), and `FileService` stages it to a sibling temp file,
 fsyncs, and renames it into place with a disk-version precondition. External
 changes come back through chokidar, are batched for 250 ms, and either reload a
 clean file in place or mark a conflict on a dirty one.

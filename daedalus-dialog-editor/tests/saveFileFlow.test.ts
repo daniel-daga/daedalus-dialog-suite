@@ -8,6 +8,8 @@
  * the same pipeline rather than a second copy of it.
  *
  * Pure move: every assertion below describes behavior the handler already had.
+ * Validation, generation and the parse-back go to the parser pool (#546), so
+ * the flow's only codegen dependency is `parserService`.
  *
  * @jest-environment node
  */
@@ -21,32 +23,28 @@ const SETTINGS = { indentSize: 4 };
 
 type Calls = {
   validatePathResolved: jest.Mock;
-  validate: jest.Mock;
-  generateCode: jest.Mock;
-  parseSource: jest.Mock;
+  validateModel: jest.Mock;
+  generateCheckedCode: jest.Mock;
   writeFile: jest.Mock;
 };
 
 function makeDeps(overrides: Partial<Calls> = {}): { deps: SaveFileDeps; calls: Calls } {
   const calls: Calls = {
     validatePathResolved: jest.fn(async () => undefined),
-    validate: jest.fn(async () => ({
+    validateModel: jest.fn(async () => ({
       isValid: true,
       errors: [],
       warnings: [],
       generatedCode: 'INSTANCE DIA_Test (C_INFO) {};',
     })),
-    generateCode: jest.fn(() => 'fallback code'),
-    parseSource: jest.fn(async () => ({ hasErrors: false })),
+    generateCheckedCode: jest.fn(async () => ({ code: 'fallback code', hasErrors: false, errors: [] })),
     writeFile: jest.fn(async () => ({ success: true, encoding: 'windows-1252' })),
     ...overrides,
   } as Calls;
 
   const deps = {
     pathValidator: { validatePathResolved: calls.validatePathResolved },
-    validationService: { validate: calls.validate },
-    codeGeneratorService: { generateCode: calls.generateCode },
-    parserService: { parseSource: calls.parseSource },
+    parserService: { validateModel: calls.validateModel, generateCheckedCode: calls.generateCheckedCode },
     fileService: { writeFile: calls.writeFile },
   } as unknown as SaveFileDeps;
 
@@ -70,17 +68,17 @@ describe('saveFileFlow', () => {
       'INSTANCE DIA_Test (C_INFO) {};',
       { expectedVersion: 'v1', backupBeforeWrite: false }
     );
-    expect(calls.generateCode).not.toHaveBeenCalled();
+    expect(calls.generateCheckedCode).not.toHaveBeenCalled();
     expect(result).toMatchObject({ success: true, validationResult: { isValid: true } });
   });
 
   it('refuses to write an invalid model and returns the validation result', async () => {
     const { deps, calls } = makeDeps({
-      validate: jest.fn(async () => ({
+      validateModel: jest.fn(async () => ({
         isValid: false,
         errors: [{ type: 'missing_reference', message: 'nope' }],
         warnings: [],
-      })) as Calls['validate'],
+      })) as Calls['validateModel'],
     });
 
     const result = await saveFileFlow(deps, 'C:/proj/DIA_Test.d', MODEL, SETTINGS);
@@ -94,7 +92,7 @@ describe('saveFileFlow', () => {
 
   it('force-on-errors writes anyway, backs the file up first, and never expects it unchanged when overwriting', async () => {
     const { deps, calls } = makeDeps({
-      validate: jest.fn(async () => ({ isValid: false, errors: [], warnings: [], generatedCode: 'forced' })) as Calls['validate'],
+      validateModel: jest.fn(async () => ({ isValid: false, errors: [], warnings: [], generatedCode: 'forced' })) as Calls['validateModel'],
     });
 
     await saveFileFlow(deps, 'C:/proj/DIA_Test.d', MODEL, SETTINGS, {
@@ -111,16 +109,17 @@ describe('saveFileFlow', () => {
 
   it('falls back to generating directly when validation is skipped, and parse-gates that code', async () => {
     const { deps, calls } = makeDeps({
-      parseSource: jest.fn(async () => ({
+      generateCheckedCode: jest.fn(async () => ({
+        code: 'broken',
         hasErrors: true,
         errors: [{ message: 'unexpected token', position: { line: 3 } }],
-      })) as Calls['parseSource'],
+      })) as Calls['generateCheckedCode'],
     });
 
     const result = await saveFileFlow(deps, 'C:/proj/DIA_Test.d', MODEL, SETTINGS, { skipValidation: true });
 
-    expect(calls.validate).not.toHaveBeenCalled();
-    expect(calls.generateCode).toHaveBeenCalled();
+    expect(calls.validateModel).not.toHaveBeenCalled();
+    expect(calls.generateCheckedCode).toHaveBeenCalledWith(MODEL, SETTINGS, { allowPartialModel: false });
     expect(result).toEqual({
       success: false,
       validationResult: {

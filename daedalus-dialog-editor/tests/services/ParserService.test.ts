@@ -246,6 +246,27 @@ describe('ParserService worker lifecycle', () => {
     const parse = await svc.parseSource('func void x() {};');
     expect(parse).toEqual({ id: expect.any(String), sourceCode: 'func void x() {};' });
   });
+
+  // #546: validation and generation leave the main thread — each is one
+  // request to a worker carrying the model, never work done here.
+  it('posts validate and generate requests to a worker with the model', async () => {
+    const svc = makeService('request-echo.worker.js');
+    const model = { dialogs: {}, functions: {} } as never;
+    const settings = { indentChar: '\t', includeComments: true, sectionHeaders: true, uppercaseKeywords: true } as const;
+
+    await expect(svc.validateModel(model, settings, { existingDialogs: ['A'] })).resolves.toMatchObject({
+      op: 'validate', model, settings, options: { existingDialogs: ['A'] },
+    });
+    await expect(svc.generateCode(model, settings)).resolves.toMatchObject({
+      op: 'generate', model, settings, allowPartialModel: false,
+    });
+    await expect(svc.generateDialogCode(model, 'DIA_A', settings)).resolves.toMatchObject({
+      op: 'generateDialog', model, dialogName: 'DIA_A', settings,
+    });
+    await expect(svc.generateCheckedCode(model, settings, { allowPartialModel: true })).resolves.toMatchObject({
+      op: 'generateChecked', model, settings, allowPartialModel: true,
+    });
+  });
 });
 
 describe('describeExit', () => {

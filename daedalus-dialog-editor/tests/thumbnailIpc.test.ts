@@ -32,7 +32,7 @@ const mockCache: { current: ThumbnailCacheService | null } = { current: null };
 
 jest.mock('../src/main/services/serviceRegistry', () => ({
   getServiceRegistry: () => ({
-    fileService: {}, parserService: {}, codeGeneratorService: {}, validationService: {},
+    fileService: {}, parserService: {},
     projectService: {}, settingsService: {}, fileWatcherService: {}, updaterService: {},
     worldService: { openAssetSources: () => [] },
     worldFoldersService: {},

@@ -5,6 +5,13 @@ import { ForkedWorker, describeExit } from './ForkedWorker';
 import { WorkerRequestError } from './WorkerRequestError';
 import { workerPoolSize } from './workerPoolSize';
 import type { NpcDefinition, NpcEdit } from 'daedalus-parser/npc-definition';
+import type { CheckedCode, ParserRequest } from '../workers/parser.worker';
+import type {
+  CodeGenerationSettings,
+  SemanticModel,
+  ValidationOptions,
+  ValidationResult,
+} from '../../shared/types';
 
 const DEFAULT_PARSE_TIMEOUT_MS = 30000;
 const RESTART_WINDOW_MS = 60000;
@@ -15,10 +22,12 @@ interface PendingRequest {
   reject: (reason?: any) => void;
 }
 
+type WithoutId<T> = T extends unknown ? Omit<T, 'id'> : never;
+
 interface QueuedRequest {
   id: string;
   /** Posted to the worker beside `id` — see `ParserRequest` in parser.worker.ts. */
-  payload: { sourceCode: string; npc?: 'extract' | 'apply'; edits?: NpcEdit[] };
+  payload: WithoutId<ParserRequest>;
 }
 
 interface InFlight {
@@ -223,7 +232,7 @@ export class ParserService {
 
   /**
    * Parse Daedalus source code and return semantic model asynchronously.
-   * Offloads parsing to a worker thread pool to avoid blocking the main process.
+   * Offloads parsing to the forked worker pool to avoid blocking the main process.
    */
   async parseSource(sourceCode: string): Promise<any> {
     return this.request({ sourceCode });
@@ -237,6 +246,42 @@ export class ParserService {
   /** An NPC instance's source with `edits` patched in. */
   async applyNpcEdits(sourceText: string, edits: NpcEdit[]): Promise<string> {
     return this.request({ sourceCode: sourceText, npc: 'apply', edits });
+  }
+
+  /**
+   * Validate a model — generate, parse the result back, check it — in a
+   * worker (#546). The main thread used to do the normalize and generate
+   * itself, which froze the window for ~0.6 s on a large constants file.
+   */
+  async validateModel(
+    model: SemanticModel,
+    settings: CodeGenerationSettings,
+    options: ValidationOptions = {},
+  ): Promise<ValidationResult> {
+    return this.request({ op: 'validate', model, settings, options });
+  }
+
+  /** Generate a model's source in a worker. */
+  async generateCode(
+    model: SemanticModel,
+    settings: CodeGenerationSettings,
+    options?: { allowPartialModel?: boolean },
+  ): Promise<string> {
+    return this.request({ op: 'generate', model, settings, allowPartialModel: options?.allowPartialModel === true });
+  }
+
+  /** Generate one dialog's source in a worker. */
+  async generateDialogCode(model: SemanticModel, dialogName: string, settings: CodeGenerationSettings): Promise<string> {
+    return this.request({ op: 'generateDialog', model, dialogName, settings });
+  }
+
+  /** Generate in a worker and parse the text back there; only the verdict returns. */
+  async generateCheckedCode(
+    model: SemanticModel,
+    settings: CodeGenerationSettings,
+    options?: { allowPartialModel?: boolean },
+  ): Promise<CheckedCode> {
+    return this.request({ op: 'generateChecked', model, settings, allowPartialModel: options?.allowPartialModel === true });
   }
 
   private request(payload: QueuedRequest['payload']): Promise<any> {

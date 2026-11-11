@@ -88,6 +88,14 @@ file, and housekeeping in the dependency set and the lint configuration.
      about 45 ms. The window does not repaint or answer IPC meanwhile.
    - **Fix:** do both in the parser pool, which already gets the generated
      text. The model crosses once.
+   - **Fixed 2026-11-11:** the parser worker takes `validate`, `generate`,
+     `generateDialog` and `generateChecked` requests (`ParserService.validateModel`
+     and friends); `saveFileFlow`, `validation:validate` and both generator
+     handlers go through them, and the registry no longer holds a main-side
+     validator or generator. The parse-back's model stays in the worker. A
+     15,000-constant save now stalls the main event loop for ~19 ms (the
+     model's serialize), down from ~610 ms. Codegen now needs a live pool: a
+     crash-looping pool refuses generation as it already refused saves.
    - **If we skip it:** a visible hitch on each save of a globals or constants
      file, nothing for dialog files.
 

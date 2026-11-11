@@ -52,8 +52,8 @@ needed for *verify* and *create* already exists main-side:
 | Capability | Existing surface |
 |---|---|
 | Parse | `ParserService.parseSource` (worker pool, timeout, crash budget) |
-| Validate | `ValidationService.validate` — returns errors, warnings, and `generatedCode` without writing |
-| Generate | `CodeGeneratorService.generateCode` / `generateDialogCode` |
+| Validate | `ParserService.validateModel` — runs `ValidationService.validate` in a worker (#546); returns errors, warnings, and `generatedCode` without writing |
+| Generate | `ParserService.generateCode` / `generateDialogCode` (in a worker, #546) |
 | Project introspection | `ProjectService.buildProjectIndex`, `extractDialogMetadata` |
 | Safe write | the `generator:saveFile` flow (validate → generate → atomic temp+rename write, mtime guard, watcher self-write suppression) |
 | Path containment | `PathValidationService.validatePathResolved` |
@@ -64,8 +64,9 @@ construct all services at module scope and export nothing. Construction now
 lives in `src/main/services/serviceRegistry.ts`, a memoized composition root
 that `main.ts` and any later main-side consumer both take, and the body of
 the `generator:saveFile` handler is `src/main/services/SaveFileFlow.ts` —
-`saveFileFlow(deps, filePath, model, settings, options)`, taking its six
-services as an injected `SaveFileDeps`, so IPC and MCP share one save
+`saveFileFlow(deps, filePath, model, settings, options)`, taking its
+services as an injected `SaveFileDeps` (three since #546 moved validation and
+generation into the parser pool), so IPC and MCP share one save
 pipeline instead of duplicating it. Pure move; no behavior change.
 
 Two constraints the refactor had to respect, and which a later change must
@@ -160,7 +161,7 @@ a `Map` — tool results need an explicit JSON-safe serialization.
 | `read_source_file` | path → source text (encoding-aware via `FileService`) |
 | `get_semantic_model` | path → parsed `SemanticModel` summary (names, properties, action digests — not the raw full model; it is large) |
 | `get_dialog` | path + dialog name → full dialog + linked condition/information functions |
-| `validate_file` | path → parse + `ValidationService.validate` result (errors, warnings) |
+| `validate_file` | path → parse + `ParserService.validateModel` result (errors, warnings) |
 | `validate_model` | model JSON (+ settings) → `ValidationResult` — the "dry-run save" |
 | `check_roundtrip` | path → parse → generate → reparse → structural diff report (parity with `scripts/roundtrip-corpus.js` semantics) |
 
