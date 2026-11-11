@@ -35,6 +35,7 @@
 
 import * as path from 'path';
 import * as fs from 'fs/promises';
+import { isPathInside } from '../utils/pathContainment';
 
 export class PathValidationError extends Error {
   constructor(
@@ -60,19 +61,6 @@ export class PathValidationService {
   constructor(allowedBasePaths: string[]) {
     this.allowedRoots = new Set(allowedBasePaths.map(p => path.normalize(p)));
     this.allowedFiles = new Set();
-  }
-
-  /**
-   * Segment-aware containment: is `candidate` inside `root` (or equal to it)?
-   * Correctly allows siblings whose first segment merely begins with '..'
-   * (e.g. `<root>/..backup`), and rejects true traversal and cross-drive paths.
-   */
-  private isContained(root: string, candidate: string): boolean {
-    const rel = path.relative(root, candidate);
-    return (
-      rel === '' ||
-      (rel !== '..' && !rel.startsWith('..' + path.sep) && !path.isAbsolute(rel))
-    );
   }
 
   private onSameDrive(a: string, b: string): boolean {
@@ -242,7 +230,7 @@ export class PathValidationService {
     // Recursive allowed roots (canonicalized).
     for (const root of this.allowedRoots) {
       const canonRoot = await this.canonicalizeAllowed(root);
-      if (this.onSameDrive(canonRoot, resolved) && this.isContained(canonRoot, resolved)) {
+      if (this.onSameDrive(canonRoot, resolved) && isPathInside(canonRoot, resolved)) {
         return;
       }
     }

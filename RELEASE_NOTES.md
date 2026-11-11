@@ -143,3 +143,4 @@
 - #459: Adding a choice or a quest step to an empty if/else branch works
 - #460: The Teach arguments field keeps a typed comma, so another argument can be added
 - #529: An Npc_KnowsInfo(...) == FALSE gate evaluates in the simulator instead of reading as unknown
+- #544: Opening a project no longer follows links that lead outside its folder, so the project lists no files the editor then refuses to open

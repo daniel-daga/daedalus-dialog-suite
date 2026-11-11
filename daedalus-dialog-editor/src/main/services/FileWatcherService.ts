@@ -11,8 +11,9 @@
 
 import { watch, type FSWatcher } from 'chokidar';
 import type { BrowserWindow } from 'electron';
-import { statSync } from 'fs';
+import { realpathSync, statSync } from 'fs';
 import { canonicalPathKey } from '../utils/pathKey';
+import { isPathInside } from '../utils/pathContainment';
 
 interface PathStats {
   isFile(): boolean;
@@ -119,6 +120,25 @@ export class FileWatcherService {
 
     this.watchedPath = projectPath;
 
+    // The scan's rule (#544): a link whose real path leaves the project root
+    // is not part of the project, so it is neither indexed nor watched. A
+    // root that cannot be resolved leaves the rule off rather than ignoring
+    // everything.
+    let realRoot: string | null = null;
+    try {
+      realRoot = realpathSync.native(projectPath);
+    } catch {
+      realRoot = null;
+    }
+    const resolvesOutsideRoot = (filePath: string): boolean => {
+      if (!realRoot) return false;
+      try {
+        return !isPathInside(realRoot, realpathSync.native(filePath));
+      } catch {
+        return false; // vanished or dangling: chokidar reports it as it sees it
+      }
+    };
+
     this.watcher = watch(projectPath, {
       // Only watch .d files (Daedalus source files); always recurse into
       // directories so their .d files are seen.
@@ -127,8 +147,8 @@ export class FileWatcherService {
         // Directories must be traversed. Without stats we cannot tell a
         // dotted directory (e.g. "Mod.bak/") from a file, so we do NOT ignore
         // — chokidar will re-evaluate with stats on the next pass.
-        if (!stats || stats.isDirectory()) return false;
-        return !filePath.toLowerCase().endsWith('.d');
+        if (stats && !stats.isDirectory() && !filePath.toLowerCase().endsWith('.d')) return true;
+        return resolvesOutsideRoot(filePath);
       },
       persistent: true,
       ignoreInitial: true,

@@ -44,7 +44,11 @@ against it, and the residual TOCTOU windows below are accepted with that in mind
 
 Junction-heavy mod layouts whose target lies outside the chosen root are now
 rejected by design — the error must be readable and point the user at the real
-folder. A manual Windows pass on this UX is in the
+folder. The project scan and the file watcher apply the same rule
+(#544): a link whose real path leaves the root is neither indexed nor watched,
+so the index never lists a file `file:read` would refuse, and a link to a drive
+root cannot make a project open walk the disk. The scan logs the skipped links
+once per open. A manual Windows pass on this UX is in the
 [release checklist](../release-checklist.md#4-manual-desktop--packaged-qa).
 
 ## IPC boundary hardening
