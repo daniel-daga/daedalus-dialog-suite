@@ -11,11 +11,33 @@ import { useEditorStore } from '../src/renderer/store/editorStore';
 import { useProjectStore } from '../src/renderer/store/projectStore';
 
 const mockSaveFile = jest.spyOn(window.editorAPI, 'saveFile');
+const mockValidateModel = jest.spyOn(window.editorAPI, 'validateModel');
 
 const SELF = 'C:/mod/DIA_Self.d';
 const OTHER = 'C:/mod/DIA_Other.d';
 
-const model = { dialogs: {}, functions: {}, hasErrors: false, errors: [] };
+// The saved file uses DIA_X_15_00 and a conditional's DIA_NESTED_15_00; the
+// expression-valued id must never be looked up.
+const model = {
+  dialogs: {},
+  functions: {
+    DIA_Self_Info: {
+      name: 'DIA_Self_Info',
+      actions: [
+        { type: 'DialogLine', speaker: 'self', text: 'X', id: 'DIA_X_15_00' },
+        {
+          type: 'ConditionalAction',
+          condition: 'TRUE',
+          thenActions: [{ type: 'DialogLine', speaker: 'self', text: 'N', id: 'DIA_Nested_15_00' }],
+          elseActions: [],
+        },
+        { type: 'DialogLine', speaker: 'self', text: 'E', id: 'DIA_Expr_15_00', idIsExpression: true },
+      ],
+    },
+  },
+  hasErrors: false,
+  errors: [],
+};
 
 const openSelf = () => {
   useEditorStore.setState({
@@ -36,10 +58,12 @@ describe('saveFile existingVoiceIds option', () => {
       success: true,
       validationResult: { isValid: true, errors: [], warnings: [] },
     } as any);
+    mockValidateModel.mockReset();
+    mockValidateModel.mockResolvedValue({ isValid: true, errors: [], warnings: [] } as any);
     openSelf();
   });
 
-  test('excludes the saved file\'s own entries and drops self-only ids', async () => {
+  test('carries only the ids this file uses, minus the file own entries', async () => {
     useProjectStore.setState({
       projectPath: 'C:/mod',
       voiceIdIndex: {
@@ -47,9 +71,12 @@ describe('saveFile existingVoiceIds option', () => {
           { filePath: SELF, functionName: 'DIA_Self_Info' },
           { filePath: OTHER, functionName: 'DIA_Other_Info' },
         ],
+        DIA_NESTED_15_00: [{ filePath: OTHER, functionName: 'DIA_Other_Nested' }],
+        DIA_EXPR_15_00: [{ filePath: OTHER, functionName: 'DIA_Other_Expr' }],
         DIA_Y_15_01: [
           { filePath: SELF, functionName: 'DIA_Self_Choice' },
         ],
+        DIA_UNUSED_15_02: [{ filePath: OTHER, functionName: 'DIA_Other_Unused' }],
       },
     } as any);
 
@@ -57,6 +84,24 @@ describe('saveFile existingVoiceIds option', () => {
 
     expect(mockSaveFile).toHaveBeenCalledTimes(1);
     const options = mockSaveFile.mock.calls[0][3] as any;
+    expect(options.existingVoiceIds).toEqual({
+      DIA_X_15_00: [{ filePath: OTHER, functionName: 'DIA_Other_Info' }],
+      DIA_NESTED_15_00: [{ filePath: OTHER, functionName: 'DIA_Other_Nested' }],
+    });
+  });
+
+  test('carries the same filtered map on the validateFile path', async () => {
+    useProjectStore.setState({
+      projectPath: 'C:/mod',
+      voiceIdIndex: {
+        DIA_X_15_00: [{ filePath: OTHER, functionName: 'DIA_Other_Info' }],
+        DIA_UNUSED_15_02: [{ filePath: OTHER, functionName: 'DIA_Other_Unused' }],
+      },
+    } as any);
+
+    await useEditorStore.getState().validateFile(SELF);
+
+    const options = mockValidateModel.mock.calls[0][2] as any;
     expect(options.existingVoiceIds).toEqual({
       DIA_X_15_00: [{ filePath: OTHER, functionName: 'DIA_Other_Info' }],
     });

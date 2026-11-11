@@ -73,6 +73,9 @@ file, and housekeeping in the dependency set and the lint configuration.
      Main then reads only the keys the saved file's lines use. Paid per
      auto-save, on both main threads.
    - **Fix:** send the entries for the ids in the saved model.
+   - **Fixed:** 2026-11-11 — `buildExistingVoiceIds` now walks the saved
+     model's literal dialog-line ids and sends only those entries, so the
+     payload is file-sized; the wire shape is unchanged.
    - **If we skip it:** auto-save cost grows with the project.
 
 4. **Validate and generate run on the main thread** — #546
