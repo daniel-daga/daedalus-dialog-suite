@@ -6,6 +6,15 @@
  */
 
 import { ValidationService } from '../src/main/services/ValidationService';
+import type { SemanticModel } from '../src/shared/types';
+
+/**
+ * A few fixtures are deliberately not well-typed models: they exercise the
+ * legacy JSON the parser normalizes (an action with no `type`) or a bad value
+ * the validator has to report (an empty speaker), which `SemanticModel` cannot
+ * express. Only those fixtures go through here.
+ */
+const looseModel = (json: unknown): SemanticModel => json as SemanticModel;
 
 // Mock ParserService
 const mockParseSource = jest.fn();
@@ -59,7 +68,7 @@ describe('ValidationService', () => {
         functions: {
           'DIA_Test_Condition': {
             name: 'DIA_Test_Condition',
-            returnType: 'INT',
+            returnType: 'INT' as const,
             actions: [],
             conditions: [],
             calls: []
@@ -94,7 +103,7 @@ describe('ValidationService', () => {
         functions: {
           'BrokenFunc': {
             name: 'BrokenFunc',
-            returnType: 'VOID',
+            returnType: 'VOID' as const,
             actions: [],
             conditions: [],
             calls: []
@@ -236,7 +245,7 @@ describe('ValidationService', () => {
         functions: {
           'DIA_Test_Info': {
             name: 'DIA_Test_Info',
-            returnType: 'VOID',
+            returnType: 'VOID' as const,
             actions: [],
             conditions: [],
             calls: []
@@ -264,7 +273,10 @@ describe('ValidationService', () => {
             parent: 'C_INFO',
             properties: {
               npc: 'TestNpc',
-              condition: { name: 'NonExistentCondition', returnType: 'INT' }
+              condition: {
+                name: 'NonExistentCondition', returnType: 'INT' as const,
+                actions: [], conditions: [], calls: [],
+              }
             }
           }
         },
@@ -298,7 +310,7 @@ describe('ValidationService', () => {
         functions: {
           'DIA_Test_Condition': {
             name: 'DIA_Test_Condition',
-            returnType: 'INT',
+            returnType: 'INT' as const,
             actions: [],
             conditions: [],
             calls: []
@@ -326,22 +338,28 @@ describe('ValidationService', () => {
             parent: 'C_INFO',
             properties: {
               npc: 'TestNpc',
-              condition: { name: 'DIA_Test_Condition', returnType: 'INT' },
-              information: { name: 'DIA_Test_Info', returnType: 'VOID' }
+              condition: {
+                name: 'DIA_Test_Condition', returnType: 'INT' as const,
+                actions: [], conditions: [], calls: [],
+              },
+              information: {
+                name: 'DIA_Test_Info', returnType: 'VOID' as const,
+                actions: [], conditions: [], calls: [],
+              }
             }
           }
         },
         functions: {
           'DIA_Test_Condition': {
             name: 'DIA_Test_Condition',
-            returnType: 'INT',
+            returnType: 'INT' as const,
             actions: [],
             conditions: [],
             calls: []
           },
           'DIA_Test_Info': {
             name: 'DIA_Test_Info',
-            returnType: 'VOID',
+            returnType: 'VOID' as const,
             actions: [],
             conditions: [],
             calls: []
@@ -438,9 +456,10 @@ describe('ValidationService', () => {
         functions: {
           'DIA_Test_Info': {
             name: 'DIA_Test_Info',
-            returnType: 'VOID',
+            returnType: 'VOID' as const,
             actions: [
               {
+                type: 'Choice' as const,
                 dialogRef: 'DIA_Choice',
                 text: 'Choose this',
                 targetFunction: 'NonExistentTarget'
@@ -470,9 +489,10 @@ describe('ValidationService', () => {
         functions: {
           'DIA_Test_Info': {
             name: 'DIA_Test_Info',
-            returnType: 'VOID',
+            returnType: 'VOID' as const,
             actions: [
               {
+                type: 'Choice' as const,
                 dialogRef: 'DIA_Choice',
                 text: 'Choose this',
                 targetFunction: 'DIA_Test_Choice1'
@@ -483,7 +503,7 @@ describe('ValidationService', () => {
           },
           'DIA_Test_Choice1': {
             name: 'DIA_Test_Choice1',
-            returnType: 'VOID',
+            returnType: 'VOID' as const,
             actions: [],
             conditions: [],
             calls: []
@@ -517,10 +537,10 @@ describe('ValidationService', () => {
         functions: {
           DIA_AlchemistWald_WhyMap_Believe: {
             name: 'DIA_AlchemistWald_WhyMap_Believe',
-            returnType: 'VOID',
+            returnType: 'VOID' as const,
             actions: [
               {
-                type: 'Choice',
+                type: 'Choice' as const,
                 dialogRef: 'DIA_AlchemistWald_Sicherheit',
                 text: 'Was brauchst du?',
                 targetFunction: 'DIA_AlchemistWald_Sicherheit'
@@ -531,7 +551,7 @@ describe('ValidationService', () => {
           },
           DIA_AlchemistWald_Sicherheit_Info: {
             name: 'DIA_AlchemistWald_Sicherheit_Info',
-            returnType: 'VOID',
+            returnType: 'VOID' as const,
             actions: [],
             conditions: [],
             calls: []
@@ -555,10 +575,10 @@ describe('ValidationService', () => {
         functions: {
           DIA_AlchemistWald_WhyMap_FU: {
             name: 'DIA_AlchemistWald_WhyMap_FU',
-            returnType: 'VOID',
+            returnType: 'VOID' as const,
             actions: [
               {
-                type: 'Choice',
+                type: 'Choice' as const,
                 dialogRef: 'DIA_AlchemistWald_WhyMap',
                 text: 'Buddler?',
                 targetFunction: 'DIA_alchemistWald_WhyMap_Buddler'
@@ -569,7 +589,7 @@ describe('ValidationService', () => {
           },
           DIA_AlchemistWald_WhyMap_Buddler: {
             name: 'DIA_AlchemistWald_WhyMap_Buddler',
-            returnType: 'VOID',
+            returnType: 'VOID' as const,
             actions: [],
             conditions: [],
             calls: []
@@ -595,10 +615,10 @@ describe('ValidationService', () => {
         functions: {
           'DIA_Test_Info': {
             name: 'DIA_Test_Info',
-            returnType: 'VOID',
+            returnType: 'VOID' as const,
             actions: [
               {
-                type: 'SetVariableAction',
+                type: 'SetVariableAction' as const,
                 variableName: '',
                 operator: '=',
                 value: 'LOG_RUNNING'
@@ -629,10 +649,10 @@ describe('ValidationService', () => {
         functions: {
           'DIA_Test_Info': {
             name: 'DIA_Test_Info',
-            returnType: 'VOID',
+            returnType: 'VOID' as const,
             actions: [
               {
-                type: 'SetVariableAction',
+                type: 'SetVariableAction' as const,
                 variableName: '   ',
                 operator: '=',
                 value: 'LOG_RUNNING'
@@ -663,10 +683,10 @@ describe('ValidationService', () => {
         functions: {
           'DIA_Test_Info': {
             name: 'DIA_Test_Info',
-            returnType: 'VOID',
+            returnType: 'VOID' as const,
             actions: [
               {
-                type: 'DialogLine',
+                type: 'DialogLine' as const,
                 speaker: '',
                 text: 'Hello',
                 id: 'DIA_Test_01'
@@ -680,7 +700,7 @@ describe('ValidationService', () => {
         errors: []
       };
 
-      const result = await validationService.validate(modelWithInvalidLine, defaultSettings);
+      const result = await validationService.validate(looseModel(modelWithInvalidLine), defaultSettings);
 
       expect(result.isValid).toBe(false);
       expect(result.errors).toContainEqual(
@@ -697,10 +717,10 @@ describe('ValidationService', () => {
         functions: {
           'DIA_Test_Info': {
             name: 'DIA_Test_Info',
-            returnType: 'VOID',
+            returnType: 'VOID' as const,
             actions: [
               {
-                type: 'LogEntry',
+                type: 'LogEntry' as const,
                 topic: '',
                 text: 'New entry'
               }
@@ -732,11 +752,11 @@ describe('ValidationService', () => {
         functions: {
           'DIA_Test_Info': {
             name: 'DIA_Test_Info',
-            returnType: 'VOID',
+            returnType: 'VOID' as const,
             actions: [
               {
-                type: 'RemoveInventoryItemsAction',
-                removeFunctionName: 'Npc_RemoveInvItem',
+                type: 'RemoveInventoryItemsAction' as const,
+                removeFunctionName: 'Npc_RemoveInvItem' as const,
                 removeNpc: 'self',
                 removeItem: 'ItMi_Gold'
               }
@@ -761,11 +781,11 @@ describe('ValidationService', () => {
         functions: {
           'DIA_Test_Info': {
             name: 'DIA_Test_Info',
-            returnType: 'VOID',
+            returnType: 'VOID' as const,
             actions: [
               {
-                type: 'RemoveInventoryItemsAction',
-                removeFunctionName: 'Npc_RemoveInvItems',
+                type: 'RemoveInventoryItemsAction' as const,
+                removeFunctionName: 'Npc_RemoveInvItems' as const,
                 removeNpc: 'self',
                 removeItem: 'ItMi_Gold'
               }
@@ -796,8 +816,8 @@ describe('ValidationService', () => {
         functions: {
           'DIA_Test_Info': {
             name: 'DIA_Test_Info',
-            returnType: 'VOID',
-            actions: [{ type: 'UseItemAction', target: 'self', item: '' }],
+            returnType: 'VOID' as const,
+            actions: [{ type: 'UseItemAction' as const, target: 'self', item: '' }],
             conditions: [],
             calls: []
           }
@@ -823,17 +843,17 @@ describe('ValidationService', () => {
         functions: {
           'DIA_Test_Info': {
             name: 'DIA_Test_Info',
-            returnType: 'VOID',
+            returnType: 'VOID' as const,
             actions: [
               {
-                type: 'SetVariableAction',
+                type: 'SetVariableAction' as const,
                 variableName: 'MIS_Quest',
                 operator: '=',
                 value: 'LOG_RUNNING'
               },
               {
-                type: 'DialogLine',
-                speaker: 'self',
+                type: 'DialogLine' as const,
+                speaker: 'self' as const,
                 text: 'Hello',
                 id: 'DIA_Test_01'
               }
@@ -860,7 +880,7 @@ describe('ValidationService', () => {
         functions: {
           'DIA_Legacy_Info': {
             name: 'DIA_Legacy_Info',
-            returnType: 'VOID',
+            returnType: 'VOID' as const,
             actions: [
               {
                 // No type, but looks like SetVariableAction
@@ -877,7 +897,7 @@ describe('ValidationService', () => {
         errors: []
       };
 
-      const result = await validationService.validate(legacyModel, defaultSettings);
+      const result = await validationService.validate(looseModel(legacyModel), defaultSettings);
 
       // Should still detect the error because deserializeSemanticModel adds the type
       expect(result.isValid).toBe(false);
@@ -914,7 +934,7 @@ describe('ValidationService', () => {
         functions: {
           'TestFunc': {
             name: 'TestFunc',
-            returnType: 'VOID',
+            returnType: 'VOID' as const,
             actions: [],
             conditions: [],
             calls: []
@@ -993,7 +1013,7 @@ describe('ValidationService', () => {
       functions: Object.fromEntries(
         Object.entries(functions).map(([name, actions]) => [
           name,
-          { name, returnType: 'VOID', actions, conditions: [], calls: [] }
+          { name, returnType: 'VOID' as const, actions, conditions: [], calls: [] }
         ])
       ),
       hasErrors: false,
@@ -1001,7 +1021,7 @@ describe('ValidationService', () => {
     });
 
     const line = (id: string, extra: Record<string, any> = {}) => ({
-      type: 'DialogLine',
+      type: 'DialogLine' as const,
       speaker: 'self',
       text: 'Hello',
       id,
@@ -1032,7 +1052,7 @@ describe('ValidationService', () => {
         DIA_Test_Info: [
           line('DIA_Test_15_00'),
           {
-            type: 'ConditionalAction',
+            type: 'ConditionalAction' as const,
             condition: 'MIS_Test == LOG_RUNNING',
             thenActions: [line('DIA_Test_15_00')],
             elseActions: []
@@ -1151,14 +1171,14 @@ describe('ValidationService', () => {
     const modelWithActions = (actions: any[]) => ({
       dialogs: {},
       functions: {
-        DIA_Test_Info: { name: 'DIA_Test_Info', returnType: 'VOID', actions, conditions: [], calls: [] }
+        DIA_Test_Info: { name: 'DIA_Test_Info', returnType: 'VOID' as const, actions, conditions: [], calls: [] }
       },
       hasErrors: false,
       errors: []
     });
 
     const conditional = (thenActions: any[], elseActions: any[] = []) => ({
-      type: 'ConditionalAction',
+      type: 'ConditionalAction' as const,
       condition: 'Wld_GetDay() == 0',
       thenActions,
       elseActions
@@ -1167,7 +1187,7 @@ describe('ValidationService', () => {
     test('reports a missing choice target inside a then branch', async () => {
       const model = modelWithActions([
         conditional([{
-          type: 'Choice',
+          type: 'Choice' as const,
           dialogRef: 'DIA_Test',
           text: 'More',
           targetFunction: 'DoesNotExist'
@@ -1193,7 +1213,7 @@ describe('ValidationService', () => {
 
     test('reports a required field missing inside an else branch', async () => {
       const model = modelWithActions([
-        conditional([], [{ type: 'DialogLine', speaker: 'self', text: 'Hi', id: '' }])
+        conditional([], [{ type: 'DialogLine' as const, speaker: 'self', text: 'Hi', id: '' }])
       ]);
 
       const result = await validationService.validate(model, defaultSettings);
@@ -1210,7 +1230,7 @@ describe('ValidationService', () => {
     test('reports a double quote in a choice text inside a then branch', async () => {
       const model = modelWithActions([
         conditional([{
-          type: 'Choice',
+          type: 'Choice' as const,
           dialogRef: 'DIA_Test',
           text: 'Say "hello"',
           targetFunction: 'DIA_Test_Info'
@@ -1235,7 +1255,7 @@ describe('ValidationService', () => {
       functions: {
         DIA_Test_Info: {
           name: 'DIA_Test_Info',
-          returnType: 'VOID',
+          returnType: 'VOID' as const,
           actions: [action],
           conditions: [],
           calls: []
@@ -1247,7 +1267,7 @@ describe('ValidationService', () => {
 
     test('should reject choice text containing a double quote', async () => {
       const model = modelWithAction({
-        type: 'Choice',
+        type: 'Choice' as const,
         dialogRef: 'DIA_Test',
         text: 'Say "hello" to him',
         targetFunction: 'DIA_Test_Info'
@@ -1267,7 +1287,7 @@ describe('ValidationService', () => {
 
     test('should reject log entry text containing a double quote', async () => {
       const model = modelWithAction({
-        type: 'LogEntry',
+        type: 'LogEntry' as const,
         topic: 'TOPIC_Test',
         text: 'He said "no"'
       });
@@ -1282,7 +1302,7 @@ describe('ValidationService', () => {
 
     test('should allow quotes in expression-valued choice text', async () => {
       const model = modelWithAction({
-        type: 'Choice',
+        type: 'Choice' as const,
         dialogRef: 'DIA_Test',
         text: 'B_BuildLearnString("Schmieden lernen", 10)',
         textIsExpression: true,
@@ -1298,7 +1318,7 @@ describe('ValidationService', () => {
 
     test('should allow backslashes and plain text', async () => {
       const model = modelWithAction({
-        type: 'Choice',
+        type: 'Choice' as const,
         dialogRef: 'DIA_Test',
         text: 'Pfad C:\\test (50% \\ mehr)',
         targetFunction: 'DIA_Test_Info'

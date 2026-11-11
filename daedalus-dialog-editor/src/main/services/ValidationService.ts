@@ -3,6 +3,7 @@ import type { CodeGeneratorService } from './CodeGeneratorService';
 import { deserializeSemanticModel } from 'daedalus-parser/semantic-model';
 import type {
   CodeGenerationSettings,
+  SemanticModel,
   ValidationError,
   ValidationOptions,
   ValidationResult,
@@ -125,7 +126,7 @@ export class ValidationService {
    * Validate a semantic model before saving
    */
   async validate(
-    model: any,
+    model: SemanticModel,
     settings: CodeGenerationSettings,
     options: ValidationOptions = {}
   ): Promise<ValidationResult> {

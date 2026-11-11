@@ -3,7 +3,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { parseAssetCatalog, parseVobFolders } from 'zen-world';
 import { getServiceRegistry } from './services/serviceRegistry';
-import { saveFileFlow, type SaveFileFlowOptions } from './services/SaveFileFlow';
+import { saveFileFlow } from './services/SaveFileFlow';
 import { runOpenWorldSmoke } from './openWorldSmoke';
 import { runParseSmoke } from './parseSmoke';
 import { applyWindowSecurity } from './windowSecurity';
@@ -36,6 +36,9 @@ import {
   assertAssetListRequest,
   assertAssetSearchRequest,
   assertVisualBoundsRequest,
+  assertCodeGenerationSettings,
+  assertValidationOptions,
+  assertFilePath,
   guardIpc,
 } from './ipcValidation';
 import { appendInsertNpcFlow } from './services/AppendInsertNpcFlow';
@@ -380,10 +383,14 @@ export function setupIpcHandlers() {
     }
   });
 
-  // Code generator handlers
-  ipcMain.handle('generator:generateCode', async (_event, model: any, settings: any) => {
+  // Code generator handlers. The payloads arrive as `unknown` because that is
+  // what the boundary can promise; each assert narrows it to the shared type
+  // the service takes, so deleting one fails the build rather than silently
+  // handing codegen an unchecked payload.
+  ipcMain.handle('generator:generateCode', async (_event, model: unknown, settings: unknown) => {
     try {
       assertModelShape(model);
+      assertCodeGenerationSettings(settings);
       return codeGeneratorService.generateCode(model, settings);
     } catch (error) {
       console.error('[IPC] generator:generateCode error:', error);
@@ -391,10 +398,13 @@ export function setupIpcHandlers() {
     }
   });
 
-  ipcMain.handle('generator:generateDialogCode', async (_event, model: any, dialogName: string, settings: any) => {
+  ipcMain.handle('generator:generateDialogCode', async (
+    _event, model: unknown, dialogName: unknown, settings: unknown,
+  ) => {
     try {
       assertModelShape(model);
       assertDialogName(dialogName);
+      assertCodeGenerationSettings(settings);
       return codeGeneratorService.generateDialogCode(model, dialogName, settings);
     } catch (error) {
       console.error('[IPC] generator:generateDialogCode error:', error);
@@ -403,9 +413,13 @@ export function setupIpcHandlers() {
   });
 
   // Validation handler - validates model without saving
-  ipcMain.handle('validation:validate', async (_event, model: any, settings: any, options?: any) => {
+  ipcMain.handle('validation:validate', async (
+    _event, model: unknown, settings: unknown, options: unknown,
+  ) => {
     try {
       assertModelShape(model);
+      assertCodeGenerationSettings(settings);
+      assertValidationOptions(options);
       return validationService.validate(model, settings, options);
     } catch (error) {
       console.error('[IPC] validation:validate error:', error);
@@ -413,7 +427,9 @@ export function setupIpcHandlers() {
     }
   });
 
-  ipcMain.handle('generator:saveFile', async (_event, filePath: string, model: any, settings: any, options?: SaveFileFlowOptions) =>
+  ipcMain.handle('generator:saveFile', async (
+    _event, filePath: unknown, model: unknown, settings: unknown, options: unknown,
+  ) =>
     saveFileFlow(
       { pathValidator, validationService, codeGeneratorService, parserService, fileService },
       filePath,
@@ -423,8 +439,9 @@ export function setupIpcHandlers() {
     ));
 
   // File I/O handlers
-  ipcMain.handle('file:read', (_event, filePath: string) =>
+  ipcMain.handle('file:read', (_event, filePath: unknown) =>
     guardIpc('file:read', 'Failed to read file', async () => {
+      assertFilePath(filePath);
       // Validate path before reading (symlink-resolved)
       await pathValidator.validatePathResolved(filePath);
 
@@ -433,15 +450,17 @@ export function setupIpcHandlers() {
 
   // `file:read` plus the disk version of the bytes read (#378). A caller that
   // writes the file back passes `version` as the write's `expectedVersion`.
-  ipcMain.handle('file:readVersioned', (_event, filePath: string) =>
+  ipcMain.handle('file:readVersioned', (_event, filePath: unknown) =>
     guardIpc('file:readVersioned', 'Failed to read file', async () => {
+      assertFilePath(filePath);
       await pathValidator.validatePathResolved(filePath);
 
       return await fileService.readFileVersioned(filePath);
     }));
 
-  ipcMain.handle('file:write', (_event, filePath: string, content: string, options?: { expectedVersion?: string }) =>
+  ipcMain.handle('file:write', (_event, filePath: unknown, content: string, options?: { expectedVersion?: string }) =>
     guardIpc('file:write', 'Failed to write file', async () => {
+      assertFilePath(filePath);
       // Validate path before writing (symlink-resolved, write mode)
       await pathValidator.validatePathResolved(filePath, { write: true });
 
@@ -645,16 +664,18 @@ export function setupIpcHandlers() {
     return readProjectOutputUnits(await settingsService.getGothicInstallPath());
   });
 
-  ipcMain.handle('project:buildIndex', (_event, folderPath: string) =>
+  ipcMain.handle('project:buildIndex', (_event, folderPath: unknown) =>
     guardIpc('project:buildIndex', 'Failed to build project index', async () => {
+      assertFilePath(folderPath);
       // Validate project folder path (symlink-resolved)
       await pathValidator.validatePathResolved(folderPath);
 
       return await projectService.buildProjectIndex(folderPath);
     }));
 
-  ipcMain.handle('project:parseDialogFile', (_event, filePath: string) =>
+  ipcMain.handle('project:parseDialogFile', (_event, filePath: unknown) =>
     guardIpc('project:parseDialogFile', 'Failed to parse dialog file', async () => {
+      assertFilePath(filePath);
       // Validate file path before parsing (symlink-resolved)
       await pathValidator.validatePathResolved(filePath);
 
@@ -684,8 +705,9 @@ export function setupIpcHandlers() {
       return { index: indexFile(request.filePath, model, request.layouts), model };
     }));
 
-  ipcMain.handle('project:addAllowedPath', async (_event, folderPath: string) => {
+  ipcMain.handle('project:addAllowedPath', async (_event, folderPath: unknown) => {
     try {
+      assertFilePath(folderPath);
       // Security: the renderer may only re-whitelist a path the user has
       // already opened (persisted in recent projects). Brand-new folders are
       // whitelisted by the main-process folder dialog and addRecentProject —
@@ -714,8 +736,9 @@ export function setupIpcHandlers() {
   });
 
   // File watcher handlers
-  ipcMain.handle('fileWatcher:start', (_event, projectPath: string) =>
+  ipcMain.handle('fileWatcher:start', (_event, projectPath: unknown) =>
     guardIpc('fileWatcher:start', 'Failed to start file watcher', async () => {
+      assertFilePath(projectPath);
       // Validate path before watching (symlink-resolved)
       await pathValidator.validatePathResolved(projectPath);
 
@@ -787,8 +810,9 @@ export function setupIpcHandlers() {
     }
   });
 
-  ipcMain.handle('updater:downloadUpdate', async (_event, url: string) => {
+  ipcMain.handle('updater:downloadUpdate', async (_event, url: unknown) => {
     try {
+      assertExternalUrl(url);
       const installerPath = await updaterService.downloadUpdate(url, (percent) => {
         if (mainWindow) {
           mainWindow.webContents.send('updater:downloadProgress', percent);
@@ -801,7 +825,7 @@ export function setupIpcHandlers() {
     }
   });
 
-  ipcMain.handle('updater:dismissVersion', async (_event, version: string) => {
+  ipcMain.handle('updater:dismissVersion', async (_event, version: unknown) => {
     try {
       await settingsService.setUpdaterDismissedVersion(typeof version === 'string' ? version : null);
     } catch (error) {
@@ -816,8 +840,9 @@ export function setupIpcHandlers() {
     await shell.openExternal(url);
   });
 
-  ipcMain.handle('updater:installUpdate', (_event, installerPath: string) => {
+  ipcMain.handle('updater:installUpdate', (_event, installerPath: unknown) => {
     try {
+      assertFilePath(installerPath);
       updaterService.installUpdate(installerPath);
     } catch (error) {
       console.error('[IPC] updater:installUpdate error:', error);

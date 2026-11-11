@@ -14,7 +14,10 @@ import {
 
 import type { NpcBodyRequest, VisualsRequest, WorldOp } from '../shared/worldTypes';
 import type { NpcEdit } from 'daedalus-parser/npc-definition';
-import type { RoutineArgIndex } from '../shared/types';
+import type {
+  CodeGenerationSettings, RoutineArgIndex, SemanticModel, ValidationOptions,
+} from '../shared/types';
+import type { SaveFileFlowOptions } from './services/SaveFileFlow';
 import { PROJECT_ASSET_SOURCE_LIMITS } from '../shared/projectConfigTypes';
 import { PathValidationError } from './services/PathValidationService';
 
@@ -73,8 +76,12 @@ export function assertOptionalFolderPath(value: unknown): asserts value is strin
 /**
  * Assert a semantic-model payload is a plain (non-array) object, and that its
  * `dialogs`/`functions` fields, when present, are plain objects too.
+ *
+ * Narrows to the shared model type so the compiler enforces that the check ran:
+ * without it a handler can pass the raw payload to a service that wants a model
+ * and still typecheck, which is how an unchecked `any` used to reach codegen.
  */
-export function assertModelShape(model: unknown): asserts model is Record<string, unknown> {
+export function assertModelShape(model: unknown): asserts model is SemanticModel {
   if (!isPlainObject(model)) {
     throw new Error('Invalid model payload: expected a plain object');
   }
@@ -83,6 +90,13 @@ export function assertModelShape(model: unknown): asserts model is Record<string
   }
   if (model.functions !== undefined && !isPlainObject(model.functions)) {
     throw new Error('Invalid model payload: functions must be a plain object');
+  }
+}
+
+/** Assert a file path payload is a non-empty string. */
+export function assertFilePath(filePath: unknown): asserts filePath is string {
+  if (typeof filePath !== 'string' || filePath.trim() === '') {
+    throw new Error('Invalid file path: expected a non-empty string');
   }
 }
 
@@ -210,10 +224,22 @@ export function assertExternalUrl(url: unknown): asserts url is string {
   }
 }
 
-/** Assert a settings payload is a plain object or undefined. */
-export function assertSaveFileSettings(settings: unknown): void {
-  if (settings !== undefined && !isPlainObject(settings)) {
-    throw new Error('Invalid settings payload: expected a plain object or undefined');
+/**
+ * Assert a code-generation settings payload is the plain object the generator
+ * reads. Requires an object rather than accepting `undefined` as the old
+ * `assertSaveFileSettings` did: the generator dereferences it immediately, so
+ * accepting it only moved the refusal one call deeper.
+ */
+export function assertCodeGenerationSettings(settings: unknown): asserts settings is CodeGenerationSettings {
+  if (!isPlainObject(settings)) {
+    throw new Error('Invalid settings payload: expected a plain object');
+  }
+}
+
+/** Assert a validation options payload is undefined or a plain object. */
+export function assertValidationOptions(options: unknown): asserts options is ValidationOptions | undefined {
+  if (options !== undefined && !isPlainObject(options)) {
+    throw new Error('Invalid options payload: expected a plain object or undefined');
   }
 }
 
@@ -268,7 +294,9 @@ function isVoiceIdIndex(value: unknown): boolean {
  * Assert a saveFile options payload is undefined or a plain object whose only
  * keys are the known options.
  */
-export function assertSaveFileOptions(options: unknown): void {
+export function assertSaveFileOptions(
+  options: unknown,
+): asserts options is SaveFileFlowOptions | undefined {
   if (options === undefined) return;
   if (!isPlainObject(options)) {
     throw new Error('Invalid options payload: expected a plain object or undefined');

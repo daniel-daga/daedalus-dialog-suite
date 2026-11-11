@@ -1,4 +1,8 @@
 import { contextBridge, ipcRenderer } from 'electron';
+import type {
+  CodeGenerationSettings, SaveResult, SemanticModel, ValidationOptions, ValidationResult,
+} from '../shared/types';
+import type { SaveFileFlowOptions } from './services/SaveFileFlow';
 
 // Expose protected methods that allow the renderer process to use
 // the ipcRenderer without exposing the entire object
@@ -12,12 +16,19 @@ contextBridge.exposeInMainWorld('editorAPI', {
   applyNpcEdits: (sourceText: string, edits: unknown[]) => ipcRenderer.invoke('npc:applyEdits', { sourceText, edits }),
 
   // Validation API
-  validateModel: (model: any, settings: any, options?: any) => ipcRenderer.invoke('validation:validate', model, settings, options),
+  validateModel: (
+    model: SemanticModel, settings: CodeGenerationSettings, options?: ValidationOptions,
+  ): Promise<ValidationResult> => ipcRenderer.invoke('validation:validate', model, settings, options),
 
   // Code Generator API
-  generateCode: (model: any, settings: any) => ipcRenderer.invoke('generator:generateCode', model, settings),
-  generateDialogCode: (model: any, dialogName: string, settings: any) => ipcRenderer.invoke('generator:generateDialogCode', model, dialogName, settings),
-  saveFile: (filePath: string, model: any, settings: any, options?: { skipValidation?: boolean; forceOnErrors?: boolean; overwriteExternal?: boolean; expectedVersion?: string; existingVoiceIds?: Record<string, Array<{ filePath: string; functionName: string }>> }) =>
+  generateCode: (model: SemanticModel, settings: CodeGenerationSettings): Promise<string> =>
+    ipcRenderer.invoke('generator:generateCode', model, settings),
+  generateDialogCode: (
+    model: SemanticModel, dialogName: string, settings: CodeGenerationSettings,
+  ): Promise<string> => ipcRenderer.invoke('generator:generateDialogCode', model, dialogName, settings),
+  saveFile: (
+    filePath: string, model: SemanticModel, settings: CodeGenerationSettings, options?: SaveFileFlowOptions,
+  ): Promise<SaveResult> =>
     ipcRenderer.invoke('generator:saveFile', filePath, model, settings, options),
 
   // File I/O API

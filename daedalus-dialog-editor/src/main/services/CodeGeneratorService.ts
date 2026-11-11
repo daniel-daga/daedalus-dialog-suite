@@ -1,6 +1,15 @@
 import { SemanticCodeGenerator } from 'daedalus-parser/semantic-code-generator';
 import { deserializeSemanticModel } from 'daedalus-parser/semantic-model';
-import type { CodeGenerationSettings } from '../../shared/types';
+import type { SemanticModel as ParserModel } from 'daedalus-parser/semantic-model';
+import type { CodeGenerationSettings, SemanticModel as WireModel } from '../../shared/types';
+
+/**
+ * The model as it crosses a process boundary: the editor's shared type, the
+ * normalized one ValidationService passes on, or the plain JSON of the same
+ * shape (the parser's fixture files, hand-written codegen tests). Not `unknown`
+ * and not `any`: a caller that skipped the boundary assertion fails to compile.
+ */
+type CodeGenerationModel = WireModel | ParserModel | Record<string, unknown>;
 
 export class CodeGeneratorService {
   /**
@@ -11,7 +20,7 @@ export class CodeGeneratorService {
    * save path passes it so the user can knowingly write a partial model.
    */
   generateCode(
-    plainModel: any,
+    plainModel: CodeGenerationModel,
     settings: CodeGenerationSettings,
     options?: { allowPartialModel?: boolean }
   ): string {
@@ -33,7 +42,7 @@ export class CodeGeneratorService {
   /**
    * Generate Daedalus code for a specific dialog
    */
-  generateDialogCode(plainModel: any, dialogName: string, settings: CodeGenerationSettings): string {
+  generateDialogCode(plainModel: CodeGenerationModel, dialogName: string, settings: CodeGenerationSettings): string {
     // Reconstruct the model with proper class instances
     const model = deserializeSemanticModel(plainModel);
 
