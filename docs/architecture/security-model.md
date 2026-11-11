@@ -188,6 +188,10 @@ this is why `npmRebuild: false` holds. That invariant, and the worker/NAPI safet
 net (CI's real-Electron E2E suite), are documented in
 [`worker-reliability.md`](./worker-reliability.md).
 
+The packaged binary sets `build.electronFuses`: `RunAsNode` on (the forked
+parser pools need it), `NODE_OPTIONS` and `--inspect` off, and app loading
+restricted to an integrity-checked asar.
+
 ## Release gating
 
 Publishing is structurally gated, so releasing from a red tree is not possible:
