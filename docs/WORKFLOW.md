@@ -27,6 +27,7 @@ handovers cost an hour a session:
 | **a 2026-09-04 review finding** — the second pass the 08-29 review never got | `docs/plans/level-editor-review-2026-09-04.md` |
 | settled parser fidelity and 2026-10-03 review outcomes | `docs/architecture/parser-fidelity.md` |
 | a 2026-11-10 parser audit finding (robustness, cost, structure) | `docs/reference/parser-review-2026-11-10.md` |
+| a 2026-11-10 editor audit finding (hostile projects, cost, dependencies, the process boundary) | `docs/reference/editor-review-2026-11-10.md` |
 | a dialog-simulator finding | `docs/plans/dialog-simulator-review-findings.md` |
 | a production-readiness finding | `docs/plans/production-readiness-review-findings.md` |
 | a 2026-07 code-review item | `docs/plans/code-review-2026-07-remediation.md` |

@@ -754,8 +754,10 @@ addressed by native index path rather than by a VOB id, because a VOB has two
 addresses and every op already resolves the path.
 
 The addon runs inside a **worker thread in the Electron main process**
-(`MetadataWorkerPool` precedent): a native crash kills the worker, not the
-app, and long loads never block the UI or IPC.
+(`MetadataWorkerPool` precedent, from before that pool became forked
+processes): long loads never block the UI or IPC. **It does not contain a
+native crash** — a segfault in a thread ends the main process, which is why
+the parser pools were moved out in #268; whether this worker follows is #543.
 
 Strings cross the boundary as windows-1252 bytes decoded/encoded at the
 binding edge with the repo's existing `iconv-lite` conventions — never

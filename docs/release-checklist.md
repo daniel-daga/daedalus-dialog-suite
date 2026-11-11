@@ -69,6 +69,9 @@ prototyping.
   (`Get-AuthenticodeSignature`, `Status -eq 'Valid'` + expected subject) before
   the updater spawns the installer.
 - [ ] Manual: confirm SmartScreen behavior on a clean VM and let reputation build.
+- [ ] Set the Electron fuses with the signing work (#549): no `NODE_OPTIONS`, no
+  `--inspect`, load only from the asar, asar integrity. **`RunAsNode` stays on** —
+  `ForkedWorker` starts the parser pools with `ELECTRON_RUN_AS_NODE=1`.
 
 ## 3. Release-gating dispatch verification
 
