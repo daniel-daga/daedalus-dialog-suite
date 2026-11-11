@@ -126,6 +126,17 @@ file, and housekeeping in the dependency set and the lint configuration.
      a deleted assertion; the newer ones take `unknown` and narrow.
      `tsconfig.main.json` also has the unused-symbol checks off, and the lint
      is not type-aware.
+   - **Fixed 2026-11-11:** those four handlers take `unknown` and narrow —
+     `assertModelShape` now yields the shared `SemanticModel`, beside the new
+     `assertCodeGenerationSettings`/`assertValidationOptions`/`assertFilePath`
+     and the existing `assertDialogName`/`assertExternalUrl`/`assertSaveFileOptions`
+     — so deleting one fails the build. `saveFileFlow`,
+     `ValidationService.validate`, `CodeGeneratorService` and `preload` carry
+     the shared types (the wire contract is unchanged). The rule is on as a
+     warning, and `tsconfig.main.json` has `noUnusedLocals`/`noUnusedParameters`
+     on with no fallout. What remains as warnings: 42 in `src/main` (the
+     validation action walker, parser-worker plumbing, the updater's release
+     JSON) and 60 in `src/renderer` outside `mockAPI.ts`, which was not retyped.
 
 ## Nice to have
 

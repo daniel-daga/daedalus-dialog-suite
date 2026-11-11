@@ -126,7 +126,11 @@ function generateThroughEditorPath(fixtureFile: string): { original: string; gen
   if (!parsed) {
     throw new Error(`fixture not parsed in beforeAll: ${fixtureFile}`);
   }
-  const generated = new CodeGeneratorService().generateCode(parsed.plainModel, EDITOR_SETTINGS);
+  // The fixture is the parser's own serialization of a model, so it crosses
+  // the same boundary the IPC payload does; it arrives as `unknown` only
+  // because it was read back from JSON.
+  const generated = new CodeGeneratorService()
+    .generateCode(parsed.plainModel as Record<string, unknown>, EDITOR_SETTINGS);
   return { original: parsed.original, generated };
 }
 

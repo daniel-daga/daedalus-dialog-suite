@@ -3,7 +3,10 @@ import type { ParserService } from './ParserService';
 import type { CodeGeneratorService } from './CodeGeneratorService';
 import type { ValidationService } from './ValidationService';
 import { PathValidationError, type PathValidationService } from './PathValidationService';
-import { assertModelShape, assertSaveFileSettings, assertSaveFileOptions } from '../ipcValidation';
+import {
+  assertCodeGenerationSettings, assertFilePath, assertModelShape, assertSaveFileOptions,
+} from '../ipcValidation';
+import type { ParseError, SaveResult } from '../../shared/types';
 
 /**
  * The save pipeline: assert the payload, validate the path, validate the
@@ -33,20 +36,21 @@ export interface SaveFileFlowOptions {
 
 export async function saveFileFlow(
   deps: SaveFileDeps,
-  filePath: string,
-  model: any,
-  settings: any,
-  options?: SaveFileFlowOptions
-): Promise<any> {
-  const expectedVersion = options?.overwriteExternal ? undefined : options?.expectedVersion;
-  // Force-on-errors overwrites drop content the parser could not read, so
-  // FileService first snapshots the on-disk file to `<name>.d.bak`.
-  const backupBeforeWrite = options?.forceOnErrors === true;
+  filePath: unknown,
+  model: unknown,
+  settings: unknown,
+  options?: unknown
+): Promise<SaveResult> {
   try {
     // Validate payload shapes before touching services
+    assertFilePath(filePath);
     assertModelShape(model);
-    assertSaveFileSettings(settings);
+    assertCodeGenerationSettings(settings);
     assertSaveFileOptions(options);
+    const expectedVersion = options?.overwriteExternal ? undefined : options?.expectedVersion;
+    // Force-on-errors overwrites drop content the parser could not read, so
+    // FileService first snapshots the on-disk file to `<name>.d.bak`.
+    const backupBeforeWrite = options?.forceOnErrors === true;
 
     // Validate path before saving (symlink-resolved, write mode)
     await deps.pathValidator.validatePathResolved(filePath, { write: true });
@@ -86,7 +90,7 @@ export async function saveFileFlow(
             success: false,
             validationResult: {
                 isValid: false,
-                errors: syntaxResult.errors?.map((e: any) => ({
+                errors: syntaxResult.errors?.map((e: ParseError) => ({
                     type: 'syntax_error' as const,
                     message: e.message || 'Syntax error',
                     position: e.position

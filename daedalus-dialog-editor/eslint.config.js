@@ -53,9 +53,10 @@ module.exports = [
         argsIgnorePattern: '^_',
         varsIgnorePattern: '^_'
       }],
-      // TODO: many deliberate `any`s across renderer/main paths (litegraph,
-      // IPC payloads, semantic-model interop). Re-enable once those are typed.
-      '@typescript-eslint/no-explicit-any': 'off'
+      // Warning, not off: the IPC boundary and semantic-model interop are typed
+      // now, and what remains is the renderer's untrusted-input plumbing and
+      // the action/condition unions. `pnpm lint` exits 0 on warnings.
+      '@typescript-eslint/no-explicit-any': 'warn'
     }
   }
 ];

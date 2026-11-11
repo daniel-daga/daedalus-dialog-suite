@@ -13,7 +13,9 @@ import {
   assertIndexFileRequest,
   assertOutputUnitLines,
   assertExternalUrl,
-  assertSaveFileSettings,
+  assertCodeGenerationSettings,
+  assertValidationOptions,
+  assertFilePath,
   assertSaveFileOptions,
   assertOpenWorldRequest,
   assertTextureRequest,
@@ -96,6 +98,57 @@ describe('assertModelShape', () => {
     expect(() => assertModelShape({})).not.toThrow();
     expect(() => assertModelShape({ dialogs: {}, functions: {} })).not.toThrow();
   });
+
+  // The narrowing exists so the compiler can enforce that this ran: a handler
+  // that skips it can no longer pass its payload to codegen or validation.
+  it('narrows a valid payload to the shared model type', () => {
+    const payload: unknown = {
+      dialogs: { DIA_Test: { name: 'DIA_Test', parent: 'C_INFO', properties: {} } },
+      functions: {},
+    };
+    assertModelShape(payload);
+    // Reaches a field of SemanticModel without a cast — the point of the assert.
+    expect(payload.dialogs.DIA_Test.name).toBe('DIA_Test');
+  });
+});
+
+describe('assertCodeGenerationSettings', () => {
+  it('accepts the settings object the generator reads', () => {
+    expect(() => assertCodeGenerationSettings({ indentChar: '\t', includeComments: true })).not.toThrow();
+  });
+
+  it('refuses a missing settings payload and a non-object', () => {
+    // `generator:generateCode` used to type this `any` and dereference it, so a
+    // payload missing `settings` failed deep inside codegen instead of here.
+    for (const bad of [undefined, null, [], 'x', 42]) {
+      expect(() => assertCodeGenerationSettings(bad)).toThrow(/settings/i);
+    }
+  });
+});
+
+describe('assertValidationOptions', () => {
+  it('accepts absent options and a plain object', () => {
+    expect(() => assertValidationOptions(undefined)).not.toThrow();
+    expect(() => assertValidationOptions({ existingDialogs: ['DIA_X'] })).not.toThrow();
+  });
+
+  it('refuses a non-object', () => {
+    for (const bad of [null, [], 'x', 42]) {
+      expect(() => assertValidationOptions(bad)).toThrow(/options/i);
+    }
+  });
+});
+
+describe('assertFilePath', () => {
+  it('accepts a non-empty path', () => {
+    expect(() => assertFilePath('C:/mod/DIA_Test.d')).not.toThrow();
+  });
+
+  it('refuses anything else', () => {
+    for (const bad of [undefined, null, 42, '', '   ', ['C:/a.d']]) {
+      expect(() => assertFilePath(bad)).toThrow(/file path/i);
+    }
+  });
 });
 
 describe('assertDialogName', () => {
@@ -136,21 +189,6 @@ describe('assertExternalUrl', () => {
 
   it('accepts an https URL', () => {
     expect(() => assertExternalUrl('https://github.com/x/releases/tag/v1')).not.toThrow();
-  });
-});
-
-describe('assertSaveFileSettings', () => {
-  it('accepts undefined', () => {
-    expect(() => assertSaveFileSettings(undefined)).not.toThrow();
-  });
-
-  it('accepts a plain object', () => {
-    expect(() => assertSaveFileSettings({})).not.toThrow();
-  });
-
-  it('rejects a non-object (array / string)', () => {
-    expect(() => assertSaveFileSettings([])).toThrow(/settings/i);
-    expect(() => assertSaveFileSettings('x')).toThrow(/settings/i);
   });
 });
 
