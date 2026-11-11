@@ -96,6 +96,8 @@ file, and housekeeping in the dependency set and the lint configuration.
      high), all in dev and build tooling — `wait-on`→`axios`, `electron-builder`,
      `ts-jest`→`handlebars`, `vite`. Electron 43 is the oldest supported major.
    - **Fix:** remove the seven, bump, add `pnpm audit --prod` to `all-tests.yml`.
+   - **Fixed 2026-11-11:** the seven are gone and `pnpm audit --prod` now runs
+     in the editor CI job; it reports nothing once #548's move landed.
 
 6. **Renderer libraries are production dependencies** — #548
    - **Not verified against a package.** electron-builder packs production
@@ -103,6 +105,10 @@ file, and housekeeping in the dependency set and the lint configuration.
      about 230 MB installed (`monaco-editor` 75, `@mui/icons-material` 89,
      `three` 33, `@mui/material` 19). Read `app.asar` before acting.
    - **Fix:** move what the main process does not require to `devDependencies`.
+   - **Fixed 2026-11-11:** verified against `dist/main`, which requires only
+     `chokidar`, `daedalus-parser`, `iconv-lite`, `zenkit-node` and `zen-world`;
+     every renderer library is a dev dependency now. The packaged smokes in
+     `build-windows.yml` are the gate, not a local repackage.
 
 7. **No Electron fuses** — #549
    - `build` has no `electronFuses`, and `release-checklist.md` now carries the

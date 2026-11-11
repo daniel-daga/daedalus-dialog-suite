@@ -123,6 +123,11 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # Production only: the dev/build toolchain carries ~200 advisories that
+      # would block every unrelated change. A regression here is shippable.
+      - name: Audit production dependencies
+        run: pnpm audit --prod
+
       # zen-world/dist is what `zen-world`'s package exports resolve to, and it
       # is produced by that package's postinstall hook. Building it explicitly
       # means an --ignore-scripts install (or a skipped build script) fails on
