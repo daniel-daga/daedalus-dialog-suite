@@ -60,6 +60,13 @@
       "**/node_modules/daedalus-parser/**/*.node",
       "**/node_modules/tree-sitter/**/*.node"
     ],
+    "electronFuses": {
+      "runAsNode": true,
+      "enableNodeOptionsEnvironmentVariable": false,
+      "enableNodeCliInspectArguments": false,
+      "onlyLoadAppFromAsar": true,
+      "enableEmbeddedAsarIntegrityValidation": true
+    },
     "directories": {
       "buildResources": "assets"
     },

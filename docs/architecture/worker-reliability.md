@@ -193,8 +193,9 @@ What the boundary costs and what it required:
   child's pipes, and an unread pipe fills up and blocks the writer mid-parse.
 - **`ELECTRON_RUN_AS_NODE=1`** in the child's env: under Electron
   `process.execPath` is the app binary, and only this makes the fork a plain
-  Node process. The **`npmRebuild: false` invariant above still applies** — it
-  is the same NAPI addon, loaded in a different process.
+  Node process. The **`RunAsNode` fuse must stay enabled** in
+  `build.electronFuses` for this. The **`npmRebuild: false` invariant above
+  still applies** — it is the same NAPI addon, loaded in a different process.
 
 `utilityProcess` was the other option and was not taken: it exists only inside a
 ready Electron app, so every one of the pool-lifecycle tests would have had to

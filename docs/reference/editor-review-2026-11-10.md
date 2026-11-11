@@ -107,6 +107,8 @@ file, and housekeeping in the dependency set and the lint configuration.
 7. **No Electron fuses** — #549
    - `build` has no `electronFuses`, and `release-checklist.md` now carries the
      item. `RunAsNode` must stay on: `ForkedWorker` depends on it.
+   - **Fixed 2026-11-11**: `build.electronFuses` sets all five; the checklist
+     item is now the packaged read-back.
 
 8. **`no-explicit-any` is off for a removed reason** — #550
    (`eslint.config.js`, `src/main/main.ts:384-416`, `src/main/preload.ts`)
