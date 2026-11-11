@@ -46,6 +46,16 @@ file, and housekeeping in the dependency set and the lint configuration.
    - **If we skip it:** a malformed world or asset closes the editor with
      every unsaved script edit, and nothing is logged — `child-process-gone`
      does not fire for a thread.
+   - **Fixed 2026-11-11:** `WorldService` forks `zenkit.worker` through
+     `ForkedWorker`, uncapped (`maxOldSpaceMb: null`, as the thread was). A
+     crash rejects the request as `world-crashed`, naming the phase and the
+     signal; `tests/WorldService.process.test.ts` kills a real child with
+     SIGSEGV. *Measured* on a synthetic 31 MB, 600-group mesh: ~80 ms copied
+     against ~30 ms transferred, once per open, against the 2 s budget. A
+     timeout's `terminate()` is now a SIGKILL that stops a wedged native call.
+     Not witnessed here: a retail world through the fork (no addon in this
+     container) — the packaged open-world smoke in `build-windows.yml` is the
+     gate that runs it.
 
 2. **The scan and the watcher follow links out of the root** — #544
    (`src/main/services/ProjectService.ts:74-135`, `FileWatcherService.ts:126`)

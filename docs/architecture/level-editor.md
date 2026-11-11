@@ -753,11 +753,12 @@ differ (`worldIndex` shipped as `vobIndex`). `getVobProperties` shipped as
 addressed by native index path rather than by a VOB id, because a VOB has two
 addresses and every op already resolves the path.
 
-The addon runs inside a **worker thread in the Electron main process**
-(`MetadataWorkerPool` precedent, from before that pool became forked
-processes): long loads never block the UI or IPC. **It does not contain a
-native crash** — a segfault in a thread ends the main process, which is why
-the parser pools were moved out in #268; whether this worker follows is #543.
+The addon runs inside a **forked child process** (`ForkedWorker`, the same
+boundary the parser pools crossed in #268; the worker followed in #543): long
+loads never block the UI or IPC, and a native crash ends only the child —
+`WorldService` reports it as `world-crashed` with the phase it died in, and the
+user reopens the world. The cost is the geometry hand-off: a fork has no
+transfer list, so the mesh is copied (~80 ms for 31 MB, once per open).
 
 Strings cross the boundary as windows-1252 bytes decoded/encoded at the
 binding edge with the repo's existing `iconv-lite` conventions — never
@@ -1236,7 +1237,7 @@ than fixtures:
         IPC: index, props, ops      IPC: mesh/texture payloads
 ┌ main ────────┴───────────────────────────┴─────────────┐
 │ WorldService — authoritative op log, save orchestration │
-│   └─ zenkit.worker (worker thread)                      │
+│   └─ zenkit.worker (forked child process)               │
 │        └─ zenkit-node (N-API) — ZenKit world in memory  │
 └─────────────────────────────────────────────────────────┘
 ```

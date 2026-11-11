@@ -51,7 +51,7 @@
   **before building**. Never substitute `node-gyp build` for `rebuild`.
 - Editor main-process wiring is in `src/main/services/serviceRegistry.ts`;
   saves run through `SaveFileFlow.ts`. Parser workers are forked processes;
-  `zenkit.worker.ts` is a **thread**, not native-crash isolation.
+  `zenkit.worker.ts` is forked the same way (#543), via `ForkedWorker`.
 - Editor world rendering (`src/renderer/world/`) projects domain state into
   Three.js; UI lives in `components/world/`. Quest, Problems and simulator
   domain logic stays independent of React/UI imports.

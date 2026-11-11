@@ -9,9 +9,19 @@ import { ChildProcess, fork } from 'child_process';
  */
 const MAX_OLD_SPACE_MB = 512;
 
+export interface ForkedWorkerOptions {
+  /**
+   * The child's V8 old-space cap in MB; `null` leaves Node's default. The
+   * parser pools take the 512 MB default above. The zenkit worker passes
+   * `null`: it ran uncapped as a thread, and a retail world's resident size is
+   * unmeasured, so a cap there would be a new failure mode, not a guard.
+   */
+  maxOldSpaceMb?: number | null;
+}
+
 /**
- * A parser worker in an OS process of its own, shaped like the `Worker` the
- * pools used to hold.
+ * A native worker in an OS process of its own, shaped like the `Worker` the
+ * pools — and `WorldService` — used to hold.
  *
  * The reason the boundary is a process and not a thread: tree-sitter is native
  * code, and a SIGSEGV inside it kills the process it runs in. As a
@@ -22,14 +32,17 @@ const MAX_OLD_SPACE_MB = 512;
  * recover from.
  *
  * Everything else is deliberately unchanged, so the pools keep their timeouts,
- * their restart caps and their failure classification.
+ * their restart caps and their failure classification. The zenkit worker
+ * crossed the same boundary in #543, for the same reason and a larger native
+ * surface (docs/architecture/worker-reliability.md, "Process isolation").
  */
 export class ForkedWorker {
   private readonly child: ChildProcess;
   private exited = false;
   private exitCode = 0;
 
-  constructor(scriptPath: string) {
+  constructor(scriptPath: string, options: ForkedWorkerOptions = {}) {
+    const maxOldSpaceMb = options.maxOldSpaceMb === undefined ? MAX_OLD_SPACE_MB : options.maxOldSpaceMb;
     this.child = fork(scriptPath, [], {
       // The V8 structured-clone serializer, so a semantic model crosses the
       // boundary with the fidelity `postMessage` gave it. The default JSON
@@ -39,7 +52,7 @@ export class ForkedWorker {
       // the writer mid-parse; the parent's own streams are where a worker's
       // logging belongs anyway.
       stdio: ['ignore', 'inherit', 'inherit', 'ipc'],
-      execArgv: [`--max-old-space-size=${MAX_OLD_SPACE_MB}`],
+      execArgv: maxOldSpaceMb === null ? [] : [`--max-old-space-size=${maxOldSpaceMb}`],
       // Under Electron `process.execPath` is the app binary, and only this says
       // "run as plain Node". Harmless outside Electron.
       env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },

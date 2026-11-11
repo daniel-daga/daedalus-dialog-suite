@@ -197,6 +197,16 @@ What the boundary costs and what it required:
   `build.electronFuses` for this. The **`npmRebuild: false` invariant above
   still applies** — it is the same NAPI addon, loaded in a different process.
 
+**The zenkit worker followed in #543.** `WorldService` forks
+`zenkit.worker` through the same `ForkedWorker`, with `maxOldSpaceMb: null` —
+it ran uncapped as a thread and a retail world's resident size is unmeasured.
+Its policy is not the pools': it is one stateful worker and is never restarted
+behind the caller's back (`WorldService`'s header says why). What the fork cost
+it is the transfer list: the mesh is now copied, ~80 ms for a synthetic 31 MB
+against ~30 ms transferred, once per open. What it bought besides isolation:
+a timeout's `terminate()` is a SIGKILL that ends a wedged native call, where a
+thread's only interrupted JavaScript.
+
 `utilityProcess` was the other option and was not taken: it exists only inside a
 ready Electron app, so every one of the pool-lifecycle tests would have had to
 mock it. `fork` runs identically under Jest, plain Node and Electron, which is
