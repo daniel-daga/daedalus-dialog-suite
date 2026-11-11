@@ -11,7 +11,7 @@ Instructions for agents working in `daedalus-dialog-editor/`.
 ## Workflow Expectations
 
 1. Use TDD for bug fixes and new features.
-   - For new or changed **UI workflows** (user-facing flows in the Electron app), write a failing **Playwright E2E test** (`test/e2e/`) first, then implement. Run with `npm run test:e2e`.
+   - For new or changed **UI workflows**, write a failing Playwright browser-harness test (`tests/e2e/`) first, then implement. Run with `npm run test:e2e`. This mocks the main process; use `tests/e2e-electron/` and `playwright.electron.config.ts` when real Electron behavior must be verified.
    - For logic, store, or component-level changes without a new end-to-end flow, a Jest test is sufficient.
 2. Run focused tests: the Jest files and Playwright specs for what you changed. The full suites run in CI.
 

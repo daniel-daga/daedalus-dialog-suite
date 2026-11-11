@@ -23,7 +23,8 @@ Prefer the semantic model workflow for feature changes and editor integration.
 When `grammar.js` changes:
 
 1. regenerate parser with `npm run build`
-2. run tests with `npm test`
+2. rebuild the native binding (see `../docs/reference/environment-hazards.md`)
+3. run the affected `test/*.test.js` files after `npm run build:ts`
 
 Run these checks before completion:
 
@@ -49,5 +50,4 @@ The full `npm test` and the roundtrip corpus run in CI.
 - `src/semantic/`
 - `src/codegen/`
 - `test/`
-
 
