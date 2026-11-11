@@ -319,22 +319,34 @@ async function parseSourceWithIds(sourceCode: string): Promise<SemanticModel> {
 }
 
 /**
- * Cross-file voice-ID context for validation: the project-wide voice-ID index
- * minus the file being validated. Returns undefined outside project mode, so
- * validation degrades to intra-file checks only. The index is built at project
- * load/reindex time and is not refreshed on every save, so it can be stale
- * until the next reindex.
+ * Cross-file voice-ID context for validation: the entries the project's voice-ID
+ * index holds for the ids `model` itself uses, minus the file being saved.
+ * Returns undefined outside project mode, so validation degrades to intra-file
+ * checks only. Sending the whole index would be a project-sized payload on every
+ * save (#545), so filter down to the ids this file can actually collide with.
+ * The index is built at project load/reindex time and is not refreshed on every
+ * save, so it can be stale until the next reindex.
  */
 function buildExistingVoiceIds(
-  filePath: string
+  filePath: string,
+  model: SemanticModel
 ): Record<string, Array<{ filePath: string; functionName: string }>> | undefined {
   const { projectPath, voiceIdIndex } = useProjectStore.getState();
   if (!projectPath) {
     return undefined;
   }
+  // Index keys and the main-process lookup are both UPPERCASED.
+  const usedIds = new Set<string>();
+  for (const func of Object.values(model.functions || {})) {
+    for (const line of collectDialogLineActions(func.actions || [])) {
+      if (typeof line.id === 'string' && line.id && !line.idIsExpression) {
+        usedIds.add(line.id.toUpperCase());
+      }
+    }
+  }
   const existingVoiceIds: Record<string, Array<{ filePath: string; functionName: string }>> = {};
-  for (const [id, entries] of Object.entries(voiceIdIndex)) {
-    const otherFiles = entries.filter((entry) => entry.filePath !== filePath);
+  for (const id of usedIds) {
+    const otherFiles = (voiceIdIndex[id] || []).filter((entry) => entry.filePath !== filePath);
     if (otherFiles.length > 0) {
       existingVoiceIds[id] = otherFiles;
     }
@@ -791,7 +803,7 @@ export const useFileStore = create<FileStore>()(immer((set, get) => ({
       throw new Error('File not open');
     }
 
-    const existingVoiceIds = buildExistingVoiceIds(filePath);
+    const existingVoiceIds = buildExistingVoiceIds(filePath, fileState.semanticModel);
     const validationResult = await window.editorAPI.validateModel(
       fileState.semanticModel,
       state.codeSettings,
@@ -842,7 +854,7 @@ export const useFileStore = create<FileStore>()(immer((set, get) => ({
           forceOnErrors: options?.forceOnErrors,
           overwriteExternal: options?.overwriteExternal,
           expectedVersion: fileState.diskVersion,
-          existingVoiceIds: buildExistingVoiceIds(filePath)
+          existingVoiceIds: buildExistingVoiceIds(filePath, savedModel)
         }
       );
 
