@@ -79,7 +79,11 @@ upkeep grows with every fidelity fix.
      the one statement it touches" — holds only for well-behaved values.
 
 4. **The linking pass costs about seventeen times the parse**
-   (`src/semantic/visitors/linking-visitor.ts`)
+    (`src/semantic/visitors/linking-visitor.ts`)
+    - **Active follow-up:** #541; implementation and verification plan:
+      [issue-541-parser-cost.md](../plans/issue-541-parser-cost.md). The cursor
+      call sweep and projection pruning already landed in `a1709ae`; the audit
+      timings below are the original baseline, not the current checkout.
    - **What this is:** pass 2 builds actions, conditions and call sites.
    - **Problem:** *measured* on 2.3 MB of dialog source: parse 114 ms, pass 1
      190 ms, pass 2 1,983 ms, generation 62 ms. A CPU profile puts roughly 60%
