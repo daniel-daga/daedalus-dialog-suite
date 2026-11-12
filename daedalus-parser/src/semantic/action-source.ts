@@ -96,12 +96,21 @@ export function parseActionCall(code: string): CallLayout {
 /** Comments after a call belong to its complete statement, not its argument list. */
 export function getCallStatementSuffix(node: TreeSitterNode): string | undefined {
   const statement = node.parent;
-  if (statement?.type !== 'expression_statement' ||
-      !statement.namedChildren.some(child => child.type === 'comment' && child.startIndex >= node.endIndex)) {
+  if (statement?.type !== 'expression_statement') {
+    return undefined;
+  }
+  // A comment cannot exist without a `//` or `/*` in the statement's text; a
+  // string literal can only make the gate say yes, and the named-child scan
+  // below settles it. This keeps the common call from materialising children.
+  const statementText = statement.text;
+  if (!statementText.includes('//') && !statementText.includes('/*')) {
+    return undefined;
+  }
+  if (!statement.namedChildren.some(child => child.type === 'comment' && child.startIndex >= node.endIndex)) {
     return undefined;
   }
   const semicolon = statement.children.find(child => child.type === ';');
-  return statement.text.slice(
+  return statementText.slice(
     node.endIndex - statement.startIndex,
     (semicolon?.startIndex ?? statement.endIndex) - statement.startIndex
   );

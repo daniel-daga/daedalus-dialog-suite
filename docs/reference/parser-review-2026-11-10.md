@@ -88,14 +88,26 @@ upkeep grows with every fidelity fix.
       `scripts/benchmark-model.js` on a synthetic 0.96 MB, 20-file dialog
       corpus: pass 2 1,339 → 1,158 ms (−13%), model build 11.8× → 10.7× the
       parse. Model JSON and generated output are byte-identical to the previous
-      build across the fixtures and that corpus. **The MDK tree was not
-      available to the machine this landed on**, so its ratio is still the
-      audit's number, not this one.
-    - **What remains** is the audit's diagnosis: ~60% of the pass is
-      tree-sitter's JS node marshalling, because every `type`, `namedChildren`,
-      `text` and `startIndex` read is a native call, and conditional projection
-      plus the call-index walk still read a lot of them. Only a pass that
-      materialises close to nothing per statement will move it much further.
+      build across the fixtures and that corpus.
+    - **Landed (#541):** the walk now materialises a node only where it projects
+      or indexes one — a declaration, a skipped statement, a comment, an
+      assignment or a call; every other node is read from the cursor. The call
+      sweep is one native `descendantsOfType('call_expression')` query, with a
+      range stack keeping the #538 nesting bound, instead of a JS walk over the
+      whole subtree. `hasComment` and `getCallStatementSuffix` check the text for
+      a comment marker before walking, instance bodies are projected in one
+      pass, and operator reads use the cursor. *Measured on the MDK tree*
+      (`node scripts/benchmark-model.js --root ../mdk/Content/Story/Dialoge
+      --repeat 3`; 355 parseable files, 5.97 MB): pass 2 6,300 → 4,566 ms
+      (−27%), model build 5.0× → 3.9× the parse; pass 1 is unchanged. Model JSON
+      is byte-identical across the fixtures and that corpus (374 models
+      compared).
+    - **What remains:** the pass is now roughly 15% `unmarshalNode` plus the
+      `startIndex` / `childForFieldName` / `type` / `namedChildren` getters,
+      spread across projection: every statement, call and argument the model
+      keeps is still materialised once. Only a pass that reads the cursor and
+      builds the projections without node objects would move it much further,
+      and that is a rewrite whose remaining gain no corpus has justified.
     - **What this is:** pass 2 builds actions, conditions and call sites.
     - **Problem at audit time:** *measured* on 2.3 MB of dialog source: parse 114 ms, pass 1
       190 ms, pass 2 1,983 ms, generation 62 ms. A CPU profile puts roughly 60%
@@ -123,12 +135,16 @@ upkeep grows with every fidelity fix.
      `project:parseDialogFile` in both its cached and parsed branches, and
      `project:indexFile` after the index is built from the full model — drop it
      from a one-level copy; the main process keeps the full model. *Measured:*
-     models 39% smaller on the synthetic corpus, 18% on the fixtures. `calls`
-     stays: it is small and the Problems rules and quest detection read it in
-     the renderer.
-   - **What remains:** the sites still cross the worker→main hop, which the
-     audit's 621 ms hydration sits inside. Separating index-only data there is
-     a worker-result shape, not a flag; nobody has needed it yet.
+     models 39% smaller on the synthetic corpus, 18% on the fixtures, 34% on the
+     MDK corpus (models there are 5.2× the source). `calls` stays: it is small
+     and the Problems rules and quest detection read it in the renderer.
+   - **Decision (#541):** `callSites` stays on the main-process model and in
+     the worker→main payload. It is index data, but `indexFile` needs the whole
+     project's routine layouts to turn a call into a routine site, so computing
+     the index in the worker means a second pass over every file after those
+     layouts exist. The cost the audit measured — size and hydration on every
+     model the app holds — was paid at the renderer boundary, and that is where
+     the sites now stop. Revisit if the worker gains a project-wide phase.
 
 ## Nice to have
 

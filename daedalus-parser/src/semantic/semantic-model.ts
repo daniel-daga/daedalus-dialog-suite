@@ -118,6 +118,8 @@ export interface TreeSitterNode {
   childForFieldName(fieldName: string): TreeSitterNode | null;
   child(index: number): TreeSitterNode;
   walk(): TreeCursor;
+  /** Native query for descendants of the given types, in source order (#541). */
+  descendantsOfType(types: string | string[], startIndex?: number, endIndex?: number): TreeSitterNode[];
 }
 
 export interface TreeCursor {

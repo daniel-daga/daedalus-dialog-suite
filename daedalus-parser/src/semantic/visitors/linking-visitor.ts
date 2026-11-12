@@ -135,37 +135,36 @@ export class LinkingVisitor {
       const dialog = nameNode ? this.dialogs[nameNode.text] : undefined;
       if (!dialog) continue;
       for (const stmt of body.namedChildren) {
-        if (!this.isDirectPropertyAssignment(stmt)) continue;
+        if (stmt.type !== 'assignment_statement') continue;
         const left = stmt.childForFieldName('left');
+        // Most instance properties are not `condition`, so the name gate comes
+        // before the operator scan and the right-hand parse (#541).
+        if (left?.type !== 'identifier' || left.text.toLowerCase() !== 'condition') continue;
+        if (getAssignmentOperator(stmt) !== '=') continue;
         const right = stmt.childForFieldName('right');
-        if (!left || !right) continue;
+        if (!right) continue;
         const reference = referenceIdentifier(right);
         if (reference === undefined) continue;
-        const propertyKey = left.text.toLowerCase();
         const originalName = this.functionNameMap.get(reference.toLowerCase());
-        const functionName = originalName || reference;
-        if (propertyKey === 'condition') {
-          this.conditionFunctions.add(functionName);
-        }
+        this.conditionFunctions.add(originalName || reference);
       }
     }
   }
 
   private analyzeNodeRecursively(cursor: TreeCursor): void {
     const type = cursor.nodeType;
-    const node = cursor.currentNode;
 
-    this.enterDeclarationContext(type, node);
+    this.enterDeclarationContext(type, cursor);
 
-    const skipChildren = this.shouldSkipChildren(type, node);
+    const skipChildren = this.shouldSkipChildren(type, cursor);
 
     // A skipped subtree is never projected, so one walk over it is all the
     // project index needs — and the only walk. Indexing runs before the
     // statement is handled, so nothing below materialises a node twice (#541).
     if (skipChildren && this.currentFunction) {
-      this.recordCallSitesInSubtree(node);
+      this.recordCallSitesInSubtree(cursor.currentNode);
     }
-    this.handleStatementNode(type, node);
+    this.handleStatementNode(type, cursor);
 
     if (!skipChildren && cursor.gotoFirstChild()) {
       do {
@@ -177,8 +176,9 @@ export class LinkingVisitor {
     this.leaveDeclarationContext(type);
   }
 
-  private enterDeclarationContext(type: string, node: TreeSitterNode): void {
+  private enterDeclarationContext(type: string, cursor: TreeCursor): void {
     if (type === 'instance_declaration') {
+      const node = cursor.currentNode;
       const nameNode = node.childForFieldName('name');
       if (nameNode) {
         const dialog = this.dialogs[nameNode.text];
@@ -193,6 +193,7 @@ export class LinkingVisitor {
     }
 
     if (type === 'function_declaration') {
+      const node = cursor.currentNode;
       const nameNode = node.childForFieldName('name');
       if (!nameNode) return;
       const stored = this.functions[nameNode.text];
@@ -263,9 +264,9 @@ export class LinkingVisitor {
     }
   }
 
-  private shouldSkipChildren(type: string, node: TreeSitterNode): boolean {
+  private shouldSkipChildren(type: string, cursor: TreeCursor): boolean {
     if (type === 'instance_declaration') {
-      if (this.currentInstance) this.analyzeDialogBody(node, this.currentInstance);
+      if (this.currentInstance) this.analyzeDialogBody(cursor.currentNode, this.currentInstance);
       // Instance bodies have their own projection boundary. Never recursively
       // treat branch assignments or compound writes as unconditional properties.
       return true;
@@ -274,17 +275,18 @@ export class LinkingVisitor {
     // A condition function is analyzed as a complete body, once. Never walk
     // its expression descendants as statements or independent predicates.
     if (isConditionFunc && type === 'function_declaration') {
-      const body = node.childForFieldName('body');
+      const body = cursor.currentNode.childForFieldName('body');
       if (body) this.analyzeConditionBody(body);
       return true;
     }
 
     if (type === 'variable_declaration' && this.currentFunction) {
-      this.preserveUnsupportedStatement(node);
+      this.preserveUnsupportedStatement(cursor.currentNode);
       return true;
     }
 
     if (type === 'expression_statement' && this.currentFunction) {
+      const node = cursor.currentNode;
       const expressions = node.namedChildren.filter(child => child.type !== 'comment');
       if (expressions.length !== 1 || expressions[0].type !== 'call_expression') {
         this.preserveUnsupportedStatement(node);
@@ -301,6 +303,7 @@ export class LinkingVisitor {
     }
 
     if (this.currentFunction && !isConditionFunc && isConditionModeBlockingStatement(type)) {
+      const node = cursor.currentNode;
       if (type === 'if_statement') {
         const conditionalAction = this.parseConditionalAction(node);
         if (conditionalAction) {
@@ -329,16 +332,6 @@ export class LinkingVisitor {
     if (!body) return;
     const seen = new Set<string>();
     let representable = true;
-    for (const statement of body.namedChildren) {
-      if (statement.type === 'comment') continue;
-      if (!this.isDirectPropertyAssignment(statement)) {
-        representable = false;
-        continue;
-      }
-      const key = statement.childForFieldName('left')!.text.toLowerCase();
-      if (seen.has(key) || hasComment(statement)) representable = false;
-      seen.add(key);
-    }
     // Metadata comes only from direct simple writes, even in raw mode. It is
     // not an evaluation of the constructor's final runtime state.
     // #440: the blank lines before a property are recorded the way #286 does
@@ -346,11 +339,17 @@ export class LinkingVisitor {
     let previousEndRow = body.startPosition.row;
     for (const statement of body.namedChildren) {
       if (this.isDirectPropertyAssignment(statement)) {
+        const keyNode = statement.childForFieldName('left')!;
+        const key = keyNode.text.toLowerCase();
+        if (seen.has(key) || hasComment(statement)) representable = false;
+        seen.add(key);
         const blankLines = statement.startPosition.row - previousEndRow - 1;
         if (blankLines > 0) {
-          (dialog.propertyBlankLinesBefore ??= {})[statement.childForFieldName('left')!.text] = blankLines;
+          (dialog.propertyBlankLinesBefore ??= {})[keyNode.text] = blankLines;
         }
         this.processAssignment(statement);
+      } else if (statement.type !== 'comment') {
+        representable = false;
       }
       previousEndRow = statement.endPosition.row;
     }
@@ -359,12 +358,13 @@ export class LinkingVisitor {
     }
   }
 
-  private handleStatementNode(type: string, node: TreeSitterNode): void {
+  private handleStatementNode(type: string, cursor: TreeCursor): void {
     if (type === 'comment') {
       // A standalone comment at the top level of a (non-condition) function
       // body is preserved in position as a CommentAction. Condition-function
       // comments are handled by the raw-mode body sweep. Comments already
       // consumed as an AI_Output subtitle are skipped.
+      const node = cursor.currentNode;
       if (
         this.currentFunction &&
         !this.isCurrentConditionFunction() &&
@@ -378,15 +378,15 @@ export class LinkingVisitor {
 
     if (type === 'assignment_statement') {
       if (this.currentInstance) {
-        this.processAssignment(node);
+        this.processAssignment(cursor.currentNode);
       } else if (this.currentFunction) {
-        this.processFunctionAssignment(node);
+        this.processFunctionAssignment(cursor.currentNode);
       }
       return;
     }
 
     if (type === 'call_expression' && this.currentFunction) {
-      this.processFunctionCall(node);
+      this.processFunctionCall(cursor.currentNode);
     }
   }
 
@@ -669,29 +669,18 @@ export class LinkingVisitor {
    * and raw statements that semantic extraction does not descend into.
    */
   private recordCallSitesInSubtree(root: TreeSitterNode): void {
-    // Pre-order, as the calls appear in the source. Only a call is
-    // materialised as a node; every other step reads the cursor (#541).
-    // `openCalls` holds the tree depth of each enclosing call, popped as the
-    // walk leaves it, so call-in-call nesting is bounded (#538).
-    const cursor = root.walk();
-    const openCalls: number[] = [];
-    let depth = 0;
-    for (;;) {
-      if (cursor.nodeType === 'call_expression') {
-        if (openCalls.length >= MAX_NESTING_DEPTH) throw new NestingTooDeepError(cursor.currentNode, 'nested call');
-        openCalls.push(depth);
-        this.recordCallSite(cursor.currentNode);
-      }
-      if (cursor.gotoFirstChild()) {
-        depth++;
-        continue;
-      }
-      for (;;) {
-        if (openCalls[openCalls.length - 1] === depth) openCalls.pop();
-        if (cursor.gotoNextSibling()) break;
-        if (!cursor.gotoParent()) return;
-        depth--;
-      }
+    // Pre-order, as the calls appear in the source. The native query walks the
+    // subtree C-side and includes `root` when it is itself a call; only the
+    // calls are then materialised. `open` holds the ranges of enclosing calls,
+    // popped as a sibling starts, so call-in-call nesting is still bounded by
+    // the same rule as the cursor walk it replaces (#538, #541).
+    const calls = root.descendantsOfType('call_expression');
+    const open: Array<{ startIndex: number; endIndex: number }> = [];
+    for (const call of calls) {
+      while (open.length > 0 && call.startIndex >= open[open.length - 1].endIndex) open.pop();
+      if (open.length >= MAX_NESTING_DEPTH) throw new NestingTooDeepError(call, 'nested call');
+      open.push({ startIndex: call.startIndex, endIndex: call.endIndex });
+      this.recordCallSite(call);
     }
   }
 
