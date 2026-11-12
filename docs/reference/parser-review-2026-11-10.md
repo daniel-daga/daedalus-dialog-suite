@@ -108,6 +108,7 @@ upkeep grows with every fidelity fix.
       keeps is still materialised once. Only a pass that reads the cursor and
       builds the projections without node objects would move it much further,
       and that is a rewrite whose remaining gain no corpus has justified.
+      Tracked as #553.
     - **What this is:** pass 2 builds actions, conditions and call sites.
     - **Problem at audit time:** *measured* on 2.3 MB of dialog source: parse 114 ms, pass 1
       190 ms, pass 2 1,983 ms, generation 62 ms. A CPU profile puts roughly 60%
