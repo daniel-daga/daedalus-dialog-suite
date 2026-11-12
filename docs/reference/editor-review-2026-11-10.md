@@ -70,6 +70,10 @@ file, and housekeeping in the dependency set and the lint configuration.
    - **Fix:** one rule for both. Skip a link whose real path leaves the root
      and report it once, or grant what the project links to when the project
      is granted.
+   - **Fixed:** 2026-11-11 — the validator's rule won: `scanDirectory` skips
+     a link whose real path leaves the root and warns once per scan with the
+     skipped links; the watcher's `ignored` predicate applies the same check.
+     All three share `src/main/utils/pathContainment.ts`.
    - **If we skip it:** a junction-heavy mod shows NPCs whose dialogs fail to
      open, and a stray link to a drive root makes project open walk the disk.
 

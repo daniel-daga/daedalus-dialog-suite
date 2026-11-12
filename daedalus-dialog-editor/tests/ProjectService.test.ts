@@ -96,25 +96,69 @@ describe('ProjectService', () => {
       expect(files).toContain(path.join(dialogDir, 'DIA_Upper.D'));
     });
 
-    it('follows a junctioned tree', async () => {
-      // A mod's script tree is often a junction into the game install; a
-      // junction reports isSymbolicLink(), not isDirectory().
-      const target = fs.mkdtempSync(path.join(os.tmpdir(), 'gothic-junction-target-'));
+    it('follows a junctioned tree that stays inside the project', async () => {
+      // A junction reports isSymbolicLink(), not isDirectory(), so a linked
+      // tree the project itself contains must still be walked.
+      const target = path.join(tempDir, '_real');
+      fs.mkdirSync(path.join(target, 'Dialoge'), { recursive: true });
+      fs.writeFileSync(path.join(target, 'Dialoge', 'DIA_Linked.d'), '// linked');
+      fs.symlinkSync(target, path.join(tempDir, 'Scripts'), 'junction');
+      fs.symlinkSync(path.join(target, 'Dialoge', 'DIA_Linked.d'), path.join(tempDir, 'alias.d'), 'file');
+
+      const service = new ProjectService();
+      const files: string[] = await service.scanDirectory(tempDir);
+
+      expect(files).toContain(path.join(tempDir, 'alias.d'));
+      // The visited set walks one tree once, through whichever route it
+      // reaches first.
+      expect(files.filter((f) => f.endsWith(path.join('Dialoge', 'DIA_Linked.d')))).toHaveLength(1);
+    });
+
+    it('skips a link whose real path leaves the project root, and says so once (#544)', async () => {
+      // PathValidationService refuses a path that resolves outside the root,
+      // so the index must not list files file:read will then refuse to open —
+      // and a stray link to a drive root must not walk the disk.
+      const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'gothic-outside-'));
+      const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
       try {
-        fs.mkdirSync(path.join(target, 'Dialoge'));
-        fs.writeFileSync(path.join(target, 'Dialoge', 'DIA_Linked.d'), '// linked');
-        fs.writeFileSync(path.join(target, 'top.d'), '// linked top');
-        fs.symlinkSync(target, path.join(tempDir, 'Scripts'), 'junction');
+        fs.mkdirSync(path.join(outside, 'Dialoge'));
+        fs.writeFileSync(path.join(outside, 'Dialoge', 'DIA_Outside.d'), '// outside');
+        fs.writeFileSync(path.join(outside, 'single.d'), '// outside file');
+        fs.writeFileSync(path.join(tempDir, 'own.d'), '// own');
+        fs.symlinkSync(outside, path.join(tempDir, 'Scripts'), 'junction');
+        fs.symlinkSync(path.join(outside, 'single.d'), path.join(tempDir, 'linked.d'), 'file');
 
         const service = new ProjectService();
         const files = await service.scanDirectory(tempDir);
 
-        expect(files).toHaveLength(2);
-        expect(files).toContain(path.join(tempDir, 'Scripts', 'top.d'));
-        expect(files).toContain(path.join(tempDir, 'Scripts', 'Dialoge', 'DIA_Linked.d'));
+        expect(files).toEqual([path.join(tempDir, 'own.d')]);
+        const linkWarnings = warn.mock.calls.filter(([msg]) => String(msg).includes('outside the project'));
+        expect(linkWarnings).toHaveLength(1);
+        expect(String(linkWarnings[0][0])).toContain('Scripts');
+        expect(String(linkWarnings[0][0])).toContain('linked.d');
       } finally {
-        fs.rmSync(target, { recursive: true, force: true });
+        warn.mockRestore();
+        fs.rmSync(outside, { recursive: true, force: true });
       }
+    });
+
+    it('follows links when the project root is itself reached through a link', async () => {
+      // The root is compared by its real path, so opening a project through a
+      // symlinked folder does not make every file inside it "outside".
+      const realRoot = path.join(tempDir, 'real');
+      fs.mkdirSync(path.join(realRoot, 'Sub'), { recursive: true });
+      fs.writeFileSync(path.join(realRoot, 'Sub', 'a.d'), '// a');
+      fs.symlinkSync(path.join(realRoot, 'Sub', 'a.d'), path.join(realRoot, 'alias.d'), 'file');
+      const linkedRoot = path.join(tempDir, 'via-link');
+      fs.symlinkSync(realRoot, linkedRoot, 'junction');
+
+      const service = new ProjectService();
+      const files = await service.scanDirectory(linkedRoot);
+
+      expect(files).toEqual([
+        path.join(linkedRoot, 'Sub', 'a.d'),
+        path.join(linkedRoot, 'alias.d'),
+      ]);
     });
 
     it('does not loop on a junction back into an ancestor', async () => {

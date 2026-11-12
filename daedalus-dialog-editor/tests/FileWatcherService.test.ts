@@ -240,6 +240,29 @@ describe('FileWatcherService', () => {
       // E5 temp file: `.<basename>.<pid>.<rand>.tmp` — must produce no events.
       expect(ignored('/project/.DIA_Test.d.12345.ab3d9.tmp', fileStats)).toBe(true);
     });
+
+    it('ignores a link whose real path leaves the project root, as the scan does (#544)', async () => {
+      const root = fs.mkdtempSync(path.join(os.tmpdir(), 'watch-root-'));
+      const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'watch-outside-'));
+      try {
+        fs.mkdirSync(path.join(root, 'Inner'));
+        fs.writeFileSync(path.join(root, 'Inner', 'own.d'), '// own');
+        fs.writeFileSync(path.join(outside, 'far.d'), '// far');
+        fs.symlinkSync(outside, path.join(root, 'Out'), 'junction');
+        fs.symlinkSync(path.join(outside, 'far.d'), path.join(root, 'far.d'), 'file');
+        fs.symlinkSync(path.join(root, 'Inner'), path.join(root, 'InLink'), 'junction');
+
+        const ignored = await getIgnored(root);
+        expect(ignored(path.join(root, 'Out'), dirStats)).toBe(true);
+        expect(ignored(path.join(root, 'Out'), undefined)).toBe(true);
+        expect(ignored(path.join(root, 'far.d'), fileStats)).toBe(true);
+        expect(ignored(path.join(root, 'InLink'), dirStats)).toBe(false);
+        expect(ignored(path.join(root, 'Inner', 'own.d'), fileStats)).toBe(false);
+      } finally {
+        fs.rmSync(root, { recursive: true, force: true });
+        fs.rmSync(outside, { recursive: true, force: true });
+      }
+    });
   });
 
   // -------------------------------------------------------------------------

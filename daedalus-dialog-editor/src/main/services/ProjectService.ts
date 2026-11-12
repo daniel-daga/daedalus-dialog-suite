@@ -27,6 +27,7 @@ import { routineStatesOf } from '../../shared/routineStates';
 import { MetadataWorkerPool } from './MetadataWorkerPool';
 import type { MetadataResult } from './MetadataWorkerPool';
 import { LruMap } from '../utils/lruMap';
+import { isPathInside } from '../utils/pathContainment';
 
 function normalizeIdentifier(value: string): string {
   return value.trim().toUpperCase();
@@ -74,15 +75,20 @@ class ProjectService {
   /**
    * Recursively scan directory for .d files (async).
    *
-   * Junctions and symlinks are followed (a mod's script tree is often a
-   * junction into the game install); a link back into an ancestor is cut by
-   * the visited set. A subdirectory that cannot be read is logged and skipped
-   * so one bad folder does not hide the rest of the project; the root itself
-   * failing is the caller's error.
+   * Junctions and symlinks are followed only while their real path stays
+   * inside the project root: `PathValidationService` refuses to read a path
+   * that resolves outside it, so a file reached through such a link would be
+   * indexed and then fail to open — and a stray link to a drive root would
+   * walk the disk (#544). Skipped links are reported once per scan. A link
+   * back into an ancestor is cut by the visited set. A subdirectory that
+   * cannot be read is logged and skipped so one bad folder does not hide the
+   * rest of the project; the root itself failing is the caller's error.
    */
   async scanDirectory(rootPath: string): Promise<string[]> {
     const files: string[] = [];
     const visited = new Set<string>();
+    const outsideLinks: string[] = [];
+    const realRoot = await fs.realpath(rootPath);
 
     const isDotD = (name: string) => path.extname(name).toLowerCase() === '.d';
 
@@ -119,10 +125,16 @@ class ProjectService {
 
     const scanLink = async (linkPath: string): Promise<void> => {
       let stat;
+      let realTarget: string;
       try {
-        stat = await fs.stat(linkPath);
+        realTarget = await fs.realpath(linkPath);
+        stat = await fs.stat(realTarget);
       } catch {
         return; // dangling link
+      }
+      if (!isPathInside(realRoot, realTarget)) {
+        outsideLinks.push(linkPath);
+        return;
       }
       if (stat.isDirectory()) {
         await scanSubdirectory(linkPath);
@@ -132,6 +144,14 @@ class ProjectService {
     };
 
     await scanRecursive(rootPath);
+    if (outsideLinks.length > 0) {
+      outsideLinks.sort();
+      console.warn(
+        `[ProjectService] skipped ${outsideLinks.length} link(s) that resolve outside the project folder ` +
+        `${realRoot}; open the folder they point to as its own project to edit those files:\n  ` +
+        outsideLinks.join('\n  ')
+      );
+    }
     // A path order, not an I/O-completion one: the index it feeds is
     // last-writer-wins, so an unstable order makes which file owns a name
     // declared twice differ between opens (#470).
