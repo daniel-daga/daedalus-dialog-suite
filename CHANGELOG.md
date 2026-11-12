@@ -4,6 +4,13 @@ What each published Windows build changed, newest first. Build Windows adds a
 build here when it publishes it; write new notes in `RELEASE_NOTES.md`, not here.
 Builds before 31 had no release notes.
 
+## Build 44 — 2026-11-12
+
+- #541: Scripts are analysed about a fifth faster when a project loads
+- #538: A deeply nested script opens with an error naming its line instead of failing to load or to save
+- #540: The NPC editor refuses a value that would break the instance instead of saving it
+- #539: A file with a syntax error opens without a long stall, however the error is shaped
+
 ## Build 43 — 2026-11-06
 
 - #514: A dialog line's edited subtitle is saved even when the line carried no inline comment
