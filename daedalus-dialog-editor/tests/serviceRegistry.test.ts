@@ -72,12 +72,16 @@ describe('serviceRegistry', () => {
 
   it('wires the services that depend on each other', async () => {
     const { getServiceRegistry } = await import('../src/main/services/serviceRegistry');
-    const { ValidationService } = await import('../src/main/services/ValidationService');
+    const { ParserService } = await import('../src/main/services/ParserService');
     const { UpdaterService } = await import('../src/main/services/UpdaterService');
 
     const registry = getServiceRegistry();
 
-    expect(registry.validationService).toBeInstanceOf(ValidationService);
+    // Validation and codegen run in the parser pool (#546); there is no
+    // main-side validator or generator to wire.
+    expect(registry.parserService).toBeInstanceOf(ParserService);
+    expect(registry).not.toHaveProperty('validationService');
+    expect(registry).not.toHaveProperty('codeGeneratorService');
     expect(registry.updaterService).toBeInstanceOf(UpdaterService);
     // The validator starts empty; paths are whitelisted as the user opens them.
     await expect(

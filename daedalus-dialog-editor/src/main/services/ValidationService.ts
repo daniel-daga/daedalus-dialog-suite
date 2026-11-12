@@ -1,4 +1,3 @@
-import type { ParserService } from './ParserService';
 import type { CodeGeneratorService } from './CodeGeneratorService';
 import { deserializeSemanticModel } from 'daedalus-parser/semantic-model';
 import type {
@@ -103,8 +102,17 @@ function walkActions(
   });
 }
 
+/** What the syntax round trip needs from a parser: only the verdict. */
+export interface SyntaxChecker {
+  parseSource(code: string): Promise<{ hasErrors?: boolean; errors?: Array<{ message?: string; position?: { row: number; column: number } }> }>;
+}
+
 /**
  * ValidationService - Validates semantic models before saving
+ *
+ * Runs inside the forked parser worker (#546), which constructs it with an
+ * in-process parse; the main process reaches it through
+ * `ParserService.validateModel`, never directly.
  *
  * Performs the following validations:
  * 1. Syntax validation - generates code and parses it back to detect syntax errors
@@ -114,10 +122,10 @@ function walkActions(
  * 5. Choice target function validation
  */
 export class ValidationService {
-  private parserService: ParserService;
-  private codeGeneratorService: CodeGeneratorService;
+  private parserService: SyntaxChecker;
+  private codeGeneratorService: Pick<CodeGeneratorService, 'generateCode'>;
 
-  constructor(parserService: ParserService, codeGeneratorService: CodeGeneratorService) {
+  constructor(parserService: SyntaxChecker, codeGeneratorService: Pick<CodeGeneratorService, 'generateCode'>) {
     this.parserService = parserService;
     this.codeGeneratorService = codeGeneratorService;
   }

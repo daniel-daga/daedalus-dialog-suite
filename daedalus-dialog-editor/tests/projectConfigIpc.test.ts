@@ -32,7 +32,7 @@ jest.mock('../src/main/services/serviceRegistry', () => {
     __settings: { getGothicInstallPath: jest.fn(async () => null), setGothicInstallPath: jest.fn(async () => undefined), clearGothicInstallPath: jest.fn(async () => undefined), getRecentProjects: jest.fn(async () => []) },
     __worldService: { openWorld: jest.fn(async () => ({ worldPath: 'test', stats: {} })) },
     getServiceRegistry: () => ({
-      fileService: {}, parserService: {}, codeGeneratorService: {}, validationService: {}, projectService: {},
+      fileService: {}, parserService: {}, projectService: {},
       settingsService: (jest.requireMock('../src/main/services/serviceRegistry') as any).__settings,
       fileWatcherService: {}, updaterService: {}, worldService: (jest.requireMock('../src/main/services/serviceRegistry') as any).__worldService, worldFoldersService: {},
       assetCatalogService: new RealAssetCatalogService(),

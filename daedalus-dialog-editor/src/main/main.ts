@@ -72,8 +72,6 @@ let closeGuardAckTimer: ReturnType<typeof setTimeout> | null = null;
 const {
   fileService,
   parserService,
-  codeGeneratorService,
-  validationService,
   projectService,
   settingsService,
   fileWatcherService,
@@ -386,12 +384,13 @@ export function setupIpcHandlers() {
   // Code generator handlers. The payloads arrive as `unknown` because that is
   // what the boundary can promise; each assert narrows it to the shared type
   // the service takes, so deleting one fails the build rather than silently
-  // handing codegen an unchecked payload.
+  // handing codegen an unchecked payload. Generation and validation run in the
+  // forked parser pool, not on this thread (#546).
   ipcMain.handle('generator:generateCode', async (_event, model: unknown, settings: unknown) => {
     try {
       assertModelShape(model);
       assertCodeGenerationSettings(settings);
-      return codeGeneratorService.generateCode(model, settings);
+      return await parserService.generateCode(model, settings);
     } catch (error) {
       console.error('[IPC] generator:generateCode error:', error);
       throw new Error(`Failed to generate code: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -405,7 +404,7 @@ export function setupIpcHandlers() {
       assertModelShape(model);
       assertDialogName(dialogName);
       assertCodeGenerationSettings(settings);
-      return codeGeneratorService.generateDialogCode(model, dialogName, settings);
+      return await parserService.generateDialogCode(model, dialogName, settings);
     } catch (error) {
       console.error('[IPC] generator:generateDialogCode error:', error);
       throw new Error(`Failed to generate dialog code: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -420,7 +419,7 @@ export function setupIpcHandlers() {
       assertModelShape(model);
       assertCodeGenerationSettings(settings);
       assertValidationOptions(options);
-      return validationService.validate(model, settings, options);
+      return await parserService.validateModel(model, settings, options);
     } catch (error) {
       console.error('[IPC] validation:validate error:', error);
       throw new Error(`Validation failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -431,7 +430,7 @@ export function setupIpcHandlers() {
     _event, filePath: unknown, model: unknown, settings: unknown, options: unknown,
   ) =>
     saveFileFlow(
-      { pathValidator, validationService, codeGeneratorService, parserService, fileService },
+      { pathValidator, parserService, fileService },
       filePath,
       model,
       settings,

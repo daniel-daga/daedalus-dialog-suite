@@ -3,8 +3,6 @@ import * as path from 'path';
 import { FileService } from './FileService';
 import { LogService } from './LogService';
 import { ParserService } from './ParserService';
-import { CodeGeneratorService } from './CodeGeneratorService';
-import { ValidationService } from './ValidationService';
 import ProjectService from './ProjectService';
 import { PathValidationService } from './PathValidationService';
 import { SettingsService } from './SettingsService';
@@ -31,8 +29,6 @@ import { AssetCatalogService } from './AssetCatalogService';
 export interface ServiceRegistry {
   fileService: FileService;
   parserService: ParserService;
-  codeGeneratorService: CodeGeneratorService;
-  validationService: ValidationService;
   projectService: ProjectService;
   settingsService: SettingsService;
   fileWatcherService: FileWatcherService;
@@ -49,7 +45,6 @@ let registry: ServiceRegistry | null = null;
 
 function createServiceRegistry(): ServiceRegistry {
   const parserService = new ParserService();
-  const codeGeneratorService = new CodeGeneratorService();
   const settingsService = new SettingsService();
   const fileService = new FileService();
   const fileWatcherService = new FileWatcherService();
@@ -61,8 +56,6 @@ function createServiceRegistry(): ServiceRegistry {
   return {
     fileService,
     parserService,
-    codeGeneratorService,
-    validationService: new ValidationService(parserService, codeGeneratorService),
     projectService: new ProjectService(),
     settingsService,
     fileWatcherService,
