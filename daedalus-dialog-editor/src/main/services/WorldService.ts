@@ -1,9 +1,9 @@
-import { Worker } from 'worker_threads';
 import * as path from 'path';
 import * as fs from 'fs';
 import { randomUUID } from 'crypto';
 import { invertOp } from 'zen-world';
 import { WorkerRequestError } from './WorkerRequestError';
+import { ForkedWorker, describeExit } from './ForkedWorker';
 import type {
   DecodedTexture,
   ItemInstances,
@@ -36,19 +36,22 @@ import type {
 //   - it is spawned only when a world opens or an NPC preview requests the
 //     project's assets, so dialog-only sessions still avoid loading the addon.
 //
-// One honest limit on the isolation §7 claims: a worker thread survives a JS
-// throw in the addon, but ZenKit can also abort the process outright
-// (`0xC0000409`, seen on the ASCII path), and an abort in a worker thread takes
-// the whole Electron main process with it. The worker boundary buys crash
-// *reporting* and a non-blocking UI, not immunity.
+// The worker is a forked child process, not a thread (#543). ZenKit can abort
+// the process it runs in outright (`0xC0000409`, seen on the ASCII path), or
+// segfault on a hostile world or asset, and in a worker thread that process was
+// the Electron main process — taking every unsaved script edit with it and
+// firing no `exit`. As a child it dies alone, and its death arrives here as the
+// `exit` below, reported with the phase it died in. Same boundary, and the same
+// `ForkedWorker`, as the parser pools (worker-reliability.md, "Process
+// isolation").
 
 const DEFAULT_REQUEST_TIMEOUT_MS = 120_000;
 
-/** The slice of `worker_threads.Worker` this service uses — injected in tests. */
+/** The slice of `ForkedWorker` this service uses — injected in tests. */
 export interface WorldWorker {
-  postMessage(message: WorldWorkerRequest, transferList?: readonly ArrayBuffer[]): void;
+  postMessage(message: WorldWorkerRequest): void;
   on(event: 'error', handler: (error: Error) => void): void;
-  on(event: 'exit', handler: (code: number) => void): void;
+  on(event: 'exit', handler: (code: number | null, signal?: NodeJS.Signals | null) => void): void;
   on(event: 'message', handler: (message: WorldWorkerResponse) => void): void;
   terminate(): Promise<number> | void;
 }
@@ -103,7 +106,9 @@ export class WorldService {
   constructor(options: WorldServiceOptions = {}) {
     this.requestTimeoutMs = options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
     this.createWorker = options.createWorker
-      ?? (() => new Worker(resolveWorkerPath(options.workerPath)));
+      // No heap cap: as a thread it had none, and a retail world's resident
+      // size is unmeasured — see `ForkedWorkerOptions.maxOldSpaceMb`.
+      ?? (() => new ForkedWorker(resolveWorkerPath(options.workerPath), { maxOldSpaceMb: null }));
   }
 
   /**
@@ -486,19 +491,19 @@ export class WorldService {
     const worker = this.createWorker();
     // Every handler is scoped to the worker it was registered for. `close()`
     // and `handleTimeout` terminate and null `this.worker`, and `exit` arrives
-    // asynchronously after that — so an exit belonging to a thread that has
+    // asynchronously after that — so an exit belonging to a worker that has
     // already been replaced would otherwise be taken as the death of its
     // successor: it rejects the fresh open, nulls the new reference (leaving
-    // that thread running and unreachable) and reports a dead worker that is
+    // that worker running and unreachable) and reports a dead worker that is
     // perfectly alive.
     const mine = (): boolean => this.worker === worker;
     worker.on('error', (error) => { if (mine()) this.handleWorkerDeath(error); });
-    worker.on('exit', (code) => {
+    worker.on('exit', (code, signal) => {
       // A clean exit is a dead worker too: nothing in the worker calls
       // `process.exit`, but taking only non-zero codes as death would leave
       // every pending request waiting out the full timeout if anything ever
       // does.
-      if (mine()) this.handleWorkerDeath(new Error(`zenkit worker exited with code ${code}`));
+      if (mine()) this.handleWorkerDeath(new Error(`zenkit worker ${signal ? 'was' : 'exited with'} ${describeExit(code, signal ?? null)}`));
     });
     worker.on('message', (message) => { if (mine()) this.handleMessage(message); });
     this.worker = worker;
@@ -569,23 +574,22 @@ export class WorldService {
   /**
    * A request that never answered gives up on the worker.
    *
-   * The thread is not idle — it is still inside the call that went quiet, and
+   * The worker is not idle — it is still inside the call that went quiet, and
    * the world it holds is in whatever state that call left it. Rejecting only
-   * the caller would leave that thread spinning while `openWorld`'s
+   * the caller would leave that worker spinning while `openWorld`'s
    * `worker === null` guard posts the retry straight back into it, so the
    * surface never recovers and every retry feeds the same stuck worker. Same
    * policy as a crash, for the same reason: the world is gone, and the user is
    * told to reopen it rather than being handed a silent reload.
    *
-   * **`terminate()` does not stop it, and nothing can.** It interrupts
-   * JavaScript, and a worker inside a synchronous N-API call (`loadWorld`,
-   * `saveWorld`, `commitOps`) runs to the end of that call whatever happens
-   * here; `exit` arrives only then. So what this really does is *abandon* the
-   * worker: the world it holds stays resident until the call returns, and a
-   * save that timed out mid-write can leave a `<target>.tmp` behind. The next
-   * `openWorld` starts a second worker beside it. That is the accepted cost of
-   * not hanging the surface on a call that will not come back — and it is why
-   * the handlers registered in `startWorker` are scoped to their own worker.
+   * **`terminate()` really stops it** now that the worker is a process (#543):
+   * it is a SIGKILL, which ends a worker wedged inside a synchronous N-API
+   * call (`loadWorld`, `saveWorld`, `commitOps`) where a thread's `terminate()`
+   * could only wait for that call to return. A save killed mid-write can still
+   * leave a `<target>.tmp` behind — the native writer replaces the target
+   * atomically, so the target itself is whole. `exit` arrives asynchronously,
+   * after the next `openWorld` may already have started a successor, which is
+   * why the handlers registered in `startWorker` are scoped to their own worker.
    */
   private handleTimeout(op: WorldWorkerOp): void {
     if (this.failure !== null) return;

@@ -1,4 +1,3 @@
-import { parentPort } from 'worker_threads';
 import * as zenkit from 'zenkit-node';
 import {
   applyOps,
@@ -116,11 +115,24 @@ const npcBinding: NpcBinding = {
   extractHierarchy: (vfsHandle, name, animation, phase) => zenkit.extractHierarchy(vfsHandle as zenkit.VfsHandle, name, animation, phase),
 };
 
+// This runs as a forked child process, not a worker thread (#543): ZenKit is
+// native code reading files the threat model calls hostile, and a segfault or
+// abort in a thread ends the Electron main process with every unsaved script
+// edit in it. A child dies alone, and `WorldService` reports it. See
+// `ForkedWorker`.
+//
+// A fork has no transfer list, so every `transfer` below is a no-op on the
+// wire: the buffers are copied by the structured-clone serializer. Measured on
+// a synthetic 31 MB, 600-group mesh: ~80 ms copied against ~30 ms transferred,
+// once per open, against the 2 s reload budget. The lists stay because they
+// say which buffers this side hands over and no longer needs.
+const send = process.send?.bind(process);
+
 const timings: Record<string, number> = {};
 let currentRequestId: string | null = null;
 function phase<T>(name: string, run: () => T): T {
   if (currentRequestId !== null) {
-    parentPort?.postMessage({ id: currentRequestId, type: 'phase', phase: name });
+    send?.({ id: currentRequestId, type: 'phase', phase: name });
   }
   const started = Date.now();
   const value = run();
@@ -159,8 +171,10 @@ function open(request: ResolvedOpenWorldRequest): { result: WorldSummary; transf
       timings: { ...timings },
       assetSources: [...openedSources],
     },
-    // Nothing is transferred here, and that is deliberate. Transferring the
-    // index's columns detaches them on this side, and `visuals` reads exactly
+    // Nothing is listed for transfer here, and that is deliberate — it was the
+    // one choice that mattered while this was a thread, and stays the right
+    // answer if it ever is again. Transferring the index's columns detaches
+    // them on this side, and `visuals` reads exactly
     // those columns to decide what to place — measured against retail NewWorld,
     // doing so fails with "Construct on a detached ArrayBuffer". The index is
     // also the authoritative VOB enumeration this worker keeps for later ops.
@@ -204,8 +218,10 @@ function refreshIndex(): { result: WorldSummary; transfer: ArrayBuffer[] } {
 }
 
 function takeWorldMesh(): { result: WorldMeshPayload; transfer: ArrayBuffer[] } {
-  // Re-extracted if it has already been handed over: the buffers were
-  // transferred, so this side no longer has them. That re-extract is the
+  // Re-extracted if it has already been handed over: the copy now lives on
+  // the other side of the fork, and keeping the original would hold 31 MB
+  // resident for nobody. (Under the old worker thread the buffers were
+  // transferred and so detached here — the same answer.) That re-extract is the
   // measured reload-after-an-edit path — 267 ms on retail NewWorld, against a
   // 2 s budget — so asking twice is slow, not broken.
   const mesh = worldMesh ?? phase('extractWorldMesh', () => buildWorldMesh(binding, handle!));
@@ -518,14 +534,14 @@ function close(): { result: null; transfer: ArrayBuffer[] } {
   return { result: null, transfer: [] };
 }
 
-if (parentPort) {
-  parentPort.on('message', (message: WorldWorkerRequest) => {
+if (send) {
+  process.on('message', (message: WorldWorkerRequest) => {
     currentRequestId = message.id;
     try {
-      const { result, transfer } = run(message);
-      parentPort!.postMessage({ id: message.id, ok: true, result }, transfer);
+      const { result } = run(message);
+      send({ id: message.id, ok: true, result });
     } catch (error) {
-      parentPort!.postMessage({
+      send({
         id: message.id,
         ok: false,
         error: error instanceof Error ? error.message : String(error),
