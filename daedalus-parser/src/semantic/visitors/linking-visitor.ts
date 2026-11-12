@@ -17,7 +17,7 @@ import {
 } from '../semantic-model';
 import { ActionParsers } from '../parsers/action-parsers';
 import { ConditionParsers } from '../parsers/condition-parsers';
-import { parseArgumentsDetailed } from '../parsers/argument-parsing';
+import { parseArgumentsDetailed, ParsedArg } from '../parsers/argument-parsing';
 import {
   getBinaryOperator,
   getAssignmentOperator,
@@ -83,6 +83,9 @@ export class LinkingVisitor {
   // Ranges (`startIndex:endIndex`) of comment nodes already consumed as an
   // AI_Output subtitle, so they are not also re-emitted as standalone comments.
   private consumedCommentRanges: Set<string>;
+  /** Arguments already parsed for a call site, by call start, so the action
+   *  parser does not parse the same argument list twice (#541). */
+  private callArgs: Map<number, ParsedArg[]>;
   private conditionalDepth = 0;
 
   constructor(semanticModel: SemanticModel, functionNameMap: Map<string, string>) {
@@ -93,6 +96,7 @@ export class LinkingVisitor {
     this.currentFunction = null;
     this.conditionFunctions = new Set<string>();
     this.consumedCommentRanges = new Set<string>();
+    this.callArgs = new Map<number, ParsedArg[]>();
   }
 
   /**
@@ -155,9 +159,13 @@ export class LinkingVisitor {
 
     const skipChildren = this.shouldSkipChildren(type, node);
 
-    if (!skipChildren) {
-      this.handleStatementNode(type, node);
+    // A skipped subtree is never projected, so one walk over it is all the
+    // project index needs — and the only walk. Indexing runs before the
+    // statement is handled, so nothing below materialises a node twice (#541).
+    if (skipChildren && this.currentFunction) {
+      this.recordCallSitesInSubtree(node);
     }
+    this.handleStatementNode(type, node);
 
     if (!skipChildren && cursor.gotoFirstChild()) {
       do {
@@ -193,9 +201,6 @@ export class LinkingVisitor {
       const body = node.childForFieldName('body');
       if (this.currentFunction && body) {
         this.currentFunction.hasExplicitBodyContent = body.namedChildren.length > 0;
-        // Index calls independently of semantic extraction, which can skip
-        // local declarations or preserve an entire condition body as raw text.
-        this.recordCallSitesInSubtree(body);
       }
     }
   }
@@ -254,6 +259,7 @@ export class LinkingVisitor {
 
     if (type === 'function_declaration') {
       this.currentFunction = null;
+      this.callArgs.clear();
     }
   }
 
@@ -291,7 +297,6 @@ export class LinkingVisitor {
     // an assignment never nests in an expression. Handle the node itself and
     // stop, instead of materialising every argument and operand (#541).
     if (this.currentFunction && (type === 'call_expression' || type === 'assignment_statement')) {
-      this.handleStatementNode(type, node);
       return true;
     }
 
@@ -612,7 +617,7 @@ export class LinkingVisitor {
       return;
     }
 
-    const action = ActionParsers.parseSemanticAction(node, functionName);
+    const action = ActionParsers.parseSemanticAction(node, functionName, this.callArgs.get(node.startIndex));
     if (action) {
       this.recordActionForCurrentFunction(atLine(action, node));
       // Track the same-line comment absorbed as this AI_Output's subtitle so it
@@ -641,9 +646,10 @@ export class LinkingVisitor {
     this.currentFunction.calls.push(functionName);
 
     const argsNode = node.childForFieldName('arguments');
+    const args = argsNode ? parseArgumentsDetailed(argsNode) : [];
     this.currentFunction.callSites.push({
       functionName,
-      args: argsNode ? parseArgumentsDetailed(argsNode) : [],
+      args,
       position: {
         startLine: node.startPosition.row + 1,
         startColumn: node.startPosition.column + 1,
@@ -651,6 +657,8 @@ export class LinkingVisitor {
         endColumn: node.endPosition.column + 1
       }
     });
+    // Hand the parsed list to the action parser for this same call (#541).
+    this.callArgs.set(node.startIndex, args);
 
     return functionName;
   }
@@ -845,7 +853,7 @@ export class LinkingVisitor {
         return null;
       }
 
-      return ActionParsers.parseSemanticAction(callNode, functionNode.text);
+      return ActionParsers.parseSemanticAction(callNode, functionNode.text, this.callArgs.get(callNode.startIndex));
     }
 
     if (node.type === 'assignment_statement') {

@@ -43,6 +43,7 @@ import {
 } from './ipcValidation';
 import { appendInsertNpcFlow } from './services/AppendInsertNpcFlow';
 import { indexFile } from './utils/semanticMetadataUtils';
+import { withoutCallSites } from './utils/withoutCallSites';
 import { findInstallShaped, projectFileKey, ProjectConfigService } from './services/ProjectConfigService';
 import { runGmbtCompile, startGmbtQuickTest } from './services/GmbtService';
 import { readGmbtDefaultWorld } from './services/gmbtProject';
@@ -352,7 +353,7 @@ export function setupIpcHandlers() {
   ipcMain.handle('parser:parseSource', async (_event, sourceCode: unknown) => {
     try {
       assertParseSourcePayload(sourceCode);
-      return await parserService.parseSource(sourceCode);
+      return withoutCallSites(await parserService.parseSource(sourceCode));
     } catch (error) {
       console.error('[IPC] parser:parseSource error:', error);
       throw new Error(`Failed to parse source: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -682,11 +683,11 @@ export function setupIpcHandlers() {
       // (path+mtime checked); serve it instead of parsing a second time.
       const primed = await projectService.takeParsedModel(filePath);
       if (primed) {
-        return primed;
+        return withoutCallSites(primed);
       }
 
       const content = await fileService.readFile(filePath);
-      return await parserService.parseSource(content);
+      return withoutCallSites(await parserService.parseSource(content));
     }));
 
   // One file's share of the index, after a routine save or an edit outside
@@ -701,7 +702,8 @@ export function setupIpcHandlers() {
       const model = await parserService.parseSource(content);
       // The model rides along: the caller needed the file's index anyway, and
       // asking for the model separately would parse the same file twice (#473).
-      return { index: indexFile(request.filePath, model, request.layouts), model };
+      // The index is built before the call sites are dropped for the renderer.
+      return { index: indexFile(request.filePath, model, request.layouts), model: withoutCallSites(model) };
     }));
 
   ipcMain.handle('project:addAllowedPath', async (_event, folderPath: unknown) => {

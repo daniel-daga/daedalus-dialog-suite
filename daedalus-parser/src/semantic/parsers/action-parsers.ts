@@ -42,9 +42,14 @@ export class ActionParsers {
    * A recognized call whose argument count does not match the expected arity
    * (or that a specific parser otherwise declines) never gets dropped: it falls
    * back to a verbatim generic `Action`, preserving the source text.
+   *
+   * `args` is the call's argument list when the caller has already parsed it —
+   * the linking pass records every call site and would otherwise parse the same
+   * arguments a second time (#541).
    */
-  static parseSemanticAction(node: TreeSitterNode, functionName: string): DialogAction {
-    const specific = ActionParsers.parseSpecificAction(node, functionName);
+  static parseSemanticAction(node: TreeSitterNode, functionName: string, args?: ParsedArg[]): DialogAction {
+    const callArgs = args ?? ActionParsers.parseCallArguments(node);
+    const specific = ActionParsers.parseSpecificAction(node, functionName, callArgs);
     const action = (specific ?? ActionParsers.parseGenericAction(node)) as DialogAction & CodeGeneratable;
     captureCallIdentity(action, node);
     // Typed action models normalize arguments, so comments embedded in the
@@ -52,8 +57,8 @@ export class ActionParsers {
     // but attach the complete call for the comment-aware generator path.
     // The enclosing statement also owns comments between `)` and `;`, which
     // are outside the call node. Capture them for typed and generic calls alike.
-    const hasNumericSpelling = node.childForFieldName('arguments')?.namedChildren.some(arg =>
-      /^-?\d+$/.test(arg.text) && String(Number(arg.text)) !== arg.text
+    const hasNumericSpelling = callArgs.some(arg =>
+      /^-?\d+$/.test(arg.raw) && String(Number(arg.raw)) !== arg.raw
     );
     if ((specific && (hasComment(node) || hasNumericSpelling)) || getCallStatementSuffix(node) !== undefined) {
       action.sourceText = node.text;
@@ -62,70 +67,79 @@ export class ActionParsers {
     return action;
   }
 
+  private static parseCallArguments(node: TreeSitterNode): ParsedArg[] {
+    const argsNode = node.childForFieldName('arguments');
+    return argsNode ? parseArgumentsDetailed(argsNode) : [];
+  }
+
   /**
    * Dispatch to a specific action parser by (case-insensitive) function name.
    * Returns null when the name is unrecognized or the specific parser declines
    * (e.g. arity mismatch); callers fall back to a generic verbatim action.
    */
-  private static parseSpecificAction(node: TreeSitterNode, functionName: string): DialogAction | null {
+  private static parseSpecificAction(
+    node: TreeSitterNode,
+    functionName: string,
+    args: ParsedArg[]
+  ): DialogAction | null {
     // Daedalus identifiers are case-insensitive, so dispatch on a normalized
     // key while passing the original `functionName` to sub-parsers that need to
     // preserve the source casing in the model.
     const dispatchKey = functionName.toLowerCase();
 
     if (dispatchKey.startsWith('b_teach')) {
-      return ActionParsers.parseTeachCall(node, functionName);
+      return ActionParsers.parseTeachCall(args, functionName);
     }
 
     switch (dispatchKey) {
       case 'ai_output':
-        return ActionParsers.parseAIOutputCall(node);
+        return ActionParsers.parseAIOutputCall(node, args);
       case 'info_addchoice':
-        return ActionParsers.parseInfoAddChoiceCall(node);
+        return ActionParsers.parseInfoAddChoiceCall(args);
       case 'info_clearchoices':
-        return ActionParsers.parseClearChoicesCall(node);
+        return ActionParsers.parseClearChoicesCall(args);
       case 'log_createtopic':
-        return ActionParsers.parseCreateTopicCall(node);
+        return ActionParsers.parseCreateTopicCall(args);
       case 'b_logentry':
       case 'log_addentry':
-        return ActionParsers.parseLogEntryCall(node);
+        return ActionParsers.parseLogEntryCall(args);
       case 'log_settopicstatus':
-        return ActionParsers.parseLogSetTopicStatusCall(node);
+        return ActionParsers.parseLogSetTopicStatusCall(args);
       case 'createinvitems':
-        return ActionParsers.parseCreateInventoryItemsCall(node);
+        return ActionParsers.parseCreateInventoryItemsCall(args);
       case 'b_giveinvitems':
-        return ActionParsers.parseGiveInventoryItemsCall(node);
+        return ActionParsers.parseGiveInventoryItemsCall(args);
       case 'b_attack':
-        return ActionParsers.parseAttackCall(node);
+        return ActionParsers.parseAttackCall(args);
       case 'b_setattitude':
-        return ActionParsers.parseSetAttitudeCall(node);
+        return ActionParsers.parseSetAttitudeCall(args);
       case 'npc_exchangeroutine':
-        return ActionParsers.parseExchangeRoutineCall(node);
+        return ActionParsers.parseExchangeRoutineCall(args);
       case 'b_kapitelwechsel':
-        return ActionParsers.parseChapterTransitionCall(node);
+        return ActionParsers.parseChapterTransitionCall(args);
       case 'ai_stopprocessinfos':
-        return ActionParsers.parseStopProcessInfosCall(node);
+        return ActionParsers.parseStopProcessInfosCall(args);
       case 'npc_setrefusetalk':
-        return ActionParsers.parseSetRefuseTalkCall(node);
+        return ActionParsers.parseSetRefuseTalkCall(args);
       case 'ai_playani':
-        return ActionParsers.parsePlayAniCall(node);
+        return ActionParsers.parsePlayAniCall(args);
       case 'b_giveplayerxp':
-        return ActionParsers.parseGivePlayerXPCall(node);
+        return ActionParsers.parseGivePlayerXPCall(args);
       case 'c_beklauen':
       case 'b_beklauen':
-        return ActionParsers.parsePickpocketCall(node, functionName);
+        return ActionParsers.parsePickpocketCall(args, functionName);
       case 'b_startotherroutine':
-        return ActionParsers.parseStartOtherRoutineCall(node, functionName);
+        return ActionParsers.parseStartOtherRoutineCall(args, functionName);
       case 'b_givetradeinv':
-        return ActionParsers.parseGiveTradeInventoryCall(node);
+        return ActionParsers.parseGiveTradeInventoryCall(args);
       case 'npc_removeinvitems':
-        return ActionParsers.parseRemoveInventoryItemsCall(node, functionName, 3);
+        return ActionParsers.parseRemoveInventoryItemsCall(args, functionName, 3);
       case 'npc_removeinvitem':
-        return ActionParsers.parseRemoveInventoryItemsCall(node, functionName, 2);
+        return ActionParsers.parseRemoveInventoryItemsCall(args, functionName, 2);
       case 'b_useitem':
-        return ActionParsers.parseUseItemCall(node);
+        return ActionParsers.parseUseItemCall(args);
       case 'wld_insertnpc':
-        return ActionParsers.parseInsertNpcCall(node);
+        return ActionParsers.parseInsertNpcCall(args);
       default:
         return null;
     }
@@ -136,14 +150,10 @@ export class ActionParsers {
    * Reduces duplication across simple action parsers
    */
   private static parseActionWithArgs<T>(
-    node: TreeSitterNode,
     arity: number | { min: number; max: number },
-    factory: (args: ParsedArg[]) => T | null
+    factory: (args: ParsedArg[]) => T | null,
+    args: ParsedArg[]
   ): T | null {
-    const argsNode = node.childForFieldName('arguments');
-    if (!argsNode) return null;
-
-    const args = parseArgumentsDetailed(argsNode);
     const min = typeof arity === 'number' ? arity : arity.min;
     const max = typeof arity === 'number' ? arity : arity.max;
     // Fall back (return null) on an argument count that does not match the
@@ -158,11 +168,7 @@ export class ActionParsers {
    * Parse AI_Output function call
    * Special handling: looks for comment after call to use as dialog text
    */
-  static parseAIOutputCall(node: TreeSitterNode): DialogLine | null {
-    const argsNode = node.childForFieldName('arguments');
-    if (!argsNode) return null;
-
-    const args = parseArgumentsDetailed(argsNode);
+  static parseAIOutputCall(node: TreeSitterNode, args: ParsedArg[]): DialogLine | null {
     if (args.length !== 3) return null;
 
     const speaker = args[0].raw;
@@ -188,11 +194,7 @@ export class ActionParsers {
   /**
    * Parse Info_AddChoice function call
    */
-  static parseInfoAddChoiceCall(node: TreeSitterNode): Choice | null {
-    const argsNode = node.childForFieldName('arguments');
-    if (!argsNode) return null;
-
-    const args = parseArgumentsDetailed(argsNode);
+  static parseInfoAddChoiceCall(args: ParsedArg[]): Choice | null {
     if (args.length !== 3) return null;
 
     // Reference fields own complete expressions; quoted values must not turn
@@ -205,177 +207,172 @@ export class ActionParsers {
   /**
    * Parse Info_ClearChoices function call
    */
-  static parseClearChoicesCall(node: TreeSitterNode): ClearChoicesAction | null {
-    return ActionParsers.parseActionWithArgs(node, 1, (args) =>
-      new ClearChoicesAction(args[0].raw)
+  static parseClearChoicesCall(args: ParsedArg[]): ClearChoicesAction | null {
+    return ActionParsers.parseActionWithArgs(1, (parsed) =>
+      new ClearChoicesAction(parsed[0].raw), args
     );
   }
 
   /**
    * Parse Log_CreateTopic function call
    */
-  static parseCreateTopicCall(node: TreeSitterNode): CreateTopic | null {
-    return ActionParsers.parseActionWithArgs(node, { min: 1, max: 2 }, (args) =>
-      new CreateTopic(args[0].raw, args[1] ? args[1].raw : null)
+  static parseCreateTopicCall(args: ParsedArg[]): CreateTopic | null {
+    return ActionParsers.parseActionWithArgs({ min: 1, max: 2 }, (parsed) =>
+      new CreateTopic(parsed[0].raw, parsed[1] ? parsed[1].raw : null), args
     );
   }
 
   /**
    * Parse B_LogEntry function call
    */
-  static parseLogEntryCall(node: TreeSitterNode): LogEntry | null {
-    return ActionParsers.parseActionWithArgs(node, 2, (args) =>
-      new LogEntry(args[0].raw, args[1].value, !args[1].isString)
+  static parseLogEntryCall(args: ParsedArg[]): LogEntry | null {
+    return ActionParsers.parseActionWithArgs(2, (parsed) =>
+      new LogEntry(parsed[0].raw, parsed[1].value, !parsed[1].isString), args
     );
   }
 
   /**
    * Parse Log_SetTopicStatus function call
    */
-  static parseLogSetTopicStatusCall(node: TreeSitterNode): LogSetTopicStatus | null {
-    return ActionParsers.parseActionWithArgs(node, 2, (args) =>
-      new LogSetTopicStatus(args[0].raw, args[1].raw)
+  static parseLogSetTopicStatusCall(args: ParsedArg[]): LogSetTopicStatus | null {
+    return ActionParsers.parseActionWithArgs(2, (parsed) =>
+      new LogSetTopicStatus(parsed[0].raw, parsed[1].raw), args
     );
   }
 
   /**
    * Parse CreateInvItems function call
    */
-  static parseCreateInventoryItemsCall(node: TreeSitterNode): CreateInventoryItems | null {
-    return ActionParsers.parseActionWithArgs(node, 3, (args) =>
-      new CreateInventoryItems(args[0].raw, args[1].raw, parseNumericArg(args[2].raw))
+  static parseCreateInventoryItemsCall(args: ParsedArg[]): CreateInventoryItems | null {
+    return ActionParsers.parseActionWithArgs(3, (parsed) =>
+      new CreateInventoryItems(parsed[0].raw, parsed[1].raw, parseNumericArg(parsed[2].raw)), args
     );
   }
 
   /**
    * Parse B_GiveInvItems function call
    */
-  static parseGiveInventoryItemsCall(node: TreeSitterNode): GiveInventoryItems | null {
-    return ActionParsers.parseActionWithArgs(node, 4, (args) =>
-      new GiveInventoryItems(args[0].raw, args[1].raw, args[2].raw, parseNumericArg(args[3].raw))
+  static parseGiveInventoryItemsCall(args: ParsedArg[]): GiveInventoryItems | null {
+    return ActionParsers.parseActionWithArgs(4, (parsed) =>
+      new GiveInventoryItems(parsed[0].raw, parsed[1].raw, parsed[2].raw, parseNumericArg(parsed[3].raw)), args
     );
   }
 
   /**
    * Parse B_Attack function call
    */
-  static parseAttackCall(node: TreeSitterNode): AttackAction | null {
-    return ActionParsers.parseActionWithArgs(node, 4, (args) =>
-      new AttackAction(args[0].raw, args[1].raw, args[2].raw, parseNumericArg(args[3].raw))
+  static parseAttackCall(args: ParsedArg[]): AttackAction | null {
+    return ActionParsers.parseActionWithArgs(4, (parsed) =>
+      new AttackAction(parsed[0].raw, parsed[1].raw, parsed[2].raw, parseNumericArg(parsed[3].raw)), args
     );
   }
 
   /**
    * Parse B_SetAttitude function call
    */
-  static parseSetAttitudeCall(node: TreeSitterNode): SetAttitudeAction | null {
-    return ActionParsers.parseActionWithArgs(node, 2, (args) =>
-      new SetAttitudeAction(args[0].raw, args[1].raw)
+  static parseSetAttitudeCall(args: ParsedArg[]): SetAttitudeAction | null {
+    return ActionParsers.parseActionWithArgs(2, (parsed) =>
+      new SetAttitudeAction(parsed[0].raw, parsed[1].raw), args
     );
   }
 
   /**
    * Parse Npc_ExchangeRoutine function call
    */
-  static parseExchangeRoutineCall(node: TreeSitterNode): ExchangeRoutineAction | null {
-    return ActionParsers.parseActionWithArgs(node, 2, (args) =>
-      new ExchangeRoutineAction(args[0].raw, args[1].value, !args[1].isString)
+  static parseExchangeRoutineCall(args: ParsedArg[]): ExchangeRoutineAction | null {
+    return ActionParsers.parseActionWithArgs(2, (parsed) =>
+      new ExchangeRoutineAction(parsed[0].raw, parsed[1].value, !parsed[1].isString), args
     );
   }
 
   /**
    * Parse B_Kapitelwechsel function call
    */
-  static parseChapterTransitionCall(node: TreeSitterNode): ChapterTransitionAction | null {
-    return ActionParsers.parseActionWithArgs(node, 2, (args) =>
-      new ChapterTransitionAction(parseNumericArg(args[0].raw), args[1].raw)
+  static parseChapterTransitionCall(args: ParsedArg[]): ChapterTransitionAction | null {
+    return ActionParsers.parseActionWithArgs(2, (parsed) =>
+      new ChapterTransitionAction(parseNumericArg(parsed[0].raw), parsed[1].raw), args
     );
   }
 
   /**
    * Parse AI_StopProcessInfos function call
    */
-  static parseStopProcessInfosCall(node: TreeSitterNode): StopProcessInfosAction | null {
-    return ActionParsers.parseActionWithArgs(node, 1, (args) =>
-      new StopProcessInfosAction(args[0].raw)
+  static parseStopProcessInfosCall(args: ParsedArg[]): StopProcessInfosAction | null {
+    return ActionParsers.parseActionWithArgs(1, (parsed) =>
+      new StopProcessInfosAction(parsed[0].raw), args
     );
   }
 
   /**
    * Parse Npc_SetRefuseTalk function call
    */
-  static parseSetRefuseTalkCall(node: TreeSitterNode): SetRefuseTalkAction | null {
-    return ActionParsers.parseActionWithArgs(node, 2, (args) =>
-      new SetRefuseTalkAction(args[0].raw, parseNumericArg(args[1].raw))
+  static parseSetRefuseTalkCall(args: ParsedArg[]): SetRefuseTalkAction | null {
+    return ActionParsers.parseActionWithArgs(2, (parsed) =>
+      new SetRefuseTalkAction(parsed[0].raw, parseNumericArg(parsed[1].raw)), args
     );
   }
 
   /**
    * Parse AI_PlayAni function call
    */
-  static parsePlayAniCall(node: TreeSitterNode): PlayAniAction | null {
-    return ActionParsers.parseActionWithArgs(node, 2, (args) =>
-      new PlayAniAction(args[0].raw, args[1].value, !args[1].isString)
+  static parsePlayAniCall(args: ParsedArg[]): PlayAniAction | null {
+    return ActionParsers.parseActionWithArgs(2, (parsed) =>
+      new PlayAniAction(parsed[0].raw, parsed[1].value, !parsed[1].isString), args
     );
   }
 
   /**
    * Parse B_GivePlayerXP function call
    */
-  static parseGivePlayerXPCall(node: TreeSitterNode): GivePlayerXPAction | null {
-    return ActionParsers.parseActionWithArgs(node, 1, (args) =>
-      new GivePlayerXPAction(args[0].raw)
+  static parseGivePlayerXPCall(args: ParsedArg[]): GivePlayerXPAction | null {
+    return ActionParsers.parseActionWithArgs(1, (parsed) =>
+      new GivePlayerXPAction(parsed[0].raw), args
     );
   }
 
   /**
    * Parse B_Beklauen / C_Beklauen function calls
    */
-  static parsePickpocketCall(node: TreeSitterNode, functionName: string): PickpocketAction | null {
-    const argsNode = node.childForFieldName('arguments');
-    const args = argsNode ? parseArgumentsDetailed(argsNode).map((a) => a.raw) : [];
+  static parsePickpocketCall(args: ParsedArg[], functionName: string): PickpocketAction | null {
+    const raw = args.map((parsed) => parsed.raw);
     // Decide the mode by the (case-insensitive) dispatch key, not the source
     // casing, so `b_beklauen` maps to the B_Beklauen behavior (M5).
     const mode: 'B_Beklauen' | 'C_Beklauen' =
       functionName.toLowerCase() === 'b_beklauen' ? 'B_Beklauen' : 'C_Beklauen';
-    return new PickpocketAction(mode, args[0], args[1], functionName, args);
+    return new PickpocketAction(mode, raw[0], raw[1], functionName, raw);
   }
 
   /**
    * Parse B_StartOtherRoutine / B_StartotherRoutine function call
    */
-  static parseStartOtherRoutineCall(node: TreeSitterNode, functionName: string): StartOtherRoutineAction | null {
-    return ActionParsers.parseActionWithArgs(node, 2, (args) =>
-      new StartOtherRoutineAction(functionName, args[0].raw, args[1].value, !args[1].isString)
+  static parseStartOtherRoutineCall(args: ParsedArg[], functionName: string): StartOtherRoutineAction | null {
+    return ActionParsers.parseActionWithArgs(2, (parsed) =>
+      new StartOtherRoutineAction(functionName, parsed[0].raw, parsed[1].value, !parsed[1].isString), args
     );
   }
 
   /**
    * Parse B_Teach* function calls
    */
-  static parseTeachCall(node: TreeSitterNode, functionName: string): TeachAction | null {
-    const argsNode = node.childForFieldName('arguments');
-    if (!argsNode) return null;
-
-    const args = parseArgumentsDetailed(argsNode).map((a) => a.raw);
-    return new TeachAction(functionName, args);
+  static parseTeachCall(args: ParsedArg[], functionName: string): TeachAction {
+    return new TeachAction(functionName, args.map((parsed) => parsed.raw));
   }
 
   /**
    * Parse B_GiveTradeInv function call
    */
-  static parseGiveTradeInventoryCall(node: TreeSitterNode): GiveTradeInventoryAction | null {
-    return ActionParsers.parseActionWithArgs(node, 1, (args) =>
-      new GiveTradeInventoryAction(args[0].raw)
+  static parseGiveTradeInventoryCall(args: ParsedArg[]): GiveTradeInventoryAction | null {
+    return ActionParsers.parseActionWithArgs(1, (parsed) =>
+      new GiveTradeInventoryAction(parsed[0].raw), args
     );
   }
 
   /**
    * Parse B_UseItem function call
    */
-  static parseUseItemCall(node: TreeSitterNode): UseItemAction | null {
-    return ActionParsers.parseActionWithArgs(node, 2, (args) =>
-      new UseItemAction(args[0].raw, args[1].raw)
+  static parseUseItemCall(args: ParsedArg[]): UseItemAction | null {
+    return ActionParsers.parseActionWithArgs(2, (parsed) =>
+      new UseItemAction(parsed[0].raw, parsed[1].raw), args
     );
   }
 
@@ -383,26 +380,26 @@ export class ActionParsers {
    * Parse Npc_RemoveInvItems / Npc_RemoveInvItem function call
    */
   static parseRemoveInventoryItemsCall(
-    node: TreeSitterNode,
+    args: ParsedArg[],
     functionName: string,
     arity: number
   ): RemoveInventoryItemsAction | null {
-    return ActionParsers.parseActionWithArgs(node, arity, (args) =>
+    return ActionParsers.parseActionWithArgs(arity, (parsed) =>
       new RemoveInventoryItemsAction(
         functionName,
-        args[0].raw,
-        args[1].raw,
-        args[2] ? args[2].raw : undefined
-      )
+        parsed[0].raw,
+        parsed[1].raw,
+        parsed[2] ? parsed[2].raw : undefined
+      ), args
     );
   }
 
   /**
    * Parse Wld_InsertNpc function call
    */
-  static parseInsertNpcCall(node: TreeSitterNode): InsertNpcAction | null {
-    return ActionParsers.parseActionWithArgs(node, 2, (args) =>
-      new InsertNpcAction(args[0].raw, args[1].value, !args[1].isString)
+  static parseInsertNpcCall(args: ParsedArg[]): InsertNpcAction | null {
+    return ActionParsers.parseActionWithArgs(2, (parsed) =>
+      new InsertNpcAction(parsed[0].raw, parsed[1].value, !parsed[1].isString), args
     );
   }
 
@@ -462,4 +459,3 @@ export class ActionParsers {
     return null;
   }
 }
-

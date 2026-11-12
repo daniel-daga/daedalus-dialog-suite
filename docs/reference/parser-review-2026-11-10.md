@@ -80,26 +80,33 @@ upkeep grows with every fidelity fix.
 
 4. **The linking pass costs about seventeen times the parse**
     (`src/semantic/visitors/linking-visitor.ts`)
-    - **Active follow-up:** #541; implementation and verification plan:
-      [issue-541-parser-cost.md](../plans/issue-541-parser-cost.md). The cursor
-      call sweep and projection pruning already landed in `a1709ae`; the audit
-      timings below are the original baseline, not the current checkout.
-   - **What this is:** pass 2 builds actions, conditions and call sites.
-   - **Problem:** *measured* on 2.3 MB of dialog source: parse 114 ms, pass 1
-     190 ms, pass 2 1,983 ms, generation 62 ms. A CPU profile puts roughly 60%
-     of the run in tree-sitter's JS node marshalling (`unmarshalNode`, `get
-     type`, `get namedChildren`, `childForFieldName`, `startIndex`) and 9% in
-     GC. The pass materialises each function-body node more than once:
-     `recordCallSitesInSubtree` sweeps the body with `namedChildren`,
-     `analyzeNodeRecursively` then walks it again taking `cursor.currentNode` at
-     every node, and `hasComment` / `getCallStatementSuffix` / `multiLineIndent`
-     re-read subtrees per action. It is linear, so a 30 KB dialog file is
-     ~25 ms and nobody notices; a project load is where it adds up.
-   - **Fix:** fold the call-site sweep into the one walk, and read
-     `cursor.nodeType` before deciding to materialise a node. Measure first
-     against the MDK corpus; this container has no copy.
-   - **If we skip it:** project indexing stays bounded by this pass rather than
-     by the parser the package describes as high-performance.
+    - **Landed (#541):** `a1709ae` cut the projection walk below calls and
+      assignments and read the cursor before materialising a node; then the
+      call-site sweep and the projection became one walk — a skipped subtree is
+      indexed and never projected — and a call's arguments are parsed once and
+      handed to the action parser. *Measured* with
+      `scripts/benchmark-model.js` on a synthetic 0.96 MB, 20-file dialog
+      corpus: pass 2 1,339 → 1,158 ms (−13%), model build 11.8× → 10.7× the
+      parse. Model JSON and generated output are byte-identical to the previous
+      build across the fixtures and that corpus. **The MDK tree was not
+      available to the machine this landed on**, so its ratio is still the
+      audit's number, not this one.
+    - **What remains** is the audit's diagnosis: ~60% of the pass is
+      tree-sitter's JS node marshalling, because every `type`, `namedChildren`,
+      `text` and `startIndex` read is a native call, and conditional projection
+      plus the call-index walk still read a lot of them. Only a pass that
+      materialises close to nothing per statement will move it much further.
+    - **What this is:** pass 2 builds actions, conditions and call sites.
+    - **Problem at audit time:** *measured* on 2.3 MB of dialog source: parse 114 ms, pass 1
+      190 ms, pass 2 1,983 ms, generation 62 ms. A CPU profile puts roughly 60%
+      of the run in tree-sitter's JS node marshalling (`unmarshalNode`, `get
+      type`, `get namedChildren`, `childForFieldName`, `startIndex`) and 9% in
+      GC. The pass materialises each function-body node more than once:
+      `recordCallSitesInSubtree` sweeps the body with `namedChildren`,
+      `analyzeNodeRecursively` then walks it again taking `cursor.currentNode` at
+      every node, and `hasComment` / `getCallStatementSuffix` / `multiLineIndent`
+      re-read subtrees per action. It is linear, so a 30 KB dialog file is
+      ~25 ms and nobody notices; a project load is where it adds up.
 
 5. **The serialized model is five to twelve times the source**
    (`src/semantic/semantic-model.ts`, `linking-visitor.ts:607-629`)
@@ -110,10 +117,18 @@ upkeep grows with every fidelity fix.
      startup function is 8.9 MB, and `deserializeSemanticModel` takes 621 ms on
      it. The model crosses the worker boundary and IPC on every parse and every
      save.
-   - **Fix:** drop `calls` (it is `callSites.map(c => c.functionName)`), and
-     decide whether `callSites` belongs on the editable model at all or on the
-     index that is its only reader.
-   - **If we skip it:** large files pay for it in memory and in each round trip.
+   - **Landed (#541):** `callSites` stops at the renderer boundary
+     (`daedalus-dialog-editor/src/main/utils/withoutCallSites.ts`). The three
+     IPC paths that hand a model to the renderer — `parser:parseSource`,
+     `project:parseDialogFile` in both its cached and parsed branches, and
+     `project:indexFile` after the index is built from the full model — drop it
+     from a one-level copy; the main process keeps the full model. *Measured:*
+     models 39% smaller on the synthetic corpus, 18% on the fixtures. `calls`
+     stays: it is small and the Problems rules and quest detection read it in
+     the renderer.
+   - **What remains:** the sites still cross the worker→main hop, which the
+     audit's 621 ms hydration sits inside. Separating index-only data there is
+     a worker-result shape, not a flag; nobody has needed it yet.
 
 ## Nice to have
 

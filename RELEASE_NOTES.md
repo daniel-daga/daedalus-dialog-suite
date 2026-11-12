@@ -3,7 +3,7 @@
 ## One line per change, newest on top, `- #123: Short description` (120 characters max). A build ships only the lines added since the last one, and CHANGELOG.md keeps them; old lines may be pruned at any time.
 
 - #543: A world or asset that crashes the ZenKit reader no longer closes the editor and its unsaved scripts
-- #541: Scripts are analysed about a fifth faster when a project loads
+- #541: A project's scripts are analysed faster, and the editor no longer holds per-call index data
 - #538: A deeply nested script opens with an error naming its line instead of failing to load or to save
 - #540: The NPC editor refuses a value that would break the instance instead of saving it
 - #539: A file with a syntax error opens without a long stall, however the error is shaped

@@ -4,11 +4,10 @@ import { TreeSitterNode } from '../semantic-model';
  * Is this child of an argument_list an actual argument? Punctuation is not, and
  * neither is a comment: comments are grammar extras and can appear anywhere
  * inside a call, so counting one as an argument shifts every real argument.
+ * Reads the node type alone, so a cursor can ask before materialising a node.
  */
-export function isArgumentNode(node: TreeSitterNode): boolean {
-  return (
-    node.type !== ',' && node.type !== '(' && node.type !== ')' && node.type !== 'comment'
-  );
+export function isArgumentType(type: string): boolean {
+  return type !== ',' && type !== '(' && type !== ')' && type !== 'comment';
 }
 
 /**
@@ -30,16 +29,20 @@ export interface ParsedArg {
  */
 export function parseArgumentsDetailed(argsNode: TreeSitterNode): ParsedArg[] {
   const args: ParsedArg[] = [];
-  for (let i = 0; i < argsNode.childCount; i++) {
-    const child = argsNode.child(i);
-    if (isArgumentNode(child)) {
-      args.push({
-        raw: child.text.trim(),
-        value: normalizeArgumentText(child),
-        isString: child.type === 'string'
-      });
-    }
-  }
+  // A cursor, so punctuation and comments cost a type read rather than a node,
+  // and each argument's text is read once for both forms (#541).
+  const cursor = argsNode.walk();
+  if (!cursor.gotoFirstChild()) return args;
+  do {
+    const type = cursor.nodeType;
+    if (!isArgumentType(type)) continue;
+    const text = cursor.currentNode.text;
+    args.push({
+      raw: text.trim(),
+      value: type === 'string' ? text.replace(/^"/, '').replace(/"$/, '') : text.trim(),
+      isString: type === 'string'
+    });
+  } while (cursor.gotoNextSibling());
   return args;
 }
 
