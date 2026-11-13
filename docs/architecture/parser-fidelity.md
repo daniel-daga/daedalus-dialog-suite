@@ -33,6 +33,19 @@ registered natively; these reference stubs are not their implementations.
 Do not infer compiler legality from a declaration's presence in the script
 directory, or downgrade all function duplicates based on this reference file.
 
+Project indexing respects discovered `.src` lists (#559): it indexes the union
+of their `.d` entries, with case-insensitive paths, `*`/`?` wildcards, comments,
+and entries relative to each list's directory (including nested lists).
+All discovered lists are potential entry points; there is no active-game/parser
+selection. Files outside any list's directory subtree retain folder-scan
+behavior, as do projects without lists. Unreadable lists, missing explicit
+entries or paths outside the project cause a logged fallback to the full scan,
+not silent loss of diagnostics. Empty wildcard matches are allowed.
+This filters metadata, background ingestion and project diagnostics together;
+it does not relax parser validation or saving of directly opened files.
+Membership is refreshed by a full index build; `.src` edits require reopening
+the project because the file watcher only watches `.d` files.
+
 ## Reference, hydration and export ownership
 
 Reference identity is separate from preserved expression text. A shared AST

@@ -28,6 +28,7 @@ import { MetadataWorkerPool } from './MetadataWorkerPool';
 import type { MetadataResult } from './MetadataWorkerPool';
 import { LruMap } from '../utils/lruMap';
 import { isPathInside } from '../utils/pathContainment';
+import { selectSourceFiles } from '../utils/sourceFiles';
 
 function normalizeIdentifier(value: string): string {
   return value.trim().toUpperCase();
@@ -73,7 +74,7 @@ class ProjectService {
     return entry.model;
   }
   /**
-   * Recursively scan directory for .d files (async).
+   * Recursively scan directory for .d files (or .src compilation lists).
    *
    * Junctions and symlinks are followed only while their real path stays
    * inside the project root: `PathValidationService` refuses to read a path
@@ -84,13 +85,13 @@ class ProjectService {
    * cannot be read is logged and skipped so one bad folder does not hide the
    * rest of the project; the root itself failing is the caller's error.
    */
-  async scanDirectory(rootPath: string): Promise<string[]> {
+  async scanDirectory(rootPath: string, extension: '.d' | '.src' = '.d'): Promise<string[]> {
     const files: string[] = [];
     const visited = new Set<string>();
     const outsideLinks: string[] = [];
     const realRoot = await fs.realpath(rootPath);
 
-    const isDotD = (name: string) => path.extname(name).toLowerCase() === '.d';
+    const matchesExtension = (name: string) => path.extname(name).toLowerCase() === extension;
 
     const scanRecursive = async (dir: string): Promise<void> => {
       const realDir = await fs.realpath(dir);
@@ -107,7 +108,7 @@ class ProjectService {
           promises.push(scanLink(fullPath));
         } else if (entry.isDirectory()) {
           promises.push(scanSubdirectory(fullPath));
-        } else if (entry.isFile() && isDotD(entry.name)) {
+        } else if (entry.isFile() && matchesExtension(entry.name)) {
           files.push(fullPath);
         }
       }
@@ -138,7 +139,7 @@ class ProjectService {
       }
       if (stat.isDirectory()) {
         await scanSubdirectory(linkPath);
-      } else if (stat.isFile() && isDotD(linkPath)) {
+      } else if (stat.isFile() && matchesExtension(linkPath)) {
         files.push(linkPath);
       }
     };
@@ -165,8 +166,10 @@ class ProjectService {
     // A reindex invalidates every previously primed model.
     this.primedModels.clear();
 
-    // Scan for all .d files
-    const allFiles = await this.scanDirectory(rootPath);
+    const [scripts, sourceLists] = await Promise.all([
+      this.scanDirectory(rootPath), this.scanDirectory(rootPath, '.src')
+    ]);
+    const allFiles = await selectSourceFiles(rootPath, scripts, sourceLists);
 
     // Map to store dialogs by NPC
     const dialogsByNpc = new Map<string, DialogMetadata[]>();
