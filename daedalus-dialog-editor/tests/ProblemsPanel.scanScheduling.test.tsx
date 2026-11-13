@@ -20,8 +20,8 @@ describe('ProblemsPanel scan scheduling', () => {
   beforeEach(() => {
     runScan.mockClear();
     requestScan.mockClear();
-    useProblemsStore.setState({ runScan, requestScan });
-    useProjectStore.setState({ parseGeneration: 0, isIngesting: false });
+    useProblemsStore.setState({ runScan, requestScan, hasScanned: true, isScanning: false });
+    useProjectStore.setState({ parseGeneration: 0, isIngesting: false, projectPath: 'C:/mod' });
   });
 
   afterEach(() => {

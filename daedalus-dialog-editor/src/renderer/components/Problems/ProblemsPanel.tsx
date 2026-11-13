@@ -1,13 +1,16 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  Alert, Box, Button, Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle, Typography,
+  Alert, Box, Button, Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle,
+  LinearProgress, MenuItem, TextField, Typography,
 } from '@mui/material';
 import { Refresh as RefreshIcon } from '@mui/icons-material';
 import {
   SEARCHABLE_PANE_PATTERN,
   searchablePaneContentSx,
+  searchablePaneFilterStripSx,
   searchablePaneHeaderSx,
-  searchablePaneShellSx
+  searchablePaneShellSx,
+  searchablePaneTextFieldSx
 } from '../common/searchablePaneStyles';
 import { useProblemsStore } from '../../store/problemsStore';
 import { useProjectStore } from '../../store/projectStore';
@@ -17,7 +20,7 @@ import { useWorldStore, worldFocusOf } from '../../store/worldStore';
 import { useNavigation } from '../../hooks/useNavigation';
 import type { Problem } from '../../problems/domain/types';
 import { looksLikeAnotherLanguage } from '../../problems/domain/rules/outputUnitDrift';
-import ProblemsList from './ProblemsList';
+import ProblemsList, { RULE_LABEL, SEVERITY_LABEL, secondaryText } from './ProblemsList';
 
 /**
  * Project-wide Problems panel. Runs the lint rules over the parsed project files
@@ -46,6 +49,40 @@ const ProblemsPanel: React.FC = () => {
   // that is open — the editor holds one at a time, and the finding may belong
   // to another.
   const worldOpen = useWorldStore((s) => s.status === 'ready');
+  const [severity, setSeverity] = useState('');
+  const [location, setLocation] = useState('');
+  const [rule, setRule] = useState('');
+  const [search, setSearch] = useState('');
+  const filtersActive = severity !== '' || location !== '' || rule !== '' || search !== '';
+  const scanning = projectOpen && (isScanning || isIngesting || !hasScanned);
+  const locations = useMemo(() => {
+    const paths = new Set(problems.flatMap((problem) => (
+      problem.locus.kind === 'script' ? [problem.locus.filePath] : []
+    )));
+    // Keep the selection available when a rescan clears its last finding.
+    if (location && location !== 'script' && location !== 'world') paths.add(location);
+    return [...paths].sort();
+  }, [problems, location]);
+  const filteredProblems = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    return problems.filter((problem) => {
+      if (severity && problem.severity !== severity) return false;
+      if (rule && problem.rule !== rule) return false;
+      if (location && (location === 'world' || location === 'script'
+        ? problem.locus.kind !== location
+        : problem.locus.kind !== 'script' || problem.locus.filePath !== location)) return false;
+      const filePath = problem.locus.kind === 'script' ? problem.locus.filePath : '';
+      return !query || `${problem.message} ${RULE_LABEL[problem.rule]} ${secondaryText(problem)} ${filePath}`
+        .toLowerCase().includes(query);
+    });
+  }, [problems, severity, location, rule, search]);
+  const emptyMessage = !projectOpen
+    ? 'Open a project to scan for problems.'
+    : scanning
+      ? 'Scanning…'
+      : filtersActive && problems.length > 0
+        ? 'No problems match your filters.'
+        : 'No problems found.';
 
   useEffect(() => {
     requestScan();
@@ -173,29 +210,63 @@ const ProblemsPanel: React.FC = () => {
             size="small"
             startIcon={<RefreshIcon />}
             onClick={() => runScan()}
+            disabled={scanning || !projectOpen}
             data-testid="problems-rescan"
           >
             Rescan
           </Button>
         </Box>
-        <Typography variant="caption" color="text.secondary" data-testid="problems-summary">
+        <Typography variant="caption" color="text.secondary" data-testid="problems-summary" role="status">
           {!projectOpen
             ? 'Problems are found by scanning a project — open a project to see them here.'
-            : isScanning || !hasScanned
-              ? 'Scanning…'
+            : scanning
+              ? (problems.length > 0 ? 'Scanning… Showing previous results.' : 'Scanning…')
               : `${errorCount} error${errorCount === 1 ? '' : 's'}, ${warningCount} warning${warningCount === 1 ? '' : 's'}`
                 + (hintCount > 0 ? `, ${hintCount} hint${hintCount === 1 ? '' : 's'}` : '')}
           {ingestionIncomplete ? ` · ${scannedFileCount}/${totalFileCount} files scanned` : ''}
         </Typography>
       </Box>
+      <Box sx={searchablePaneFilterStripSx}>
+        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+          <TextField
+            size="small" label="Search problems" value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            sx={(theme) => ({ ...searchablePaneTextFieldSx(theme), flex: '1 1 220px' })}
+          />
+          <TextField select size="small" label="Type" value={severity} onChange={(event) => setSeverity(event.target.value)} sx={{ minWidth: 140 }}>
+            <MenuItem value="">All types</MenuItem>
+            {Object.entries(SEVERITY_LABEL).map(([value, label]) => <MenuItem key={value} value={value}>{label}</MenuItem>)}
+          </TextField>
+          <TextField select size="small" label="Location" value={location} onChange={(event) => setLocation(event.target.value)} sx={{ width: 240, maxWidth: '100%' }}>
+            <MenuItem value="">All locations</MenuItem>
+            <MenuItem value="script">Scripts</MenuItem>
+            <MenuItem value="world">World</MenuItem>
+            {locations.map((filePath) => <MenuItem key={filePath} value={filePath}>{filePath}</MenuItem>)}
+          </TextField>
+          <TextField select size="small" label="Kind" value={rule} onChange={(event) => setRule(event.target.value)} sx={{ minWidth: 200 }}>
+            <MenuItem value="">All kinds</MenuItem>
+            {Object.entries(RULE_LABEL).map(([value, label]) => <MenuItem key={value} value={value}>{label}</MenuItem>)}
+          </TextField>
+        </Box>
+        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mt: 0.5 }}>
+          <Typography variant="caption" color="text.secondary" data-testid="problems-filter-count">
+            {`${filteredProblems.length} / ${problems.length} shown`}
+          </Typography>
+          <Button size="small" disabled={!filtersActive} onClick={() => {
+            setSeverity(''); setLocation(''); setRule(''); setSearch('');
+          }}>Reset filters</Button>
+        </Box>
+      </Box>
+      {scanning && <LinearProgress aria-label="Scanning project" />}
       {otherLanguageText && (
         <Alert severity="warning" data-testid="problems-ou-language" sx={{ mx: 1, mb: 1 }}>
           {otherLanguageText}
         </Alert>
       )}
-      <Box sx={searchablePaneContentSx}>
+      <Box sx={searchablePaneContentSx} aria-busy={scanning}>
         <ProblemsList
-          problems={problems}
+          problems={filteredProblems}
+          emptyMessage={emptyMessage}
           onSelect={handleSelect}
           worldOpen={worldOpen}
           onAddToWorld={handleAddToWorld}

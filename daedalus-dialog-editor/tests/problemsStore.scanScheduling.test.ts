@@ -73,6 +73,7 @@ describe('problemsStore scan scheduling', () => {
 
     expect(scanSpy).not.toHaveBeenCalled();
     expect(useProblemsStore.getState().hasScanned).toBe(false);
+    expect(useProblemsStore.getState().isScanning).toBe(true);
 
     // Ingestion completes; the panel effect fires once more on the flip.
     useProjectStore.setState({ isIngesting: false });
@@ -81,6 +82,7 @@ describe('problemsStore scan scheduling', () => {
     // The deferred scan runs immediately, without waiting for the debounce.
     expect(scanSpy).toHaveBeenCalledTimes(1);
     expect(useProblemsStore.getState().hasScanned).toBe(true);
+    expect(useProblemsStore.getState().isScanning).toBe(false);
 
     jest.runAllTimers();
     expect(scanSpy).toHaveBeenCalledTimes(1);
@@ -97,6 +99,7 @@ describe('problemsStore scan scheduling', () => {
 
     jest.advanceTimersByTime(299);
     expect(scanSpy).not.toHaveBeenCalled();
+    expect(useProblemsStore.getState().isScanning).toBe(true);
 
     jest.advanceTimersByTime(1);
     expect(scanSpy).toHaveBeenCalledTimes(1);

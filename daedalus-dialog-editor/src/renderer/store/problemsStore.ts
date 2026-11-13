@@ -39,6 +39,7 @@ const npcsWithDialogs = (dialogIndex: Map<string, DialogMetadata[]>): string[] =
 
 interface ProblemsState {
   problems: Problem[];
+  /** A scan is queued, waiting for ingestion, or running. Previous results remain available. */
   isScanning: boolean;
   /** True once a scan has completed at least once for the current project. */
   hasScanned: boolean;
@@ -148,6 +149,7 @@ export const useProblemsStore = create<ProblemsStore>((set, get) => {
     },
 
     requestScan: () => {
+      set({ isScanning: true });
       if (useProjectStore.getState().isIngesting) {
         scanPendingAfterIngestion = true;
         return;

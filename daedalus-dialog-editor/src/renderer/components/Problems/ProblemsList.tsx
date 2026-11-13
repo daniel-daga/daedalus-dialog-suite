@@ -4,7 +4,7 @@ import { searchablePaneRowButtonSx } from '../common/searchablePaneStyles';
 import type { Problem, ProblemRuleId } from '../../problems/domain/types';
 import { worldFocusOf } from '../../store/worldStore';
 
-const RULE_LABEL: Record<ProblemRuleId, string> = {
+export const RULE_LABEL: Record<ProblemRuleId, string> = {
   'parse-error': 'Syntax error',
   'npc-not-found': 'Missing NPC',
   'knowsinfo-dangling': 'Dangling KnowsInfo',
@@ -25,11 +25,11 @@ const RULE_LABEL: Record<ProblemRuleId, string> = {
   'portal-reversed': 'Portal reversed'
 };
 
-const SEVERITY_LABEL: Record<Problem['severity'], string> = { error: 'Error', warning: 'Warning', hint: 'Hint' };
+export const SEVERITY_LABEL: Record<Problem['severity'], string> = { error: 'Error', warning: 'Warning', hint: 'Hint' };
 
 const baseName =(filePath: string): string => filePath.split(/[\\/]/).pop() || filePath;
 
-const secondaryText = ({ locus }: Problem): string => {
+export const secondaryText = ({ locus }: Problem): string => {
   if (locus.kind === 'world') {
     if (locus.waypoint) return `World · ${locus.waypoint}`;
     if (locus.vob !== undefined) return `World · VOB ${locus.vob}`;
@@ -74,6 +74,7 @@ const addableWaypoint = (problem: Problem, worldOpen: boolean): string | null =>
 
 interface ProblemsListProps {
   problems: Problem[];
+  emptyMessage?: string;
   onSelect: (problem: Problem) => void;
   /** Whether a world is open, which is half of what makes a world row clickable. */
   worldOpen?: boolean;
@@ -92,7 +93,7 @@ interface ProblemsListProps {
  * `onSelect`; severity is shown as a color-coded chip.
  */
 const ProblemsList: React.FC<ProblemsListProps> = ({
-  problems, onSelect, worldOpen = false, onAddToWorld,
+  problems, onSelect, worldOpen = false, onAddToWorld, emptyMessage = 'No problems found.',
 }) => (
   <List dense disablePadding data-testid="problems-list" sx={{ height: '100%', overflowY: 'auto' }}>
     {problems.map((problem, index) => {
@@ -145,7 +146,7 @@ const ProblemsList: React.FC<ProblemsListProps> = ({
     {problems.length === 0 && (
       <Box sx={{ px: 2, py: 3 }}>
         <Typography variant="body2" color="text.secondary" data-testid="problems-empty">
-          No problems found.
+          {emptyMessage}
         </Typography>
       </Box>
     )}

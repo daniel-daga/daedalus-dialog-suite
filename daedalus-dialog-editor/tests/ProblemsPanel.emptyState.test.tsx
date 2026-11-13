@@ -32,6 +32,7 @@ describe('ProblemsPanel empty states', () => {
     const summary = screen.getByTestId('problems-summary');
     expect(summary).toHaveTextContent(/open a project/i);
     expect(summary).not.toHaveTextContent(/0 errors/);
+    expect(screen.getByTestId('problems-empty')).toHaveTextContent(/open a project/i);
   });
 
   it('reports counts once a project is open', () => {
@@ -61,5 +62,15 @@ describe('ProblemsPanel empty states', () => {
     });
     render(<ProblemsPanel />);
     expect(screen.getByTestId('problems-summary')).toHaveTextContent('Scanning');
+    expect(screen.getByTestId('problems-empty')).toHaveTextContent('Scanning');
+    expect(screen.queryByText('No problems found.')).not.toBeInTheDocument();
+  });
+
+  it.each(['initial scan', 'ingestion'])('does not claim a clean project during %s', (phase) => {
+    useProjectStore.setState({ projectPath: 'C:/mod', isIngesting: phase === 'ingestion' });
+    useProblemsStore.setState({ hasScanned: phase !== 'initial scan' });
+    render(<ProblemsPanel />);
+    expect(screen.getByTestId('problems-summary')).toHaveTextContent('Scanning');
+    expect(screen.getByTestId('problems-empty')).toHaveTextContent('Scanning');
   });
 });

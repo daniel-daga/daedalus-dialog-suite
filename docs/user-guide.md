@@ -99,6 +99,15 @@ The Problems panel lists syntax errors and project-wide checks, for example a
 dangling `Npc_KnowsInfo`, overlapping routines, or a routine waypoint that the
 world does not have. Click a problem to jump to it.
 
+Combine **Type** (error, warning, hint), **Location** (scripts, world, or an
+individual file) and **Kind** (the check) to narrow the list. **Search problems**
+matches messages, file paths, declarations and world addresses. The counter
+shows displayed findings out of the total; **Reset filters** restores all findings.
+While a scan is pending or running, the panel says **Scanning…** and keeps any
+previous results visible. A completed clean scan and filters with no matches
+have separate empty messages. Filters only affect the list, not **Update OUs**,
+which still updates all reported subtitle lines after confirmation.
+
 For a file with parse errors, the file view shows its path and the error
 locations. Choose **Edit externally** to open the original in the default
 application for `.d` files (associate `.d` with your text editor in the system

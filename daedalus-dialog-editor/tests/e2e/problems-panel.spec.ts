@@ -76,6 +76,35 @@ test.describe('Problems panel', () => {
     await page.getByTestId('problems-rescan').click();
     await expect(page.getByTestId('problem-row-0')).toContainText('BadVoiceId');
   });
+
+  test('combines type, location, kind and text filters and resets them', async ({ page }) => {
+    await page.getByTestId('problems-toggle').click();
+    const panel = page.getByTestId('problems-panel');
+    const row = panel.getByTestId('problem-row-0');
+    await expect(row).toContainText('BadVoiceId');
+
+    await panel.getByRole('combobox', { name: /^Type/ }).click();
+    await page.getByRole('option', { name: 'Warning', exact: true }).click();
+    await panel.getByRole('combobox', { name: 'Location', exact: true }).click();
+    await page.getByRole('option', { name: 'probtest/dia.d', exact: true }).click();
+    await panel.getByRole('combobox', { name: 'Kind', exact: true }).click();
+    await page.getByRole('option', { name: 'Malformed voice ID', exact: true }).click();
+    await panel.getByRole('textbox', { name: 'Search problems' }).fill('bAdVoIcEiD');
+    await expect(row).toContainText('BadVoiceId');
+    await expect(panel.getByTestId('problems-filter-count')).toHaveText('1 / 1 shown');
+
+    await panel.getByRole('combobox', { name: /^Type/ }).click();
+    await page.getByRole('option', { name: 'Error', exact: true }).click();
+    await expect(row).toHaveCount(0);
+    await expect(panel.getByTestId('problems-empty')).toHaveText('No problems match your filters.');
+    await expect(panel.getByTestId('problems-filter-count')).toHaveText('0 / 1 shown');
+
+    await panel.getByRole('button', { name: 'Reset filters' }).click();
+    await expect(row).toContainText('BadVoiceId');
+    await expect(panel.getByRole('textbox', { name: 'Search problems' })).toHaveValue('');
+    await row.click();
+    await expect(page.getByRole('heading', { name: 'DIA_Prob_Test', exact: true })).toBeVisible();
+  });
 });
 
 // #264, the second half: the OU database is what the game shows, so a line
