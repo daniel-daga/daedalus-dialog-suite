@@ -15,7 +15,7 @@ import type { LintRule, Problem } from '../types';
  * source positions on top-level declarations alone, so every other finding
  * addresses a dialog or a function; a syntax error has nothing *but* a
  * position. Nothing jumps to it — the source view is gone — but the panel shows
- * it, and clicking the row opens the file, which renders `SyntaxErrorsDisplay`.
+ * it, and clicking the row inspects the file's errors inside Problems.
  */
 export const parseErrorRule: LintRule = (view): Problem[] => {
   const problems: Problem[] = [];

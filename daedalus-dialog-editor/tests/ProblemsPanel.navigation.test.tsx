@@ -1,282 +1,118 @@
-/**
- * What a Problems click does when the symbol is in a file no semantic model
- * has been built for (world-editor-review-2026-08-29, first pass 7).
- *
- * The waypoint rule is the first whose sites come from the project index's
- * whole-project pass, so its `functionName` is routinely a routine in a file
- * the user never opened — `navigateToSymbol` searches the merged model and
- * finds nothing. Every problem carries the file that owns it, and that is what
- * the click falls back to.
- */
-
 import React from 'react';
-import { render, screen, act } from '@testing-library/react';
+import { act, render, screen } from '@testing-library/react';
 import '@testing-library/jest-dom';
-import userEvent, { PointerEventsCheckLevel } from '@testing-library/user-event';
+import userEvent from '@testing-library/user-event';
 import ProblemsPanel from '../src/renderer/components/Problems/ProblemsPanel';
+import { RULE_LABEL } from '../src/renderer/components/Problems/ProblemsList';
 import { useProblemsStore } from '../src/renderer/store/problemsStore';
 import { useProjectStore } from '../src/renderer/store/projectStore';
 import { useEditorStore } from '../src/renderer/store/editorStore';
 import { useUISelectionStore } from '../src/renderer/store/uiSelectionStore';
 import { useWorldStore } from '../src/renderer/store/worldStore';
-import type { Problem } from '../src/renderer/problems/domain/types';
+import { useFileStore } from '../src/renderer/store/fileStore';
+import type { SemanticModel } from '../src/shared/types';
+import type { Problem, ProblemRuleId } from '../src/renderer/problems/domain/types';
 
-const navigateToDialog = jest.fn();
-const navigateToSymbol = jest.fn();
-
-jest.mock('../src/renderer/hooks/useNavigation', () => ({
-  useNavigation: () => ({ navigateToDialog, navigateToSymbol })
-}));
-
-const problem = (overrides: Partial<Problem> = {}): Problem => ({
-  id: 'waypoint-not-in-world:Rtn.d:Rtn_Start_Diego:OW_PATH_42',
-  rule: 'waypoint-not-in-world',
-  severity: 'warning',
-  message: 'Waypoint OW_PATH_42 is not in the open world',
-  locus: { kind: 'script', filePath: 'Story/Routines/Rtn.d', functionName: 'Rtn_Start_Diego' },
-  ...overrides
+const openFile = jest.fn();
+const requestScan = jest.fn();
+const problem = (rule: ProblemRuleId, locus: Problem['locus']): Problem => ({
+  id: rule, rule, severity: 'warning', message: 'The full finding', locus,
 });
 
-const openFile = jest.fn().mockResolvedValue(undefined);
-
-describe('a Problems click that navigation cannot resolve', () => {
-  beforeEach(() => {
-    navigateToDialog.mockReset();
-    navigateToSymbol.mockReset();
-    openFile.mockClear();
-    useEditorStore.setState({ openFile });
-    useProjectStore.setState({ parseGeneration: 0, isIngesting: false });
-    act(() => {
-      useUISelectionStore.getState().resetUISelection();
-      // The click happens from the Problems view: it is the whole main area,
-      // so a fallback that does not switch the view shows the user nothing.
-      useUISelectionStore.getState().setActiveView('problems');
-      useProblemsStore.setState({ problems: [problem()], hasScanned: true, requestScan: jest.fn() });
-    });
-  });
-
-  it('opens the file the problem names when the symbol is not in the merged model', async () => {
-    navigateToSymbol.mockResolvedValue(false);
-    render(<ProblemsPanel />);
-
-    await userEvent.click(screen.getByText(/OW_PATH_42/));
-
-    expect(navigateToSymbol).toHaveBeenCalledWith('Rtn_Start_Diego');
-    expect(openFile).toHaveBeenCalledWith('Story/Routines/Rtn.d');
-    expect(useUISelectionStore.getState().selectedFunctionName).toBe('Rtn_Start_Diego');
-    expect(useUISelectionStore.getState().activeView).toBe('dialog');
-  });
-
-  it('leaves a resolved navigation alone — no second jump', async () => {
-    navigateToSymbol.mockResolvedValue(true);
-    render(<ProblemsPanel />);
-
-    await userEvent.click(screen.getByText(/OW_PATH_42/));
-
-    expect(openFile).not.toHaveBeenCalled();
-  });
+beforeEach(() => {
+  jest.clearAllMocks();
+  useWorldStore.getState().reset();
+  useEditorStore.setState({ openFile });
+  useFileStore.setState({ activeFile: null, openFiles: new Map() });
+  useProjectStore.setState({ parseGeneration: 0, isIngesting: false, projectPath: 'project' });
+  useUISelectionStore.getState().setActiveView('problems');
+  useProblemsStore.setState({ hasScanned: true, requestScan, isScanning: false });
 });
 
-/**
- * A world finding has no file, no dialog and no function — the panel's whole
- * script navigation model (§16.20 slice 2). What it has instead is an address
- * into the open world, and clicking it switches to the World surface and asks
- * it to jump there.
- */
-describe('a Problems click on a world finding', () => {
-  const worldProblem = (locus: Problem['locus']): Problem => problem({
-    id: 'portal-material-malformed:1704',
-    rule: 'waypoint-not-in-world',
-    message: 'Portal material P:_ names no sector on either side',
-    locus,
-  });
+afterEach(() => jest.restoreAllMocks());
 
-  beforeEach(() => {
-    act(() => {
-      useWorldStore.getState().reset();
-      useUISelectionStore.getState().setActiveView('problems');
-    });
-  });
+it('ignores a late syntax-error response after another problem was selected', async () => {
+  let finish!: (model: SemanticModel) => void;
+  jest.spyOn(window.editorAPI, 'parseDialogFile').mockReturnValue(new Promise((resolve) => { finish = resolve; }));
+  useProblemsStore.setState({ problems: [
+    problem('parse-error', { kind: 'script', filePath: 'broken.d' }),
+    problem('orphaned-function', { kind: 'script', filePath: 'other.d' }),
+  ] });
+  render(<ProblemsPanel />);
+  await userEvent.click(screen.getByTestId('problem-row-0'));
+  await userEvent.click(screen.getByRole('button', { name: 'Back to problems' }));
+  await userEvent.click(screen.getByTestId('problem-row-1'));
+  await act(async () => finish({ dialogs: {}, functions: {}, hasErrors: true, errors: [] }));
+  expect(screen.getByRole('heading', { name: 'Orphaned function' })).toBeVisible();
+  expect(screen.queryByRole('heading', { name: 'broken.d' })).not.toBeInTheDocument();
+});
 
-  it('jumps the World surface to the waypoint and switches to it', async () => {
-    act(() => {
-      useWorldStore.setState({ status: 'ready' });
-      useProblemsStore.setState({
-        problems: [worldProblem({ kind: 'world', waypoint: 'WP_MIDDLE' })],
-        hasScanned: true,
-        requestScan: jest.fn(),
-      });
-    });
+it('reloads background findings without overwriting an open file or its unsaved model', async () => {
+  const filePath = 'Story/Routines/Rtn.d';
+  const model: SemanticModel = { dialogs: {}, functions: {}, hasErrors: false, errors: [] };
+  const file = { filePath, semanticModel: model, isDirty: true, lastSaved: new Date() };
+  useFileStore.setState({ activeFile: filePath, openFiles: new Map([[filePath, file]]) });
+  const openFiles = useFileStore.getState().openFiles;
+  useProblemsStore.setState({ problems: [problem('orphaned-function', { kind: 'script', filePath })] });
+  jest.spyOn(useProjectStore.getState(), 'reindexFiles').mockResolvedValue(new Map([[filePath, model]]));
+  const update = jest.spyOn(useProjectStore.getState(), 'updateFileModel');
+  render(<ProblemsPanel />);
+  await userEvent.click(screen.getByTestId('problem-row-0'));
+  await userEvent.click(screen.getByRole('button', { name: 'Reload file' }));
+  expect(update).not.toHaveBeenCalled();
+  expect(useFileStore.getState().openFiles).toBe(openFiles);
+  expect(useFileStore.getState().activeFile).toBe(filePath);
+  expect(useUISelectionStore.getState().activeView).toBe('problems');
+});
+
+it.each(Object.keys(RULE_LABEL).filter((rule) => rule !== 'parse-error') as ProblemRuleId[])(
+  'opens %s details without opening a file or leaving Problems', async (rule) => {
+    useProblemsStore.setState({ problems: [problem(rule, {
+      kind: 'script', filePath: 'Story/Routines/Rtn.d', functionName: 'Rtn_Start_Diego', line: 42,
+    })] });
     render(<ProblemsPanel />);
-
-    await userEvent.click(screen.getByText(/names no sector/));
-
-    expect(useWorldStore.getState().focusRequest)
-      .toEqual({ kind: 'waypoint', name: 'WP_MIDDLE' });
-    expect(useUISelectionStore.getState().activeView).toBe('world');
+    await userEvent.click(screen.getByTestId('problem-row-0'));
+    expect(screen.getByRole('heading', { name: RULE_LABEL[rule] })).toBeInTheDocument();
+    expect(screen.getByText('Story/Routines/Rtn.d')).toBeInTheDocument();
+    expect(screen.getByText('Function: Rtn_Start_Diego')).toBeInTheDocument();
+    expect(screen.getByText('Line 42')).toBeInTheDocument();
     expect(openFile).not.toHaveBeenCalled();
-  });
-
-  it('jumps to a VOB the same way', async () => {
-    act(() => {
-      useWorldStore.setState({ status: 'ready' });
-      useProblemsStore.setState({
-        problems: [worldProblem({ kind: 'world', vob: 42 })],
-        hasScanned: true,
-        requestScan: jest.fn(),
-      });
-    });
-    render(<ProblemsPanel />);
-
-    await userEvent.click(screen.getByText(/names no sector/));
-
-    expect(useWorldStore.getState().focusRequest).toEqual({ kind: 'vob', vob: 42 });
-    expect(useUISelectionStore.getState().activeView).toBe('world');
-  });
-
-  it('jumps to a portal polygon, carrying the corners the finding brought', async () => {
-    // The scene holds merged draw groups with no polygon mapping, so the index
-    // alone addresses nothing — the geometry is what makes the row clickable
-    // at all (#222).
-    const corners = [[10, 0, 0], [10, 100, 0], [10, 100, 100], [10, 0, 100]] as const;
-    act(() => {
-      useWorldStore.setState({ status: 'ready' });
-      useProblemsStore.setState({
-        problems: [worldProblem({ kind: 'world', polygon: 456754, polygonCorners: corners })],
-        hasScanned: true,
-        requestScan: jest.fn(),
-      });
-    });
-    render(<ProblemsPanel />);
-
-    await userEvent.click(screen.getByText(/names no sector/));
-
-    expect(useWorldStore.getState().focusRequest)
-      .toEqual({ kind: 'polygon', polygon: 456754, corners });
-    expect(useUISelectionStore.getState().activeView).toBe('world');
-  });
-
-  it('does not jump for a portal finding no face carries', async () => {
-    act(() => {
-      useWorldStore.setState({ status: 'ready' });
-      useProblemsStore.setState({
-        problems: [worldProblem({ kind: 'world' })],
-        hasScanned: true,
-        requestScan: jest.fn(),
-      });
-    });
-    render(<ProblemsPanel />);
-
-    expect(screen.getByTestId('problem-row-0')).toHaveAttribute('aria-disabled', 'true');
-    // Past the pointer-events guard, as the no-world case above: what is
-    // asserted is that the click leads nowhere.
-    await userEvent
-      .setup({ pointerEventsCheck: PointerEventsCheckLevel.Never })
-      .click(screen.getByText(/names no sector/));
-
-    expect(useWorldStore.getState().focusRequest).toBeNull();
-  });
-
-  it('asks for a second jump to the same place — the camera has moved since', async () => {
-    act(() => {
-      useWorldStore.setState({ status: 'ready' });
-      useProblemsStore.setState({
-        problems: [worldProblem({ kind: 'world', vob: 42 })],
-        hasScanned: true,
-        requestScan: jest.fn(),
-      });
-    });
-    render(<ProblemsPanel />);
-
-    await userEvent.click(screen.getByText(/names no sector/));
-    const first = useWorldStore.getState().focusRequest;
-    act(() => { useWorldStore.getState().focusHandled(); });
-
-    await userEvent.click(screen.getByText(/names no sector/));
-
-    expect(useWorldStore.getState().focusRequest).toEqual(first);
-    expect(useWorldStore.getState().focusRequest).not.toBe(first);
-  });
-
-  it('is shown and not clickable while no world is open', async () => {
-    // The editor holds one world at a time, and the finding may belong to
-    // another — so the row stays, and it goes nowhere.
-    act(() => {
-      useProblemsStore.setState({
-        problems: [worldProblem({ kind: 'world', waypoint: 'WP_MIDDLE' })],
-        hasScanned: true,
-        requestScan: jest.fn(),
-      });
-    });
-    render(<ProblemsPanel />);
-
-    expect(screen.getByText(/names no sector/)).toBeInTheDocument();
-    expect(screen.getByTestId('problem-row-0')).toHaveAttribute('aria-disabled', 'true');
-
-    // Past the pointer-events guard on purpose: what is asserted is that the
-    // click leads nowhere, not that the DOM refused to deliver it.
-    await userEvent
-      .setup({ pointerEventsCheck: PointerEventsCheckLevel.Never })
-      .click(screen.getByText(/names no sector/));
-
-    expect(useWorldStore.getState().focusRequest).toBeNull();
     expect(useUISelectionStore.getState().activeView).toBe('problems');
-  });
+    await userEvent.click(screen.getByRole('button', { name: 'Back to problems' }));
+    expect(screen.getByTestId('problem-row-0')).toBeVisible();
+  },
+);
 
-  /**
-   * `waypoint-not-in-world` keeps its ordinary script locus — the row's own
-   * click still goes to the routine, since the name may belong to another
-   * world (§16.8) — but it also carries the name the script used, and the
-   * panel wires that to a second action that does not navigate at all.
-   */
-  it('arms the World surface with the name instead of navigating', async () => {
-    // Cleared here rather than trusted to a fresh mock: this describe block's
-    // own `beforeEach` does not reset the navigation mocks, and an earlier
-    // test elsewhere in this file leaves them with calls recorded.
-    navigateToSymbol.mockClear();
-    act(() => {
-      useWorldStore.setState({ status: 'ready' });
-      useProblemsStore.setState({
-        problems: [problem({
-          locus: {
-            kind: 'script', filePath: 'Story/Routines/Rtn.d', functionName: 'Rtn_Start_Diego', waypoint: 'OW_PATH_42',
-          },
-        })],
-        hasScanned: true,
-        requestScan: jest.fn(),
-      });
-    });
-    render(<ProblemsPanel />);
+it.each<Problem['locus']>([
+  { kind: 'world' }, { kind: 'world', polygon: 1704 },
+  { kind: 'world', waypoint: 'WP_MIDDLE' }, { kind: 'world', vob: 42 },
+])('inspects world findings even without an open world: %j', async (locus) => {
+  useProblemsStore.setState({ problems: [problem('portal-material-malformed', locus)] });
+  render(<ProblemsPanel />);
+  await userEvent.click(screen.getByTestId('problem-row-0'));
+  expect(screen.getByRole('heading', { name: 'Malformed portal name' })).toBeInTheDocument();
+  expect(screen.getByRole('alert')).toHaveTextContent('The full finding');
+  expect(screen.queryByRole('button', { name: 'Edit externally' })).not.toBeInTheDocument();
+  expect(useWorldStore.getState().focusRequest).toBeNull();
+  expect(useUISelectionStore.getState().activeView).toBe('problems');
+});
 
-    await userEvent.click(screen.getByTestId('problem-row-0-add-to-world'));
+it('does not request a new scan just because the panel mounts again', () => {
+  useProblemsStore.setState({ problems: [] });
+  const first = render(<ProblemsPanel />);
+  first.unmount();
+  render(<ProblemsPanel />);
+  expect(requestScan).not.toHaveBeenCalled();
+});
 
-    expect(useWorldStore.getState().focusRequest)
-      .toEqual({ kind: 'add-waypoint', name: 'OW_PATH_42' });
-    expect(useUISelectionStore.getState().activeView).toBe('world');
-    expect(navigateToSymbol).not.toHaveBeenCalled();
-    expect(openFile).not.toHaveBeenCalled();
-  });
-
-  it('leaves a locus it cannot address alone', async () => {
-    // A polygon locus is slice 3's, and framing one needs the mesh: until then
-    // it is listed and not clickable rather than silently doing nothing.
-    act(() => {
-      useWorldStore.setState({ status: 'ready' });
-      useProblemsStore.setState({
-        problems: [worldProblem({ kind: 'world', polygon: 1704 })],
-        hasScanned: true,
-        requestScan: jest.fn(),
-      });
-    });
-    render(<ProblemsPanel />);
-
-    expect(screen.getByTestId('problem-row-0')).toHaveAttribute('aria-disabled', 'true');
-
-    await userEvent
-      .setup({ pointerEventsCheck: PointerEventsCheckLevel.Never })
-      .click(screen.getByText(/names no sector/));
-
-    expect(useWorldStore.getState().focusRequest).toBeNull();
-    expect(useUISelectionStore.getState().activeView).toBe('problems');
-  });
+it('keeps adding a missing waypoint an explicit action', async () => {
+  useWorldStore.setState({ status: 'ready' });
+  useProblemsStore.setState({ problems: [problem('waypoint-not-in-world', {
+    kind: 'script', filePath: 'Rtn.d', waypoint: 'OW_PATH_42',
+  })] });
+  render(<ProblemsPanel />);
+  await userEvent.click(screen.getByTestId('problem-row-0-add-to-world'));
+  expect(useWorldStore.getState().focusRequest).toEqual({ kind: 'add-waypoint', name: 'OW_PATH_42' });
+  expect(useUISelectionStore.getState().activeView).toBe('world');
+  expect(openFile).not.toHaveBeenCalled();
 });

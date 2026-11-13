@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import {
   Alert, Box, Button, Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle,
   LinearProgress, MenuItem, TextField, Typography,
@@ -14,20 +14,19 @@ import {
 } from '../common/searchablePaneStyles';
 import { useProblemsStore } from '../../store/problemsStore';
 import { useProjectStore } from '../../store/projectStore';
-import { useEditorStore } from '../../store/editorStore';
+import { useFileStore } from '../../store/fileStore';
 import { useUISelectionStore } from '../../store/uiSelectionStore';
-import { useWorldStore, worldFocusOf } from '../../store/worldStore';
-import { useNavigation } from '../../hooks/useNavigation';
+import { useWorldStore } from '../../store/worldStore';
 import type { Problem } from '../../problems/domain/types';
 import { looksLikeAnotherLanguage } from '../../problems/domain/rules/outputUnitDrift';
 import ProblemsList, { RULE_LABEL, SEVERITY_LABEL, secondaryText } from './ProblemsList';
 import SyntaxErrorsDisplay from '../SyntaxErrorsDisplay';
+import ProblemDetails from './ProblemDetails';
 import type { ParseError } from '../../types/global';
 
 /**
- * Project-wide Problems panel. Runs the lint rules over the parsed project files
- * (re-scanning as background ingestion advances) and renders a navigable list.
- * Syntax errors stay here; other problems jump to the offending declaration.
+ * Project-wide findings, refreshed by storeSync as project/world inputs change.
+ * Every finding is inspected here without replacing the active editor file.
  */
 const ProblemsPanel: React.FC = () => {
   const problems = useProblemsStore((s) => s.problems);
@@ -36,26 +35,18 @@ const ProblemsPanel: React.FC = () => {
   const scannedFileCount = useProblemsStore((s) => s.scannedFileCount);
   const totalFileCount = useProblemsStore((s) => s.totalFileCount);
   const runScan = useProblemsStore((s) => s.runScan);
-  const requestScan = useProblemsStore((s) => s.requestScan);
-  // parsedFiles are ingested in the background; re-scan whenever they change.
-  // The store schedules the actual scan: deferred to a single scan while
-  // ingestion runs, debounced otherwise. The isIngesting dependency makes the
-  // effect fire on the completion flip even without a parseGeneration bump.
-  const parseGeneration = useProjectStore((s) => s.parseGeneration);
   const isIngesting = useProjectStore((s) => s.isIngesting);
   // The scan reads the project's parsed files, so in single-file mode there is
   // nothing to scan — say so rather than reporting a clean scan (F18).
   const projectOpen = useProjectStore((s) => s.projectPath !== null);
-  const { navigateToDialog, navigateToSymbol } = useNavigation();
-  // A world finding is only navigable while the world it addresses is the one
-  // that is open — the editor holds one at a time, and the finding may belong
-  // to another.
   const worldOpen = useWorldStore((s) => s.status === 'ready');
   const [severity, setSeverity] = useState('');
   const [location, setLocation] = useState('');
   const [rule, setRule] = useState('');
   const [search, setSearch] = useState('');
   const [errorDetails, setErrorDetails] = useState<{ filePath: string; errors: ParseError[] } | null>(null);
+  const [selectedProblem, setSelectedProblem] = useState<Problem | null>(null);
+  const detailsRequest = useRef(0);
   const [detailsError, setDetailsError] = useState<string | null>(null);
   const filtersActive = severity !== '' || location !== '' || rule !== '' || search !== '';
   const scanning = projectOpen && (isScanning || isIngesting || !hasScanned);
@@ -88,10 +79,6 @@ const ProblemsPanel: React.FC = () => {
         ? 'No problems match your filters.'
         : 'No problems found.';
 
-  useEffect(() => {
-    requestScan();
-  }, [requestScan, parseGeneration, isIngesting]);
-
   const { errorCount, warningCount, hintCount } = useMemo(() => {
     let errors = 0;
     let warnings = 0;
@@ -106,55 +93,43 @@ const ProblemsPanel: React.FC = () => {
 
   const handleSelect = async (problem: Problem): Promise<void> => {
     const locus = problem.locus;
+    const request = ++detailsRequest.current;
+    setSelectedProblem(problem);
+    setErrorDetails(null);
+    setDetailsError(null);
     if (problem.rule === 'parse-error' && locus.kind === 'script') {
-      setDetailsError(null);
       try {
         // Inspect disk without opening or replacing the active editor file.
         const model = await window.editorAPI.parseDialogFile(locus.filePath);
-        setErrorDetails({ filePath: locus.filePath, errors: model.errors ?? [] });
+        if (request === detailsRequest.current) setErrorDetails({ filePath: locus.filePath, errors: model.errors ?? [] });
       } catch (error) {
-        setDetailsError(error instanceof Error ? error.message : String(error));
+        if (request === detailsRequest.current) setDetailsError(error instanceof Error ? error.message : String(error));
       }
-      return;
     }
-    // A world locus has no file to open: it is an address into the open world,
-    // and the jump is the World surface's to make (§16.20 slice 2). The row is
-    // disabled when this would find nothing, so both guards are belt and
-    // braces for a click that arrives as the world is closing.
-    if (locus.kind === 'world') {
-      const focus = worldFocusOf(locus);
-      if (focus === null || useWorldStore.getState().status !== 'ready') return;
-      useWorldStore.getState().requestFocus(focus);
-      useUISelectionStore.getState().setActiveView('world');
-      return;
-    }
-
-    const navigated = locus.dialogName
-      ? await navigateToDialog(locus.dialogName, locus.functionName)
-      : locus.functionName
-        ? await navigateToSymbol(locus.functionName)
-        : false;
-    if (navigated) return;
-
-    // Both navigators search the merged semantic model, which only covers the
-    // files that have been opened. The waypoint rule's sites come from the
-    // project index's whole-project pass, so a warning in a routines file
-    // nobody opened resolves to nothing — and Problems is the whole main area,
-    // so a click that goes nowhere also says nothing. Fall back to the one
-    // thing every script problem carries: the file that owns the declaration.
-    await useEditorStore.getState().openFile(locus.filePath);
-    const { setSelectedFunctionName, setActiveView } = useUISelectionStore.getState();
-    if (locus.functionName) setSelectedFunctionName(locus.functionName);
-    setActiveView('dialog');
   };
 
-  /**
-   * The "Add to world" action on a `waypoint-not-in-world` row. Not a
-   * navigation at all — it arms the World surface with the name and switches
-   * to it, the same way a world locus's own jump does, but there is no
-   * position to jump to yet: the surface waits for the terrain click that
-   * `world-add-waypoint` already takes (§16.8's W2).
-   */
+  const reloadDetails = async (): Promise<void> => {
+    if (selectedProblem?.locus.kind !== 'script') return;
+    const { filePath } = selectedProblem.locus;
+    const request = ++detailsRequest.current;
+    setDetailsError(null);
+    const session = useProjectStore.getState().getProjectSession();
+    const models = await useProjectStore.getState().reindexFiles([filePath]);
+    if (session !== useProjectStore.getState().getProjectSession()) return;
+    const model = models.get(filePath);
+    if (!model) throw new Error('Could not reload the script file.');
+    // Open files own their editor model, including unsaved edits; only refresh background models.
+    if (!useFileStore.getState().openFiles.has(filePath)) {
+      useProjectStore.getState().updateFileModel(filePath, model);
+    }
+    runScan();
+    if (request !== detailsRequest.current) return;
+    const updated = useProblemsStore.getState().problems.find((problem) => problem.id === selectedProblem.id);
+    setErrorDetails(model.hasErrors ? { filePath, errors: model.errors ?? [] } : null);
+    setSelectedProblem(model.hasErrors ? selectedProblem : updated ?? null);
+  };
+
+  // Explicit opt-in: the World surface waits for the terrain click to place it.
   const handleAddToWorld = (name: string): void => {
     useWorldStore.getState().requestFocus({ kind: 'add-waypoint', name });
     useUISelectionStore.getState().setActiveView('world');
@@ -208,28 +183,25 @@ const ProblemsPanel: React.FC = () => {
       data-ui-pattern={SEARCHABLE_PANE_PATTERN}
       sx={(theme) => ({ ...searchablePaneShellSx(theme), height: '100%' })}
     >
-      {errorDetails ? (
+      {selectedProblem ? (
         <>
           <Box sx={searchablePaneHeaderSx}>
-            <Button onClick={() => setErrorDetails(null)}>Back to problems</Button>
+            <Button onClick={() => {
+              detailsRequest.current += 1;
+              setSelectedProblem(null); setErrorDetails(null); setDetailsError(null);
+            }}>Back to problems</Button>
           </Box>
           <Box sx={{ flex: 1, minHeight: 0 }}>
-            <SyntaxErrorsDisplay
+            {detailsError && <Alert severity="error">{detailsError}</Alert>}
+            {errorDetails ? <SyntaxErrorsDisplay
               filePath={errorDetails.filePath}
               errors={errorDetails.errors}
-              onReload={async () => {
-                const models = await useProjectStore.getState().reindexFiles([errorDetails.filePath]);
-                const model = models.get(errorDetails.filePath);
-                if (!model) throw new Error('Could not reload the script file.');
-                setErrorDetails(model.hasErrors ? { filePath: errorDetails.filePath, errors: model.errors ?? [] } : null);
-                runScan();
-              }}
-            />
+              onReload={reloadDetails}
+            /> : <ProblemDetails problem={selectedProblem} onReload={reloadDetails} />}
           </Box>
         </>
-      ) : (
-      <>
-      {detailsError && <Alert severity="error">{detailsError}</Alert>}
+      ) : null}
+      <Box sx={{ display: selectedProblem ? 'none' : 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
       <Box sx={searchablePaneHeaderSx}>
         <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1 }}>
           <Typography variant="subtitle2">Problems</Typography>
@@ -309,8 +281,7 @@ const ProblemsPanel: React.FC = () => {
           onAddToWorld={handleAddToWorld}
         />
       </Box>
-      </>
-      )}
+      </Box>
       <Dialog
         open={confirmingOuUpdate}
         onClose={() => !ouUpdating && setConfirmingOuUpdate(false)}

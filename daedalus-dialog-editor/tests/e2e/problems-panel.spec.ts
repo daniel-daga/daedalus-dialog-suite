@@ -6,8 +6,8 @@ import { test, expect } from '@playwright/test';
  * The fixture produces exactly one problem: the info function's AI_Output voice
  * id ("BadVoiceId") does not match the vanilla `…_<n>_<n>` pattern, so the
  * `voice-id-malformed` lint fires. Because that function is the dialog's
- * `information`, the problem is enriched with the owning dialog and clicking it
- * navigates to DIA_Prob_Test. The dialog's condition/info functions are
+ * `information`, the problem is enriched with the owning dialog. Clicking it
+ * opens details in Problems. The dialog's condition/info functions are
  * referenced (not orphaned) and its NPC is indexed (no npc-not-found).
  */
 const PROJECT_FILE_CONTENT = `INSTANCE DIA_Prob_Test(C_INFO)
@@ -30,6 +30,33 @@ FUNC VOID DIA_Prob_Test_Info()
 };
 `;
 
+test('large problem lists render one page and search across every page', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.getByText('Welcome to Dandelion')).toBeVisible();
+  await page.evaluate(() => {
+    const buildIndex = window.editorAPI.buildProjectIndex.bind(window.editorAPI);
+    window.editorAPI.buildProjectIndex = async (folderPath) => ({
+      ...await buildIndex(folderPath),
+      parseErrors: [{ filePath: 'large/broken.d', total: 10001,
+        errors: Array.from({ length: 10001 }, (_, i) => ({ message: `Broken statement ${i}`, line: i + 1, column: 1 })) }],
+    });
+  });
+  page.on('dialog', async (dialog) => {
+    if (dialog.message().includes('project folder path')) await dialog.accept('large');
+    else await dialog.dismiss();
+  });
+  await page.getByRole('button', { name: /Open Project/i }).first().click();
+  await page.getByTestId('problems-toggle').click();
+  const panel = page.getByTestId('problems-panel');
+  await expect(panel.getByTestId('problems-filter-count')).toHaveText('10001 / 10001 shown');
+  await expect(panel.getByTestId(/^problem-row-\d+$/)).toHaveCount(50);
+  await panel.getByRole('button', { name: 'Go to last page' }).click();
+  await expect(panel.getByTestId('problem-row-10000')).toContainText('Broken statement 9999');
+  await panel.getByRole('textbox', { name: 'Search problems' }).fill('Broken statement 9999');
+  await expect(panel.getByTestId('problems-filter-count')).toHaveText('1 / 10001 shown');
+  await expect(panel.getByTestId('problem-row-0')).toContainText('Broken statement 9999');
+});
+
 test.describe('Problems panel', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/');
@@ -51,7 +78,7 @@ test.describe('Problems panel', () => {
     await expect(page.getByText('SLD_ProbNpc')).toBeVisible({ timeout: 15000 });
   });
 
-  test('lists a project-wide problem and navigates to the offending dialog', async ({ page }) => {
+  test('inspects a project-wide problem without leaving Problems or opening its file', async ({ page }) => {
     await page.getByTestId('problems-toggle').click();
     await expect(page.getByTestId('problems-panel')).toBeVisible();
 
@@ -64,9 +91,26 @@ test.describe('Problems panel', () => {
     // AI_Output is on, #267's second half. That call is the fixture's 17th line.
     await expect(firstRow).toContainText('dia.d · DIA_Prob_Test · line 17');
 
-    // Clicking the problem jumps to the dialog view with the dialog selected.
+    await page.evaluate(() => {
+      window.editorAPI.openScriptInExternalEditor = async (filePath) => {
+        localStorage.setItem('external-editor-file', filePath);
+      };
+    });
     await firstRow.click();
-    await expect(page.getByRole('heading', { name: 'DIA_Prob_Test', exact: true })).toBeVisible({ timeout: 10000 });
+    const panel = page.getByTestId('problems-panel');
+    await expect(page.getByTestId('problems-toggle')).toHaveAttribute('aria-pressed', 'true');
+    await expect(panel.getByRole('heading', { name: 'Malformed voice ID', exact: true })).toBeVisible();
+    await expect(panel).toContainText('probtest/dia.d');
+    await expect(panel).toContainText('DIA_Prob_Test_Info');
+    await expect(panel).toContainText('Line 17');
+    await panel.getByRole('button', { name: 'Reload file', exact: true }).click();
+    await expect(panel.getByRole('heading', { name: 'Malformed voice ID', exact: true })).toBeVisible();
+    await panel.getByRole('button', { name: 'Edit externally' }).click();
+    expect(await page.evaluate(() => localStorage.getItem('external-editor-file'))).toBe('probtest/dia.d');
+    await page.evaluate(() => localStorage.setItem('mockapi_file_probtest/dia.d', '// repaired'));
+    await panel.getByRole('button', { name: 'Reload file', exact: true }).click();
+    await expect(panel.getByTestId('problems-empty')).toBeVisible();
+    await expect(page.getByTestId('problems-toggle')).toHaveAttribute('aria-pressed', 'true');
   });
 
   test('Rescan keeps the problem after a manual re-scan', async ({ page }) => {
@@ -103,7 +147,9 @@ test.describe('Problems panel', () => {
     await expect(row).toContainText('BadVoiceId');
     await expect(panel.getByRole('textbox', { name: 'Search problems' })).toHaveValue('');
     await row.click();
-    await expect(page.getByRole('heading', { name: 'DIA_Prob_Test', exact: true })).toBeVisible();
+    await expect(panel.getByRole('heading', { name: 'Malformed voice ID', exact: true })).toBeVisible();
+    await panel.getByRole('button', { name: 'Back to problems', exact: true }).click();
+    await expect(panel.getByRole('textbox', { name: 'Search problems' })).toHaveValue('');
   });
 });
 

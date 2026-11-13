@@ -88,6 +88,29 @@ describe('problemsStore scan scheduling', () => {
     expect(scanSpy).toHaveBeenCalledTimes(1);
   });
 
+  it('tracks ingestion and later model changes even while Problems is not mounted', () => {
+    seedProject([], [], [], false);
+    const stopSync = initStoreSync();
+    try {
+      seedProject([cache('a.d', model())], [], ['a.d'], true);
+      for (let i = 0; i < 5; i++) {
+        useProjectStore.setState((state) => ({ parseGeneration: state.parseGeneration + 1 }));
+      }
+      jest.runAllTimers();
+      expect(scanSpy).not.toHaveBeenCalled();
+      useProjectStore.setState({ isIngesting: false });
+      expect(scanSpy).toHaveBeenCalledTimes(1);
+      useProjectStore.setState((state) => ({ parseGeneration: state.parseGeneration + 1 }));
+      jest.advanceTimersByTime(300);
+      expect(scanSpy).toHaveBeenCalledTimes(2);
+      useProjectStore.setState({ selectedNpc: 'Diego' });
+      jest.runAllTimers();
+      expect(scanSpy).toHaveBeenCalledTimes(2);
+    } finally {
+      stopSync();
+    }
+  });
+
   it('coalesces rapid requestScan calls outside ingestion into one trailing scan', () => {
     seedProject([cache('a.d', model())], [], ['a.d']);
 
