@@ -1,11 +1,8 @@
 /**
- * P0 perf: parsedFiles must not grow without bound.
+ * Incidental models stay bounded without truncating the project's corpus.
  *
- * The cache is capped at PARSED_FILES_CAP entries. Quest files and the selected
- * NPC's dialog files are pinned and never evicted; global (dialog-less) files
- * listed in allDialogFiles are preferred over the rest but evicted when more
- * than the cap of them exist. Eviction order among the rest is
- * least-recently-written/read first.
+ * Indexed project files must remain available to whole-project consumers.
+ * Only unindexed entries may be evicted, least-recently-touched first.
  */
 
 import { useProjectStore, PARSED_FILES_CAP } from '../src/renderer/store/projectStore';
@@ -44,12 +41,12 @@ describe('parsedFiles cap', () => {
     return paths;
   };
 
-  it('never holds more than PARSED_FILES_CAP entries', () => {
+  it('caps unindexed entries at PARSED_FILES_CAP', () => {
     fillPast(PARSED_FILES_CAP + 20);
     expect(useProjectStore.getState().parsedFiles.size).toBe(PARSED_FILES_CAP);
   });
 
-  it('caps a project where more than the cap of files carry no dialog', () => {
+  it('retains every indexed global file even beyond the cache cap', () => {
     // The MDK shape: every scanned file listed, most with no C_INFO.
     const globals = Array.from(
       { length: PARSED_FILES_CAP + 188 },
@@ -60,7 +57,7 @@ describe('parsedFiles cap', () => {
       useProjectStore.getState().updateFileModel(filePath, emptyModel());
     }
 
-    expect(useProjectStore.getState().parsedFiles.size).toBe(PARSED_FILES_CAP);
+    expect([...useProjectStore.getState().parsedFiles.keys()]).toEqual(globals);
   });
 
   it('evicts the least-recently-touched unpinned entries first', () => {
@@ -87,20 +84,20 @@ describe('parsedFiles cap', () => {
     expect(parsedFiles.has(paths[1])).toBe(false);
   });
 
-  it('pins merged-model contributors: globals, selected NPC files, quest files', () => {
+  it('pins all indexed files, including unselected NPCs, plus quest files', () => {
     const globalFile = '/proj/Story_Globals.d';
     const npcFile = '/proj/DIA_Farim.d';
     const questFile = '/proj/Log_Entries.d';
     const otherNpcFile = '/proj/DIA_Other.d';
 
     useProjectStore.setState({
-      allDialogFiles: [globalFile, npcFile, questFile, otherNpcFile],
+      allDialogFiles: [globalFile, otherNpcFile],
       questFiles: [questFile],
       selectedNpc: 'SLD_Farim',
       dialogIndex: new Map([
         ['SLD_FARIM', [{ dialogName: 'DIA_Farim_Hallo', npc: 'SLD_Farim', filePath: npcFile }]],
-        // The quest file also carries a dialog for an unselected NPC, so only
-        // quest pinning (not the global rule) can keep it alive.
+        // This unindexed file belongs to an unselected NPC: only quest pinning
+        // can keep it alive.
         ['Other_NPC', [
           { dialogName: 'DIA_Quest', npc: 'Other_NPC', filePath: questFile },
           { dialogName: 'DIA_Other', npc: 'Other_NPC', filePath: otherNpcFile }
@@ -121,7 +118,20 @@ describe('parsedFiles cap', () => {
     expect(parsedFiles.has(globalFile)).toBe(true);
     expect(parsedFiles.has(npcFile)).toBe(true);
     expect(parsedFiles.has(questFile)).toBe(true);
-    // An unselected NPC's dialog file is not a contributor — evicted.
-    expect(parsedFiles.has(otherNpcFile)).toBe(false);
+    expect(parsedFiles.has(otherNpcFile)).toBe(true);
+  });
+
+  it('retains indexed files parsed on demand beyond the cache cap', async () => {
+    const files = Array.from({ length: PARSED_FILES_CAP + 20 }, (_, i) => `/proj/${i}.d`);
+    useProjectStore.setState({ allDialogFiles: files });
+    const parse = jest.spyOn(window.editorAPI, 'parseDialogFile').mockImplementation(async () => emptyModel());
+    try {
+      for (const file of files) await useProjectStore.getState().getSemanticModel(file);
+      expect(useProjectStore.getState().parsedFiles.size).toBe(files.length);
+      await useProjectStore.getState().getSemanticModel(files[0]);
+      expect(parse).toHaveBeenCalledTimes(files.length);
+    } finally {
+      parse.mockRestore();
+    }
   });
 });

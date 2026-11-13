@@ -299,30 +299,37 @@ The metadata pass additionally walked top-level declarations twice per file
   partial model even on errors — the parse path stays authoritative for the
   error shape.
 
-## parsedFiles cap (P0, 2026-08-23)
+## parsedFiles retention (#554)
 
-`projectStore.parsedFiles` previously grew without bound — `clearCache`/
-`clearMergedModel` had no external callers and only `closeProject` shrank it.
-It is now capped at `PARSED_FILES_CAP` (512) entries:
+`projectStore.parsedFiles` holds the indexed project's full parsed corpus until
+invalidation, reload or close. `PARSED_FILES_CAP` (512) is an eviction target
+for incidental models, not a project-size limit:
 
-- **Pinned: the merged-model contributors** that
-  `loadAndMergeNpcModels`/`loadQuestData` read from the cache — the selected
-  NPC's dialog files and quest files. Global (dialog-less) files in
-  `allDialogFiles` are a preference, not an absolute: a project can list more
-  of them than the cap (the MDK tree does), so they are evicted after every
-  other unpinned entry rather than never.
+- **Pinned:** every file in `allDialogFiles`, plus quest files and the selected
+  NPC's dialog files. Pinning applies to ingestion, on-demand parses and model
+  updates. The map may exceed 512 entries; project-wide Problems scans, quest
+  usage, rename-reference warnings, field options and global merges must not
+  silently omit files just because the project is large.
 - **Eviction order**: least-recently-touched first. Recency lives in a
   store-closure map (`touchParsedFile`) updated on every cache write *and* on
   `getSemanticModel` cache hits, so reads refresh recency without churning
   store state. Reset on `openProject`/`clearCache`/`closeProject`.
-- **Self-healing**: NPC selection always runs `getSemanticModel` over the
-  NPC's files before merging (`useNavigation`/`useDialogNavigation`), so an
-  evicted file is transparently re-parsed on demand.
-- **Documented degradation**: on projects larger than the cap, whole-corpus
-  consumers (Problems panel scan, `getQuestUsage`) see at most
-  `PARSED_FILES_CAP` files.
+- **Memory tradeoff:** one model per successfully parsed project file, rather
+  than an arbitrary truncated subset. The backend's separate 512-entry
+  index-to-parser hand-off cache remains bounded. `closeProject` releases the
+  renderer corpus. Parse failures are still retried on demand, not cached as
+  empty successful models (#472).
 
-Guarded by `tests/projectStore.parsedFilesCap.test.ts`.
+Guarded by `tests/projectStore.parsedFilesCap.test.ts` and
+`tests/projectStore.projectCorpus.test.ts` (ingestion and whole-project consumers).
+`tests/e2e/ingestion-interactivity.spec.ts` opens a 540-file mock project and
+checks an early file's Parsed status before selecting its NPC.
+
+Measured on Beppo's actual 896 scripts (2026-11-13): the real store with the
+forked parser pool retained 896/896 models, including the reported Hawell file.
+Parent-process heap after GC rose from 10.7 to 51.1 MiB (RSS 105.5 to 191.3 MiB).
+This read-only Node/tsx ingestion check treated every file as a merge contributor;
+it is not a measurement of the full Electron UI or the eight worker processes.
 
 ## File-watcher change batching (P0, 2026-08-23)
 

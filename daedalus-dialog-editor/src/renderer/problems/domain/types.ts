@@ -242,7 +242,7 @@ export interface ProjectView {
    * Every `TA` entry the project index read, across every routine — what
    * `routine-overlap` sweeps (#235). From the index's whole-project pass
    * rather than the parsed files, for the reason the waypoint and spawn rules
-   * take theirs there: `parsedFiles` is capped by what has been opened.
+    * take theirs there: the index is complete before background ingestion.
    */
   routineSites: readonly RoutineSite[];
   /** The open world's waypoint positions and mobs — what `routine-mob-missing`

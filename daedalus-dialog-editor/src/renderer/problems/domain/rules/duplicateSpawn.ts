@@ -20,8 +20,8 @@ import type { LintRule, Problem } from '../types';
  *
  * The input is `dialogsByNpc` from the project index, not the parsed files'
  * facts, for the reason the waypoint rule takes its sites from the index: the
- * index rides `buildProjectIndex`'s worker-pool pass and sees every file, while
- * `parsedFiles` is capped and depends on what has been opened. An NPC the
+ * index rides `buildProjectIndex`'s worker-pool pass and sees every file before
+ * background ingestion completes. An NPC the
  * project has no dialog for yields nothing — an empty index means nothing is
  * known, never that nothing is legal.
  *

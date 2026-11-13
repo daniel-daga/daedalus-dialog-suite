@@ -32,14 +32,11 @@ import { test, expect } from '@playwright/test';
  * timing-based.
  */
 
-// ~50 NPCs × 3 dialog files each = 150 small files — enough to make ingestion
-// span several 500 ms flush windows (with the parse delay below) and to give the
-// NPC list real, filterable entries. Small content keeps the total well under
-// the localStorage budget (~45 KB).
-const NPC_COUNT = 50;
+// 180 NPCs × 3 files exceeds the former 512-model limit (#554) while staying
+// comfortably below the localStorage budget.
+const NPC_COUNT = 180;
 const FILES_PER_NPC = 3;
-// Per-file parse latency (ms) applied only via the seeded mock seam. 150 files /
-// 20 ingestion workers × ~200 ms ≈ 1.5 s of ingestion → multiple flush windows.
+// Per-file latency keeps ingestion observable across multiple flush windows.
 const PARSE_DELAY_MS = 200;
 const FOLDER = 'perf';
 
@@ -121,6 +118,16 @@ test.describe('Ingestion interactivity (fix-07 §3.3 smoke)', () => {
     // (2) Ingestion eventually completes — the overlay clears. Generous timeout;
     // this is a completion guard, not a speed assertion.
     await expect(overlay).toBeHidden({ timeout: 20000 });
+
+    // An early file must remain parsed after the entire >512-file project loads,
+    // before selecting its NPC could hide eviction by loading it again.
+    await page.getByTestId('ListAltIcon').click();
+    const fileDialog = page.getByRole('dialog');
+    await expect(fileDialog.getByText(`Project Files (${totalFiles})`)).toBeVisible();
+    const firstFile = fileDialog.getByRole('listitem').filter({ hasText: fixture[0].path });
+    await expect(firstFile).toBeVisible();
+    await expect(firstFile.getByText('Parsed', { exact: true })).toBeVisible();
+    await fileDialog.getByRole('button', { name: 'Close', exact: true }).click();
 
     // (3) The NPC list is now interactive. The full NPC set is shown...
     await expect(page.getByText(`${NPC_COUNT} of ${NPC_COUNT} shown`)).toBeVisible();
