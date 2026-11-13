@@ -62,7 +62,23 @@ describe('SRC-backed project indexing (#559)', () => {
     expect(index.functions).toEqual(['GAMEFUNCTION', 'MENUFUNCTION']);
   });
 
-  it.each(['..\\outside.src', '..\\*.d', 'Missing.src', 'Missing.d'])(
+  it('keeps SRC membership despite a SCRIPTBIN header and missing explicit scripts (Beppo regression)', async () => {
+    const duplicate = 'FUNC INT Npc_GetActiveSpell(var C_NPC self) { return 0; };\n'.repeat(2);
+    const live = write('Content/Story/Live.d', duplicate);
+    write('Content/AI/AI_Intern/Externals.d', duplicate);
+    write('Content/gothic.src', '_INTERN\\SCRIPTBIN\nAI\\AI_INTERN\\AI_CONSTANTS.D\nSTORY\\Story_Globals.d\nSTORY\\Live.d\n');
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const index = await new ProjectService().buildProjectIndex(root);
+      expect(index.allFiles).toEqual([live]);
+      expect(index.parseErrors.map(file => file.filePath)).toEqual([live]);
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('AI_CONSTANTS.D'));
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('Story_Globals.d'));
+      expect(warn.mock.calls.some(([message]) => String(message).includes('indexing all scripts'))).toBe(false);
+    } finally { warn.mockRestore(); }
+  });
+
+  it.each(['..\\outside.src', '..\\*.d', 'Missing.src'])(
     'does not hide errors for an unresolved or unsafe compilation entry: %s', async entry => {
       write('Gothic.src', entry + '\n');
       const file = write('Broken.d', 'func int Broken() { return 0; };\n'.repeat(2));
