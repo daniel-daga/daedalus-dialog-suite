@@ -16,6 +16,8 @@ export async function selectSourceFiles(rootPath: string, scripts: string[], sou
       for (const line of lines) {
         const entry = line.trim().replace(/^"(.*)"$/, '$1');
         if (!entry) continue;
+        // SRC files can also contain non-source headers such as _INTERN\SCRIPTBIN.
+        if (!/\.(d|src)$/i.test(entry)) continue;
         const absolute = path.resolve(path.dirname(sourceList), entry.replace(/[\\/]/g, path.sep));
         if (!isPathInside(rootPath, absolute)) throw new Error(`SRC entry leaves the project: ${entry}`);
         const pattern = absolute.replace(/\\/g, '/').split(/([*?])/).map(token =>
@@ -24,7 +26,8 @@ export async function selectSourceFiles(rootPath: string, scripts: string[], sou
         const matcher = new RegExp(`^${pattern}$`, 'i');
         const matches = candidates.filter(file => matcher.test(file.replace(/\\/g, '/')));
         if (matches.length === 0 && !/[*?]/.test(entry)) {
-          throw new Error(`Unresolved SRC entry ${entry} in ${sourceList}`);
+          if (/\.src$/i.test(entry)) throw new Error(`Unresolved SRC entry ${entry} in ${sourceList}`);
+          console.warn(`[ProjectService] missing script ${entry} in ${sourceList}`);
         }
         for (const file of matches) included.add(file);
       }

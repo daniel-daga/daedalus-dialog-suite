@@ -38,9 +38,12 @@ of their `.d` entries, with case-insensitive paths, `*`/`?` wildcards, comments,
 and entries relative to each list's directory (including nested lists).
 All discovered lists are potential entry points; there is no active-game/parser
 selection. Files outside any list's directory subtree retain folder-scan
-behavior, as do projects without lists. Unreadable lists, missing explicit
-entries or paths outside the project cause a logged fallback to the full scan,
-not silent loss of diagnostics. Empty wildcard matches are allowed.
+behavior, as do projects without lists. Non-source entries such as the MDK's
+`_INTERN\SCRIPTBIN` header are ignored. Missing explicit `.d` entries are logged
+without undoing membership: a missing script cannot include other scripts.
+Unreadable lists, missing explicit `.src` entries or source paths outside the
+project cause a logged fallback to the full scan, not silent loss of diagnostics.
+Empty wildcard matches are allowed.
 This filters metadata, background ingestion and project diagnostics together;
 it does not relax parser validation or saving of directly opened files.
 Membership is refreshed by a full index build; `.src` edits require reopening
