@@ -4,6 +4,17 @@ What each published Windows build changed, newest first. Build Windows adds a
 build here when it publishes it; write new notes in `RELEASE_NOTES.md`, not here.
 Builds before 31 had no release notes.
 
+## Build 45 — 2026-11-13
+
+- #557: Functions with different parameter signatures no longer cause duplicate-declaration errors
+- #556: Problems gains type, location, kind and text filters, and shows Scanning instead of a false empty result
+- #554: Large projects retain all indexed scripts for complete analysis instead of reverting files to Pending
+- #555: Parse errors show the file first, with one clear warning and actions to edit externally and reload
+- #543: A world or asset that crashes the ZenKit reader no longer closes the editor and its unsaved scripts
+- #541: A project's scripts are analysed faster, and the editor no longer holds per-call index data
+- #546: Saving a large constants or globals file no longer freezes the window while the code is generated
+- #544: Opening a project skips links that lead outside its folder, so it lists no files the editor refuses to open
+
 ## Build 44 — 2026-11-12
 
 - #541: Scripts are analysed about a fifth faster when a project loads
