@@ -21,6 +21,18 @@ with matching names. Its existing conservative reference check also scans raw
 declaration source, retaining functions called by overloads (and their reachable
 choice targets). Regression coverage is in the editor's `tests/historyActions.test.ts`.
 
+### Engine reference files are not compilation evidence
+
+The published [Gothic-2-localization Externals.d](https://github.com/auronen/Gothic-2-localization/blob/master/Scripts/Content/AI/AI_Intern/Externals.d#L773-L780)
+contains two identical `Npc_GetActiveSpell(var C_Npc self)` stubs with
+`return 0;` bodies (checked 2026-11-13). Its
+[Gothic.src](https://github.com/auronen/Gothic-2-localization/blob/master/Scripts/Content/Gothic.src)
+does not include that file. The duplicate therefore does not establish that
+the engine accepts repeated script function definitions. Engine externals are
+registered natively; these reference stubs are not their implementations.
+Do not infer compiler legality from a declaration's presence in the script
+directory, or downgrade all function duplicates based on this reference file.
+
 ## Reference, hydration and export ownership
 
 Reference identity is separate from preserved expression text. A shared AST
