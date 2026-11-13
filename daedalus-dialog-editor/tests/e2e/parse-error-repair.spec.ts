@@ -28,6 +28,18 @@ test.beforeEach(async ({ page }) => {
   await page.getByTestId('problem-row-0').click();
 });
 
+test('keeps error details in Problems and leaves the Dialog Editor usable', async ({ page }) => {
+  await expect(page.getByTestId('problems-toggle')).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByTestId('problems-panel').getByRole('heading', { name: 'broken.d', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Dialog Editor', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'NPCs', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'broken.d', exact: true })).toBeHidden();
+  await page.getByTestId('problems-toggle').click();
+  await page.getByTestId('problem-row-0').click();
+  await page.getByRole('button', { name: 'Back to problems', exact: true }).click();
+  await expect(page.getByTestId('problem-row-0')).toBeVisible();
+});
+
 test('offers one file-focused error view, external editing and reload', async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'broken.d', exact: true })).toBeVisible();
   await expect(page.getByText('repair/broken.d', { exact: true })).toBeVisible();
@@ -42,7 +54,8 @@ test('offers one file-focused error view, external editing and reload', async ({
   });
   await page.getByRole('button', { name: 'Reload file', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Parse errors (1)' })).toBeHidden();
-  await expect(page.getByRole('heading', { name: 'NPCs' })).toBeVisible();
+  await expect(page.getByTestId('problems-panel')).toBeVisible();
+  await expect(page.getByTestId('problems-toggle')).toHaveAttribute('aria-pressed', 'true');
 });
 
 test('keeps the findings visible when the external editor cannot open', async ({ page }) => {
@@ -51,5 +64,17 @@ test('keeps the findings visible when the external editor cannot open', async ({
   });
   await page.getByRole('button', { name: 'Edit externally' }).click();
   await expect(page.getByRole('alert').filter({ hasText: 'No application associated with .d' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Parse errors (1)' })).toBeVisible();
+});
+
+test('reload keeps unresolved errors in Problems and reports read failures', async ({ page }) => {
+  await page.getByRole('button', { name: 'Reload file', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Parse errors (1)' })).toBeVisible();
+  await expect(page.getByTestId('problems-toggle')).toHaveAttribute('aria-pressed', 'true');
+  await page.evaluate(() => {
+    window.editorAPI.indexFile = async () => { throw new Error('File unavailable'); };
+  });
+  await page.getByRole('button', { name: 'Reload file', exact: true }).click();
+  await expect(page.getByRole('alert').filter({ hasText: 'Could not reload the script file.' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Parse errors (1)' })).toBeVisible();
 });

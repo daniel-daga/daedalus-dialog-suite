@@ -7,9 +7,10 @@ import { useEditorStore } from '../store/editorStore';
 interface SyntaxErrorsDisplayProps {
   errors: ParseError[];
   filePath: string | null;
+  onReload?: () => Promise<void>;
 }
 
-const SyntaxErrorsDisplay: React.FC<SyntaxErrorsDisplayProps> = ({ errors, filePath }) => {
+const SyntaxErrorsDisplay: React.FC<SyntaxErrorsDisplayProps> = ({ errors, filePath, onReload }) => {
   const reloadFile = useEditorStore((s) => s.reloadFile);
   const [actionError, setActionError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -44,7 +45,7 @@ const SyntaxErrorsDisplay: React.FC<SyntaxErrorsDisplayProps> = ({ errors, fileP
               Edit externally
             </Button>
             <Button variant="outlined" startIcon={<Refresh />} disabled={!filePath || busy}
-              onClick={() => filePath && void runAction(() => reloadFile(filePath))}>
+              onClick={() => filePath && void runAction(() => onReload ? onReload() : reloadFile(filePath))}>
               Reload file
             </Button>
           </Stack>

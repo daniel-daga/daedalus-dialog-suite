@@ -21,11 +21,13 @@ import { useNavigation } from '../../hooks/useNavigation';
 import type { Problem } from '../../problems/domain/types';
 import { looksLikeAnotherLanguage } from '../../problems/domain/rules/outputUnitDrift';
 import ProblemsList, { RULE_LABEL, SEVERITY_LABEL, secondaryText } from './ProblemsList';
+import SyntaxErrorsDisplay from '../SyntaxErrorsDisplay';
+import type { ParseError } from '../../types/global';
 
 /**
  * Project-wide Problems panel. Runs the lint rules over the parsed project files
  * (re-scanning as background ingestion advances) and renders a navigable list.
- * Clicking a problem jumps to the offending dialog or function.
+ * Syntax errors stay here; other problems jump to the offending declaration.
  */
 const ProblemsPanel: React.FC = () => {
   const problems = useProblemsStore((s) => s.problems);
@@ -53,6 +55,8 @@ const ProblemsPanel: React.FC = () => {
   const [location, setLocation] = useState('');
   const [rule, setRule] = useState('');
   const [search, setSearch] = useState('');
+  const [errorDetails, setErrorDetails] = useState<{ filePath: string; errors: ParseError[] } | null>(null);
+  const [detailsError, setDetailsError] = useState<string | null>(null);
   const filtersActive = severity !== '' || location !== '' || rule !== '' || search !== '';
   const scanning = projectOpen && (isScanning || isIngesting || !hasScanned);
   const locations = useMemo(() => {
@@ -102,6 +106,17 @@ const ProblemsPanel: React.FC = () => {
 
   const handleSelect = async (problem: Problem): Promise<void> => {
     const locus = problem.locus;
+    if (problem.rule === 'parse-error' && locus.kind === 'script') {
+      setDetailsError(null);
+      try {
+        // Inspect disk without opening or replacing the active editor file.
+        const model = await window.editorAPI.parseDialogFile(locus.filePath);
+        setErrorDetails({ filePath: locus.filePath, errors: model.errors ?? [] });
+      } catch (error) {
+        setDetailsError(error instanceof Error ? error.message : String(error));
+      }
+      return;
+    }
     // A world locus has no file to open: it is an address into the open world,
     // and the jump is the World surface's to make (§16.20 slice 2). The row is
     // disabled when this would find nothing, so both guards are belt and
@@ -193,6 +208,28 @@ const ProblemsPanel: React.FC = () => {
       data-ui-pattern={SEARCHABLE_PANE_PATTERN}
       sx={(theme) => ({ ...searchablePaneShellSx(theme), height: '100%' })}
     >
+      {errorDetails ? (
+        <>
+          <Box sx={searchablePaneHeaderSx}>
+            <Button onClick={() => setErrorDetails(null)}>Back to problems</Button>
+          </Box>
+          <Box sx={{ flex: 1, minHeight: 0 }}>
+            <SyntaxErrorsDisplay
+              filePath={errorDetails.filePath}
+              errors={errorDetails.errors}
+              onReload={async () => {
+                const models = await useProjectStore.getState().reindexFiles([errorDetails.filePath]);
+                const model = models.get(errorDetails.filePath);
+                if (!model) throw new Error('Could not reload the script file.');
+                setErrorDetails(model.hasErrors ? { filePath: errorDetails.filePath, errors: model.errors ?? [] } : null);
+                runScan();
+              }}
+            />
+          </Box>
+        </>
+      ) : (
+      <>
+      {detailsError && <Alert severity="error">{detailsError}</Alert>}
       <Box sx={searchablePaneHeaderSx}>
         <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1 }}>
           <Typography variant="subtitle2">Problems</Typography>
@@ -272,6 +309,8 @@ const ProblemsPanel: React.FC = () => {
           onAddToWorld={handleAddToWorld}
         />
       </Box>
+      </>
+      )}
       <Dialog
         open={confirmingOuUpdate}
         onClose={() => !ouUpdating && setConfirmingOuUpdate(false)}

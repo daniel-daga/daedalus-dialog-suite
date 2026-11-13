@@ -3,6 +3,7 @@
 ## One line per change, newest on top, `- #123: Short description` (120 characters max). A build ships only the lines added since the last one, and CHANGELOG.md keeps them; old lines may be pruned at any time.
 
 - #557: Functions with different parameter signatures no longer cause duplicate-declaration errors
+- #558: Syntax-error details stay in Problems instead of replacing the Dialog Editor
 - #556: Problems gains type, location, kind and text filters, and shows Scanning instead of a false empty result
 - #554: Large projects retain all indexed scripts for complete analysis instead of reverting files to Pending
 - #555: Parse errors show the file first, with one clear warning and actions to edit externally and reload

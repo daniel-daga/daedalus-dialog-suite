@@ -108,8 +108,9 @@ previous results visible. A completed clean scan and filters with no matches
 have separate empty messages. Filters only affect the list, not **Update OUs**,
 which still updates all reported subtitle lines after confirmation.
 
-For a file with parse errors, the file view shows its path and the error
-locations. Choose **Edit externally** to open the original in the default
+Clicking a syntax error shows its file path and error locations inside Problems,
+without changing the active Dialog Editor file. **Back to problems** returns to
+the filtered list. Choose **Edit externally** to open the original in the default
 application for `.d` files (associate `.d` with your text editor in the system
 settings first). Save the corrections there, then choose **Reload file**.
 
