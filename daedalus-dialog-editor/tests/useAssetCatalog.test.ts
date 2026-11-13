@@ -83,12 +83,14 @@ beforeEach(() => {
 describe('useAssetCatalog — the sidecar', () => {
   test('is read for the loaded project, and the seed is merged in for display', async () => {
     const { result } = renderHook(() => useAssetCatalog());
-    await waitFor(() => expect(api.getAssetCatalog).toHaveBeenCalledWith(PROJECT));
-
-    const paths = result.current.catalogProps?.catalog.categories.map((c) => c.path) ?? [];
-    expect(paths).toContain('Mine/Crates');
+    const paths = () => result.current.catalogProps?.catalog.categories.map((c) => c.path) ?? [];
+    // Wait for the read to land in state, not just for the call to happen.
+    await waitFor(() => {
+      expect(api.getAssetCatalog).toHaveBeenCalledWith(PROJECT);
+      expect(paths()).toContain('Mine/Crates');
+    });
     // The shipped seed, which the sidecar does not carry.
-    expect(paths).toContain('Items/Schwerter');
+    expect(paths()).toContain('Items/Schwerter');
   });
 
   test('with no project there is nowhere to persist to, so no verbs are offered', async () => {
@@ -135,8 +137,7 @@ describe('useAssetCatalog — the sidecar', () => {
 describe('useAssetCatalog — what may be removed from a category', () => {
   test('an entry the sidecar carries is the project’s own, so it is removable', async () => {
     const { result } = renderHook(() => useAssetCatalog());
-    await waitFor(() => expect(api.getAssetCatalog).toHaveBeenCalled());
-    expect(result.current.catalogProps?.removable('Mine/Crates', 'NW_CRATE.MRM')).toBe(true);
+    await waitFor(() => expect(result.current.catalogProps?.removable('Mine/Crates', 'NW_CRATE.MRM')).toBe(true));
   });
 
   test('an entry only the seed carries is not — there is nothing to remove it from', async () => {
