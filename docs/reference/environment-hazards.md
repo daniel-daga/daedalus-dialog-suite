@@ -48,6 +48,12 @@ That is not hypothetical: it silently refused every first
 fails for a file that does not exist yet, and fell back to the unexpanded
 spelling). Compare resolved-to-resolved, or lstat-free normalize both sides.
 
+For assertions comparing test-runner and Electron paths, use
+`fs.realpathSync.native` on **both** paths. Node's non-native `realpathSync`
+can preserve the 8.3 alias (`C:\PROGRA~1` stays short), while the native call
+expands it (`C:\Program Files`). This blocked the external-edit E2E in Windows
+release run 43405320793 even though it opened the correct file (#555).
+
 The general shape — a short name, a junction, a symlinked temp dir — is what to
 test against, and a junction reproduces it on any platform. `--- Electron main
 process output ---` in a failing `e2e-electron` job's log is the main process's

@@ -90,7 +90,11 @@ test.describe('Parse-error save guard (disk truth)', () => {
       };
     });
     await page.getByRole('button', { name: 'Edit externally' }).click();
-    await expect.poll(() => app.evaluate(() => process.env.TEST_EXTERNAL_SCRIPT)).toBe(fs.realpathSync(savedFile));
+    // Native realpath expands Windows 8.3 aliases in both the runner and Electron paths.
+    await expect.poll(async () => {
+      const opened = await app.evaluate(() => process.env.TEST_EXTERNAL_SCRIPT);
+      return opened ? fs.realpathSync.native(opened) : undefined;
+    }).toBe(fs.realpathSync.native(savedFile));
     expect(fs.readFileSync(savedFile, 'latin1')).toBe(originalBytes);
     fs.writeFileSync(savedFile, 'FUNC VOID Repaired() {};', 'latin1');
     await page.getByRole('button', { name: 'Reload file', exact: true }).click();
