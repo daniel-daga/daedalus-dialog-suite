@@ -18,7 +18,8 @@ On the welcome screen:
 
 - **Open Project** — pick your mod's scripts folder (for a standard install,
   `_work/Data/Scripts/Content` or your mod's equivalent). Dandelion indexes
-  every `.d` file in the background and watches the folder, so edits you make
+  the `.d` files included by discovered `.src` lists in the background (or all
+  `.d` files in folders without lists) and watches the folder, so edits you make
   in another editor show up. Recent projects are listed below the buttons.
 - **Open Single File** — edit one `.d` file without a project. Cross-file
   features (quests, Problems, NPC lists) need a project.

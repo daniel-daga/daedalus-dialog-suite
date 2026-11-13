@@ -2,6 +2,7 @@
 
 ## One line per change, newest on top, `- #123: Short description` (120 characters max). A build ships only the lines added since the last one, and CHANGELOG.md keeps them; old lines may be pruned at any time.
 
+- #559: Project indexing respects SRC lists so unused reference scripts no longer cause project errors
 - #557: Functions with different parameter signatures no longer cause duplicate-declaration errors
 - #558: Syntax-error details stay in Problems instead of replacing the Dialog Editor
 - #556: Problems gains type, location, kind and text filters, and shows Scanning instead of a false empty result
