@@ -595,9 +595,9 @@ export const useFileStore = create<FileStore>()(immer((set, get) => ({
       }
 
       // Update declarationOrder
-      const deletedNames = new Set([dialogName, ...functionsToDelete]);
       const updatedOrder = (model.declarationOrder || []).filter(
-        (entry) => !deletedNames.has(entry.name)
+        (entry) => !(entry.type === 'dialog' && entry.name === dialogName) &&
+          !(entry.type === 'function' && functionsToDelete.has(entry.name))
       );
 
       fileState.semanticModel = {

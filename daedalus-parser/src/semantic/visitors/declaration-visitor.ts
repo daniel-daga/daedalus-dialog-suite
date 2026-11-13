@@ -117,7 +117,24 @@ export class DeclarationVisitor {
       const typeNode = node.childForFieldName('return_type');
       const keywordNode = node.childForFieldName('keyword');
       if (nameNode && typeNode) {
-        if (!this.claimDeclarationName('function', nameNode.text, node)) {
+        const parameters = this.extractFunctionParameters(node);
+        const signature = JSON.stringify([nameNode.text.toLowerCase(),
+          node.childForFieldName('parameters')?.namedChildren.filter(child => child.type === 'parameter').map(parameter => [
+            parameter.childForFieldName('type')?.text.toLowerCase(),
+            this.sizeTokens(parameter.childForFieldName('size'))
+          ]) ?? []
+        ]);
+        if (!this.claimDeclarationName('function', nameNode.text, node, signature)) {
+          return;
+        }
+        if (this.functionNameMap.has(nameNode.text.toLowerCase())) {
+          // shortcut: name-based consumers use the first signature; preserve other overloads until signature-aware editing exists.
+          this.semanticModel.declarationOrder?.push({
+            type: 'raw',
+            name: nameNode.text,
+            sourceText: node.text,
+            leadingComments: [...this.pendingLeadingComments]
+          });
           return;
         }
         const func = new DialogFunction(nameNode.text, typeNode.text);
@@ -130,7 +147,6 @@ export class DeclarationVisitor {
           func.keyword = keywordNode.text;
         }
         func.spaceBeforeParen = new RegExp(`${nameNode.text}\\s+\\(`).test(firstLine);
-        const parameters = this.extractFunctionParameters(node);
         if (parameters.length > 0) {
           func.parameters = parameters;
         }
@@ -349,13 +365,12 @@ export class DeclarationVisitor {
 
   /**
    * Claim `name` for `kind` in the pass-1 dictionary. Daedalus names are
-   * case-insensitive and the engine rejects a second declaration, so a name
-   * already claimed is recorded as an error and the caller keeps the first,
+   * case-insensitive; functions additionally distinguish parameter signatures.
+   * An identity already claimed is recorded as an error and the caller keeps the first,
    * so a save refuses instead of dropping or merging the second (#447).
    */
-  private claimDeclarationName(kind: string, name: string, node: TreeSitterNode): boolean {
+  private claimDeclarationName(kind: string, name: string, node: TreeSitterNode, key = name.toLowerCase()): boolean {
     const names = (this.declaredNames[kind] ??= createNameRecord<true>());
-    const key = name.toLowerCase();
     if (names[key]) {
       this.recordDuplicateDeclaration(kind, name, node);
       return false;
@@ -408,6 +423,22 @@ export class DeclarationVisitor {
       parameters.push(parameter);
     }
     return parameters;
+  }
+
+  private sizeTokens(node: TreeSitterNode | null): string[] | null {
+    if (!node) return null;
+    const tokens: string[] = [];
+    const pending = [node];
+    while (pending.length > 0) {
+      const current = pending.pop()!;
+      if (current.type === 'comment') continue;
+      if (current.childCount === 0 || current.type === 'string') {
+        tokens.push(current.type === 'string' ? current.text : current.text.toLowerCase());
+      } else {
+        for (let i = current.childCount - 1; i >= 0; i--) pending.push(current.child(i));
+      }
+    }
+    return tokens;
   }
 
   private extractInstanceDisplayName(instanceNode: TreeSitterNode): string | undefined {
@@ -563,4 +594,3 @@ export class DeclarationVisitor {
     return undefined;
   }
 }
-

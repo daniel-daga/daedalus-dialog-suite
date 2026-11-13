@@ -861,7 +861,7 @@ export interface SemanticModel {
   declarationOrder?: Array<{
     type: 'dialog' | 'function' | 'constant' | 'variable' | 'instance' | 'class' | 'prototype' | 'raw';
     name: string;
-    /** A `raw` entry's verbatim source — zParserExtender syntax the model carries unread (#392). */
+    /** Verbatim extension syntax (#392) or an additional function overload (#557). */
     sourceText?: string;
     leadingComments?: string[];
     /** Blank lines before the declaration and its leading comments, as parsed (#286) */

@@ -181,7 +181,7 @@ export class SemanticCodeGenerator {
     // dialogs and functions missing from the order (the leftover loops below).
     for (const declaration of model.declarationOrder || []) {
       if (declaration.type === 'raw') {
-        // A zParserExtender extension (#392): written back exactly as parsed.
+        // An unprojected declaration: written back exactly as parsed.
         const leading = this.renderLeadingComments(declaration.leadingComments);
         const text = declaration.sourceText ?? '';
         emitOrdered(leading ? `${leading}\n${text}` : text, false, declaration.blankLinesBefore, declaration.sameLineBefore);

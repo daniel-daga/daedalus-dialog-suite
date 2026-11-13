@@ -1276,8 +1276,8 @@ export interface SemanticModel {
     type: 'dialog' | 'function' | 'constant' | 'variable' | 'instance' | 'class' | 'prototype' | 'raw';
     name: string;
     /**
-     * A `raw` entry's verbatim source — a zParserExtender extension the model
-     * carries without interpreting (#392).
+     * A `raw` entry's verbatim source — an extension (#392) or additional
+     * function overload (#557) carried without projecting it into the model.
      */
     sourceText?: string;
     leadingComments?: string[];

@@ -176,7 +176,7 @@ export function planDialogRename(
  * remaining dialog (via information/condition properties or nested choices).
  */
 export function computeDialogDeletionSet(
-  model: Pick<SemanticModel, 'dialogs' | 'functions'>,
+  model: Pick<SemanticModel, 'dialogs' | 'functions' | 'declarationOrder'>,
   dialogName: string
 ): Set<string> {
   const dialog = model.dialogs?.[dialogName];
@@ -197,8 +197,8 @@ export function computeDialogDeletionSet(
 
   // Dialog reachability only models information/condition roots and choice
   // callbacks. A surviving function may also call an owned function directly
-  // inside preserved raw source. Use current actions/conditions (never the
-  // historical callSites index) and conservatively retain a target whenever
+  // inside preserved raw source, including unprojected overloads. Use current
+  // actions/conditions (never the historical callSites index) and retain a target whenever
   // its identifier appears in an unstructured representation. String or
   // comment matches can retain extra declarations, but cannot destroy source.
   //
@@ -214,7 +214,9 @@ export function computeDialogDeletionSet(
       const referencedBySurvivor = Object.entries(model.functions || {}).some(([caller, func]) => {
         if (deletable.has(caller)) return false;
         return reference.test(JSON.stringify([func.actions || [], func.conditions || []]));
-      });
+      }) || (model.declarationOrder || []).some(entry =>
+        entry.type === 'raw' && reference.test(entry.sourceText || '')
+      );
       if (referencedBySurvivor) {
         deletable.delete(name);
         changed = true;

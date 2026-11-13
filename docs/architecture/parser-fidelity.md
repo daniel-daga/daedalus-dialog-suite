@@ -1,5 +1,26 @@
 # Parser Roundtrip Fidelity
 
+## Function parameter signatures
+
+Function duplicate checks compare case-insensitive names and ordered parameter
+types/array-size tokens (#557), ignoring comments and whitespace, not parameter
+names or return types. Distinct signatures such as `Hlp_GetInstanceID(var C_NPC npc)`
+and `Hlp_GetInstanceID(var C_ITEM item)`
+are accepted. A repeated signature still blocks saving.
+
+The function dictionary and reference linking remain name-based: only the first
+signature is projected for editing and analysis. Additional overloads are `raw`
+declaration-order entries, preserving their source, comments and position in the
+file through JSON hydration and generation. They are not visually editable or
+individually resolved at call sites. Signature-aware editing would need a richer
+function identity; accepting overloads must not overwrite or merge their bodies.
+Regression coverage is in `test/semantic-error-handling.test.js`.
+
+Dialog deletion removes only dialog/function order entries, never raw entries
+with matching names. Its existing conservative reference check also scans raw
+declaration source, retaining functions called by overloads (and their reachable
+choice targets). Regression coverage is in the editor's `tests/historyActions.test.ts`.
+
 ## Reference, hydration and export ownership
 
 Reference identity is separate from preserved expression text. A shared AST

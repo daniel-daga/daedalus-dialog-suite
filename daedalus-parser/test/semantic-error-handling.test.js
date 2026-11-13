@@ -259,7 +259,7 @@ test('generateFunction is unaffected by the hasErrors guard', () => {
 test('a function declared twice is flagged, not silently overwritten', () => {
   const model = parseSemanticModel(`
     func void Hlp_GetInstanceID(var C_NPC npc) {};
-    func void Hlp_GetInstanceID(var C_ITEM item) {};
+    func void Hlp_GetInstanceID(var c_npc renamed) {};
   `);
 
   assert.ok(model.hasErrors, 'a duplicate declaration should set hasErrors');
@@ -272,7 +272,7 @@ test('a function declared twice is flagged, not silently overwritten', () => {
 test('a duplicate declaration keeps the first declaration in the model', () => {
   const model = parseSemanticModel(`
     func void Hlp_GetInstanceID(var C_NPC npc) {};
-    func void Hlp_GetInstanceID(var C_ITEM item) {};
+    func void Hlp_GetInstanceID(var C_NPC renamed) {};
   `);
 
   const kept = model.functions.Hlp_GetInstanceID;
@@ -295,12 +295,65 @@ test('a function whose name differs only in case is a duplicate', () => {
 test('the code generator refuses to emit a model with a duplicate declaration', () => {
   const model = parseSemanticModel(`
     func void Hlp_GetInstanceID(var C_NPC npc) {};
-    func void Hlp_GetInstanceID(var C_ITEM item) {};
+    func void Hlp_GetInstanceID(var C_NPC npc) {};
   `);
 
   const generator = new SemanticCodeGenerator();
   assert.throws(() => generator.generateSemanticModel(model), /Refusing to generate/,
     'saving must not drop the second declaration silently');
+});
+
+test('different parameter signatures survive generation and JSON hydration (#557)', () => {
+  const { deserializeSemanticModel } = require('../dist/semantic/semantic-model');
+  const source = [
+    '// NPC lookup',
+    'FUNC INT Hlp_GetInstanceID(VAR C_NPC npc) { return 1; };',
+    '// Item lookup',
+    'FUNC INT Hlp_GetInstanceID(VAR C_ITEM item) { return 2; };',
+    '// Another arity and case',
+    'func int hlp_getinstanceid() { return 3; };'
+  ].join('\n');
+  const parsed = parseSemanticModel(source);
+  assert.ok(!parsed.hasErrors, JSON.stringify(parsed.errors));
+  assert.equal(parsed.functions.Hlp_GetInstanceID.parameters[0].type, 'C_NPC');
+  const generator = new SemanticCodeGenerator();
+  for (const model of [parsed, deserializeSemanticModel(JSON.parse(JSON.stringify(parsed)))]) {
+    const output = generator.generateSemanticModel(model);
+    assert.equal((output.match(/func int hlp_getinstanceid/gi) || []).length, 3);
+    assert.ok(output.includes('// Item lookup\nFUNC INT Hlp_GetInstanceID(VAR C_ITEM item) { return 2; };'));
+    for (const value of [1, 2, 3]) {
+      assert.equal((output.match(new RegExp(`return ${value};`, 'g')) || []).length, 1);
+    }
+    assert.ok(!parseSemanticModel(output).hasErrors);
+  }
+});
+
+test('a repeated overload signature is still rejected (#557)', () => {
+  const model = parseSemanticModel([
+    'func int Lookup(var C_NPC npc) { return 1; };',
+    'func int Lookup(var C_ITEM item) { return 2; };',
+    'func void lookup(var c_item renamed) {};'
+  ].join('\n'));
+  const duplicates = model.errors.filter(e => e.type === 'duplicate_declaration');
+  assert.equal(duplicates.length, 1, 'return type and parameter names do not distinguish signatures');
+  assert.equal(duplicates[0].position.row, 3);
+});
+
+test('array signature identity ignores whitespace, comments and identifier case (#557)', () => {
+  for (const size of ['n + 1', 'N /* size */ + 1', 'N // size\n + 1']) {
+    const model = parseSemanticModel([
+      'func void F(var int a[N+1]) {};',
+      `func void f(var int renamed[${size}]) {};`
+    ].join('\n'));
+    const duplicates = model.errors.filter(e => e.type === 'duplicate_declaration');
+    assert.equal(duplicates.length, 1, size);
+    assert.equal(duplicates[0].position.row, 2);
+  }
+  const distinct = parseSemanticModel([
+    'func void F(var int a[N+1]) {};',
+    'func void F(var int a[N+2]) {};'
+  ].join('\n'));
+  assert.ok(!distinct.hasErrors, JSON.stringify(distinct.errors));
 });
 
 // ===================================================================

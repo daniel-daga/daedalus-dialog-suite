@@ -277,6 +277,47 @@ describe('historyActions – removeDialog', () => {
     expect(getModel()?.functions['DIA_Test_Info']).toBeDefined();
   });
 
+  it.each(['DIA_Test_Info', 'DIA_Test'])('preserves a raw overload named %s on deletion (#557)', (name) => {
+    const overload = {
+      type: 'raw' as const,
+      name,
+      sourceText: `func void ${name}(var int arg) { return; };`,
+    };
+    useFileStore.setState((state) => {
+      state.openFiles.get(filePath)!.semanticModel.declarationOrder = [
+        { type: 'dialog', name: 'DIA_Test' },
+        { type: 'function', name: 'DIA_Test_Info' },
+        overload,
+      ];
+    });
+
+    historyActions.removeDialog(filePath, 'DIA_Test');
+
+    expect(getModel()?.dialogs.DIA_Test).toBeUndefined();
+    expect(getModel()?.declarationOrder).toContainEqual(overload);
+    useHistoryStore.getState().undo(filePath);
+    expect(getModel()?.dialogs.DIA_Test).toBeDefined();
+    expect(getModel()?.declarationOrder).toContainEqual(overload);
+  });
+
+  it('keeps functions referenced by raw overloads, including their choice targets (#557)', () => {
+    useFileStore.setState((state) => {
+      const model = state.openFiles.get(filePath)!.semanticModel;
+      model.functions.DIA_Test_Info.actions = [{ type: 'Choice', dialogRef: 'DIA_Test', text: 'Next', targetFunction: 'Next' }];
+      model.functions.Next = { name: 'Next', returnType: 'VOID', actions: [], conditions: [], calls: [] };
+      model.declarationOrder = [{
+        type: 'raw', name: 'Other',
+        sourceText: 'func void Other(var int arg) { dia_test_info(); };',
+      }];
+    });
+
+    historyActions.removeDialog(filePath, 'DIA_Test');
+
+    expect(getModel()?.dialogs.DIA_Test).toBeUndefined();
+    expect(getModel()?.functions.DIA_Test_Info).toBeDefined();
+    expect(getModel()?.functions.Next).toBeDefined();
+  });
+
   it('does not delete a function shared by another dialog', () => {
     // Set up model where DIA_Test2 also uses DIA_Test_Info
     useFileStore.setState({
