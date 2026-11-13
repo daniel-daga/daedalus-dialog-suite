@@ -160,7 +160,7 @@ const MainLayout: React.FC<MainLayoutProps> = ({ filePath }) => {
       <Box sx={{ flexGrow: 1, overflow: 'hidden' }}>
          {/* We use Box with display toggle to preserve state of ThreeColumnLayout when switching views */}
          <Box sx={{ display: view === 'dialog' ? 'flex' : 'none', flexDirection: 'column', height: '100%' }}>
-             {activeFileHasParseErrors && (
+             {activeFileHasParseErrors && !(fileState?.hasErrors && !fileState.autoSaveError) && (
                  <Alert severity="warning" square sx={{ borderRadius: 0 }}>
                      Opened with {activeParseErrorCount} parse error{activeParseErrorCount === 1 ? '' : 's'} — visual edits cannot see all of this file. Saving from the visual editor will drop the content the parser could not read.
                  </Alert>

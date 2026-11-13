@@ -10,9 +10,8 @@ import { launchApp, seedProjectDir, stubOpenDialog, type AppFixture } from './ha
  * partial-model output, and must surface the error in the UI.
  *
  * Behaviour verified in source:
- *  - UI surface: MainLayout.tsx renders a persistent "Opened with N parse
- *    error(s) — … will drop the content the parser could not read" banner
- *    (MainLayout.tsx:124-128).
+ *  - UI surface: the blocked file view names the parse errors and offers
+ *    external editing and reload, without a second partial-model warning.
  *  - Auto-save gate (E3): `isAutoSaveCandidate` excludes `hasErrors` models
  *    (useAutoSave.ts:17-24) — the file is never auto-written.
  *  - Save-path guard (fix-01 P7 + slice-2 E3): the save IPC validates first and,
@@ -51,7 +50,7 @@ test.describe('Parse-error save guard (disk truth)', () => {
     const { page } = fixture;
 
     // Error surfaced in the UI.
-    await expect(page.getByText(/Opened with \d+ parse error/i)).toBeVisible({
+    await expect(page.getByRole('heading', { name: /Parse errors \(\d+\)/i })).toBeVisible({
       timeout: 20000,
     });
 
@@ -78,5 +77,24 @@ test.describe('Parse-error save guard (disk truth)', () => {
 
     // Disk is still byte-identical to the original after the refused save.
     expect(fs.readFileSync(savedFile, 'latin1')).toBe(originalBytes);
+  });
+
+  test('external editing crosses preload and IPC, then reload reads the repaired file', async () => {
+    const { page, app } = fixture;
+    await expect(page.getByRole('button', { name: 'Edit externally' })).toBeVisible();
+    // Do not launch the user's associated application during an automated test.
+    await app.evaluate(({ shell }) => {
+      shell.openPath = async (filePath) => {
+        process.env.TEST_EXTERNAL_SCRIPT = filePath;
+        return '';
+      };
+    });
+    await page.getByRole('button', { name: 'Edit externally' }).click();
+    await expect.poll(() => app.evaluate(() => process.env.TEST_EXTERNAL_SCRIPT)).toBe(fs.realpathSync(savedFile));
+    expect(fs.readFileSync(savedFile, 'latin1')).toBe(originalBytes);
+    fs.writeFileSync(savedFile, 'FUNC VOID Repaired() {};', 'latin1');
+    await page.getByRole('button', { name: 'Reload file', exact: true }).click();
+    await expect(page.getByRole('heading', { name: /Parse errors \(\d+\)/i })).toBeHidden();
+    await expect(page.getByRole('heading', { name: 'NPCs' })).toBeVisible();
   });
 });

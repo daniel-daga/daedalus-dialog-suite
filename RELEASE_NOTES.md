@@ -3,6 +3,7 @@
 ## One line per change, newest on top, `- #123: Short description` (120 characters max). A build ships only the lines added since the last one, and CHANGELOG.md keeps them; old lines may be pruned at any time.
 
 - #554: Large projects retain all indexed scripts for complete analysis instead of reverting files to Pending
+- #555: Parse errors show the file first, with one clear warning and actions to edit externally and reload
 - #543: A world or asset that crashes the ZenKit reader no longer closes the editor and its unsaved scripts
 - #541: A project's scripts are analysed faster, and the editor no longer holds per-call index data
 - #538: A deeply nested script opens with an error naming its line instead of failing to load or to save

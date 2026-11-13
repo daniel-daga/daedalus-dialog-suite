@@ -152,6 +152,7 @@ contextBridge.exposeInMainWorld('editorAPI', {
   installUpdate: (installerPath: string) => ipcRenderer.invoke('updater:installUpdate', installerPath),
   dismissUpdateVersion: (version: string) => ipcRenderer.invoke('updater:dismissVersion', version),
   openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
+  openScriptInExternalEditor: (filePath: string) => ipcRenderer.invoke('file:openScriptInExternalEditor', filePath),
   onDownloadProgress: (callback: (percent: number) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, percent: number) => callback(percent);
     ipcRenderer.on('updater:downloadProgress', listener);

@@ -938,6 +938,9 @@ export const mockEditorAPI: EditorAPI = {
 
   async dismissUpdateVersion(_version: string): Promise<void> {},
   async openExternal(_url: string): Promise<void> {},
+  async openScriptInExternalEditor(_filePath: string): Promise<void> {
+    throw new Error('External editing is only available in the desktop app.');
+  },
   onDownloadProgress(_callback: (percent: number) => void): () => void {
     return () => {};
   },

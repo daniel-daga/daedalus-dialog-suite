@@ -314,6 +314,7 @@ export interface EditorAPI {
   dismissUpdateVersion: (version: string) => Promise<void>;
   /** Open an https URL in the system browser (release notes). Main refuses any other scheme. */
   openExternal: (url: string) => Promise<void>;
+  openScriptInExternalEditor: (filePath: string) => Promise<void>;
   onDownloadProgress: (callback: (percent: number) => void) => () => void;
 }
 

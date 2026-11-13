@@ -99,6 +99,11 @@ The Problems panel lists syntax errors and project-wide checks, for example a
 dangling `Npc_KnowsInfo`, overlapping routines, or a routine waypoint that the
 world does not have. Click a problem to jump to it.
 
+For a file with parse errors, the file view shows its path and the error
+locations. Choose **Edit externally** to open the original in the default
+application for `.d` files (associate `.d` with your text editor in the system
+settings first). Save the corrections there, then choose **Reload file**.
+
 ## Something wrong?
 
 [Open an issue](https://github.com/daniel-daga/daedalus-dialog-suite/issues/new/choose)

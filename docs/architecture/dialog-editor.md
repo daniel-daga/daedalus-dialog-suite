@@ -4,6 +4,21 @@ Durable design decisions for `daedalus-dialog-editor/` outside the quest
 editor (see `quest-editor.md` for quest-specific layering). Consolidated from
 the March and June 2026 editor reviews.
 
+## Parse-error file view
+
+`SyntaxErrorsDisplay` replaces the visual editor for a file opened with parse
+errors. It groups the filename, full path, one blocking explanation and the
+findings with line/column, followed by the repair workflow: **Edit externally**
+uses the system's `.d` association, and **Reload file** uses the existing store
+reload path. Failures stay visible without hiding the findings. The layout's
+partial-model save warning remains only when the visual editor is displayed.
+
+The external-editor IPC accepts only allowed, existing `.d` files; it resolves
+symlinks and checks the target extension before calling Electron `shell.openPath`.
+It accepts neither arbitrary commands nor executable paths. The internal source
+dialog remains read-only. Automated tests intercept the OS launch; the actual
+editor application depends on the user's system association.
+
 ## Action System Conventions
 
 Established by the March 2026 review (see git history of

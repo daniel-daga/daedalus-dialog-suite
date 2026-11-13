@@ -439,6 +439,20 @@ export function setupIpcHandlers() {
     ));
 
   // File I/O handlers
+  ipcMain.handle('file:openScriptInExternalEditor', (_event, filePath: unknown) =>
+    guardIpc('file:openScriptInExternalEditor', 'Failed to open external editor', async () => {
+      assertFilePath(filePath);
+      await pathValidator.validatePathResolved(filePath);
+      const resolvedPath = await fs.promises.realpath(filePath);
+      // Check the resolved target too: a .d symlink must not launch an executable.
+      if (path.extname(filePath).toLowerCase() !== '.d' || path.extname(resolvedPath).toLowerCase() !== '.d') {
+        throw new Error('Only .d scripts can be opened in an external editor');
+      }
+      if (!(await fs.promises.stat(resolvedPath)).isFile()) throw new Error('The script must be a file');
+      const error = await shell.openPath(resolvedPath);
+      if (error) throw new Error(`${error}. Associate .d files with a text editor in your system settings.`);
+    }));
+
   ipcMain.handle('file:read', (_event, filePath: unknown) =>
     guardIpc('file:read', 'Failed to read file', async () => {
       assertFilePath(filePath);
