@@ -1,8 +1,7 @@
-import React from 'react';
-import { Box, Button, Chip, List, ListItem, ListItemButton, ListItemText, Typography } from '@mui/material';
+import React, { useState } from 'react';
+import { Box, Button, Chip, List, ListItem, ListItemButton, ListItemText, TablePagination, Typography } from '@mui/material';
 import { searchablePaneRowButtonSx } from '../common/searchablePaneStyles';
 import type { Problem, ProblemRuleId } from '../../problems/domain/types';
-import { worldFocusOf } from '../../store/worldStore';
 
 export const RULE_LABEL: Record<ProblemRuleId, string> = {
   'parse-error': 'Syntax error',
@@ -37,8 +36,8 @@ export const secondaryText = ({ locus }: Problem): string => {
     return 'World';
   }
   const parts = [baseName(locus.filePath)];
-  // Both, where there are both: the declaration is what the click navigates to,
-  // and the line is what tells two findings inside it apart (`ScriptLocus.line`).
+  // Both, where there are both: the declaration gives context,
+  // and the line tells two findings inside it apart (`ScriptLocus.line`).
   // A syntax error has only the line; a model the editor built has only the
   // declaration.
   if (locus.dialogName) parts.push(locus.dialogName);
@@ -46,21 +45,6 @@ export const secondaryText = ({ locus }: Problem): string => {
   if (locus.line !== undefined) parts.push(`line ${locus.line}`);
   return parts.join(' · ');
 };
-
-/**
- * Whether clicking the row leads anywhere. A script problem always does. A
- * world problem needs the world open — the editor holds one at a time — and an
- * address the World surface can jump to. A polygon locus has neither a row in
- * the VOB index nor a name in the waynet, so it is an address only when the
- * finding brought the polygon's corners with it (#222); the portal finding
- * that names a material no face carries brings none, and is still listed
- * without a jump.
- */
-const isNavigable = (problem: Problem, worldOpen: boolean): boolean => (
-  problem.locus.kind !== 'world'
-    ? true
-    : worldOpen && worldFocusOf(problem.locus) !== null
-);
 
 /**
  * The name an "Add to world" action would send to `AddWaypoint`, or null when
@@ -76,34 +60,38 @@ interface ProblemsListProps {
   problems: Problem[];
   emptyMessage?: string;
   onSelect: (problem: Problem) => void;
-  /** Whether a world is open, which is half of what makes a world row clickable. */
+  /** Whether a world is open for the explicit Add to world action. */
   worldOpen?: boolean;
   /**
    * Adds the named waypoint to the open world — the `waypoint-not-in-world`
    * row's own second action (`addableWaypoint`). Separate from `onSelect`,
-   * which still goes to the script: the name may belong to another world
-   * (level-editor.md §16.8), so navigating there stays the row's primary
-   * click and this is an explicit opt-in beside it.
+    * which opens details. Adding a waypoint stays an explicit opt-in.
    */
   onAddToWorld?: (name: string) => void;
 }
 
 /**
- * Presentational list of project-wide lint problems. Each row is navigable via
+ * Presentational list of project-wide lint problems. Each row opens details via
  * `onSelect`; severity is shown as a color-coded chip.
  */
 const ProblemsList: React.FC<ProblemsListProps> = ({
   problems, onSelect, worldOpen = false, onAddToWorld, emptyMessage = 'No problems found.',
-}) => (
-  <List dense disablePadding data-testid="problems-list" sx={{ height: '100%', overflowY: 'auto' }}>
-    {problems.map((problem, index) => {
+}) => {
+  const [pagination, setPagination] = useState({ problems, page: 0 });
+  // Filters and rescans start at the first page; detail inspection does not change the input.
+  const page = pagination.problems === problems ? pagination.page : 0;
+  const pageSize = 50;
+  return (
+  <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+  <List dense disablePadding data-testid="problems-list" sx={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
+    {problems.slice(page * pageSize, (page + 1) * pageSize).map((problem, offset) => {
+      const index = page * pageSize + offset;
       const waypoint = onAddToWorld ? addableWaypoint(problem, worldOpen) : null;
       return (
         <ListItem key={problem.id} disablePadding>
           <ListItemButton
             sx={searchablePaneRowButtonSx}
             onClick={() => onSelect(problem)}
-            disabled={!isNavigable(problem, worldOpen)}
             data-testid={`problem-row-${index}`}
           >
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5, width: '100%', minWidth: 0 }}>
@@ -121,7 +109,7 @@ const ProblemsList: React.FC<ProblemsListProps> = ({
                     variant="outlined"
                     sx={{ ml: 'auto' }}
                     onClick={(event) => {
-                      // The row underneath navigates to the script; this must not.
+                       // Keep the explicit action separate from opening details.
                       event.stopPropagation();
                       onAddToWorld?.(waypoint);
                     }}
@@ -151,6 +139,13 @@ const ProblemsList: React.FC<ProblemsListProps> = ({
       </Box>
     )}
   </List>
-);
+  {problems.length > pageSize && <TablePagination
+    component="div" count={problems.length} page={page} rowsPerPage={pageSize} rowsPerPageOptions={[]}
+    showFirstButton showLastButton
+    onPageChange={(_, nextPage) => setPagination({ problems, page: nextPage })}
+  />}
+  </Box>
+  );
+};
 
 export default ProblemsList;

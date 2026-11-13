@@ -40,6 +40,12 @@ import { useProblemsStore } from './problemsStore';
 import { useWorldStore } from './worldStore';
 
 export function initStoreSync(): () => void {
+  // Scan when inputs change, not when the Problems tab mounts.
+  const unsubscribeProject = useProjectStore.subscribe((state, prevState) => {
+    if (state.parseGeneration !== prevState.parseGeneration || state.isIngesting !== prevState.isIngesting) {
+      useProblemsStore.getState().requestScan();
+    }
+  });
   /**
    * Closing a file or reloading its source from disk drops its undo stack: the
    * snapshots belong to the model that no longer exists.
@@ -107,6 +113,7 @@ export function initStoreSync(): () => void {
   });
 
   return () => {
+    unsubscribeProject();
     unsubscribeHistory();
     unsubscribeWorld();
     unsubscribeEditor();

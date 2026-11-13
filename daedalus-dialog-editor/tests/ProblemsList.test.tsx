@@ -22,7 +22,25 @@ const problems: Problem[] = [
 ];
 
 describe('ProblemsList', () => {
-  it('renders one navigable row per problem with severity and rule chips', () => {
+  it('bounds rendering for large projects and still reaches the final finding', () => {
+    const many = Array.from({ length: 10001 }, (_, i) => ({ ...problems[0], id: String(i) }));
+    const onSelect = jest.fn();
+    const { rerender } = render(<ProblemsList problems={many} onSelect={onSelect} />);
+    expect(screen.getAllByTestId(/^problem-row-\d+$/)).toHaveLength(50);
+    fireEvent.click(screen.getByRole('button', { name: 'Go to next page' }));
+    expect(screen.getByTestId('problem-row-50')).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('problem-row-50'));
+    expect(onSelect).toHaveBeenCalledWith(many[50]);
+    fireEvent.click(screen.getByRole('button', { name: 'Go to last page' }));
+    expect(screen.getAllByTestId(/^problem-row-\d+$/)).toHaveLength(1);
+    fireEvent.click(screen.getByTestId('problem-row-10000'));
+    expect(onSelect).toHaveBeenLastCalledWith(many[10000]);
+    rerender(<ProblemsList problems={[many[10000]]} onSelect={onSelect} />);
+    expect(screen.getAllByTestId(/^problem-row-\d+$/)).toHaveLength(1);
+    fireEvent.click(screen.getByTestId('problem-row-0'));
+    expect(onSelect).toHaveBeenLastCalledWith(many[10000]);
+  });
+  it('renders inspectable rows with severity and rule chips', () => {
     render(<ProblemsList problems={problems} onSelect={() => {}} />);
 
     expect(screen.getByTestId('problem-row-0')).toHaveTextContent('references NPC "Nobody"');
@@ -82,7 +100,7 @@ describe('ProblemsList', () => {
 
   it('shows a syntax error\'s line alone, because it has no declaration', () => {
     // A syntax error is the one finding with a position and no declaration
-    // (#267). Nothing jumps to the line — the row opens the file — but it is
+    // (#267). Nothing jumps to the line — the row opens details — but it is
     // what tells two errors in one file apart.
     render(
       <ProblemsList
@@ -111,8 +129,8 @@ describe('ProblemsList', () => {
 /**
  * `waypoint-not-in-world` is the one rule whose finding names a place the open
  * world could actually gain — `AddWaypoint` takes a name and a point, and the
- * name is right here in the locus. The row's own click still goes to the
- * script (the name may belong to another world, §16.8), so this is a second,
+ * name is right here in the locus. The row's own click opens details,
+ * so this is a second,
  * explicit action rather than a change to what the row's click does.
  */
 describe('the "Add to world" action on a waypoint-not-in-world row', () => {

@@ -38,8 +38,7 @@ export type ProblemRuleId =
   | 'portal-reversed';
 
 /**
- * A problem in the scripts: a declaration in a file, which is what the panel
- * navigates to by opening the file and selecting the symbol.
+ * A problem in the scripts: a declaration in a file, inspected inside Problems.
  */
 export interface ScriptLocus {
   kind: 'script';
@@ -90,7 +89,7 @@ export interface WorldLocus {
    * Carried beside the index rather than looked up from it, because there is
    * nothing on the renderer side to look it up in: the scene holds merged draw
    * groups with no polygon mapping. Absent when the finding names a material no
-   * portal face carries, which is the one portal row that stays unclickable.
+   * portal face carries. Such findings still have inspectable details.
    */
   polygonCorners?: readonly (readonly [number, number, number])[];
 }

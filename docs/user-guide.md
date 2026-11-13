@@ -97,22 +97,28 @@ will not match the changed world, and static lighting is not recomputed.
 
 The Problems panel lists syntax errors and project-wide checks, for example a
 dangling `Npc_KnowsInfo`, overlapping routines, or a routine waypoint that the
-world does not have. Click a problem to jump to it.
+world does not have. Click any problem to inspect its full message and location
+inside Problems, without switching editors or opening a file. World findings can
+be inspected even when no world is open.
 
 Combine **Type** (error, warning, hint), **Location** (scripts, world, or an
 individual file) and **Kind** (the check) to narrow the list. **Search problems**
 matches messages, file paths, declarations and world addresses. The counter
 shows displayed findings out of the total; **Reset filters** restores all findings.
+Large lists show 50 findings per page; use the page arrows to see the rest.
+Search and filters still cover all findings, not just the current page.
 While a scan is pending or running, the panel says **Scanning…** and keeps any
 previous results visible. A completed clean scan and filters with no matches
 have separate empty messages. Filters only affect the list, not **Update OUs**,
 which still updates all reported subtitle lines after confirmation.
 
-Clicking a syntax error shows its file path and error locations inside Problems,
-without changing the active Dialog Editor file. **Back to problems** returns to
-the filtered list. Choose **Edit externally** to open the original in the default
+Syntax errors show all error locations for their file. Other findings show their
+declaration, line or world address where available. **Back to problems** returns
+to the filtered list. For any script finding, choose **Edit externally** to open the original in the default
 application for `.d` files (associate `.d` with your text editor in the system
 settings first). Save the corrections there, then choose **Reload file**.
+Reload refreshes background findings; already-open files keep their editor models
+and unsaved changes. Merely opening Problems does not start another scan.
 
 ## Something wrong?
 

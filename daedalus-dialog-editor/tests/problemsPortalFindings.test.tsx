@@ -149,9 +149,9 @@ describe('a portal row in the Problems list', () => {
     expect(screen.getByTestId('problem-row-0')).not.toHaveAttribute('aria-disabled', 'true');
   });
 
-  it('stays unclickable for a name finding no face carries', () => {
+  it('opens details for a name finding no face carries', () => {
     // `P:_` on a material no polygon references: a real finding with nothing
-    // to frame, which is the one row that keeps §16.20 slice 3's behaviour.
+    // to frame, but its details must still be inspectable.
     render(
       <ProblemsList
         worldOpen
@@ -159,10 +159,10 @@ describe('a portal row in the Problems list', () => {
         problems={[portalProblem({ kind: 'world' })]}
       />,
     );
-    expect(screen.getByTestId('problem-row-0')).toHaveAttribute('aria-disabled', 'true');
+    expect(screen.getByTestId('problem-row-0')).not.toHaveAttribute('aria-disabled', 'true');
   });
 
-  it('stays unclickable while no world is open, corners or not', () => {
+  it('opens details while no world is open, corners or not', () => {
     render(
       <ProblemsList
         worldOpen={false}
@@ -170,7 +170,7 @@ describe('a portal row in the Problems list', () => {
         problems={[portalProblem({ kind: 'world', polygon: 456754, polygonCorners: CORNERS })]}
       />,
     );
-    expect(screen.getByTestId('problem-row-0')).toHaveAttribute('aria-disabled', 'true');
+    expect(screen.getByTestId('problem-row-0')).not.toHaveAttribute('aria-disabled', 'true');
   });
 });
 
