@@ -4,6 +4,11 @@ What each published Windows build changed, newest first. Build Windows adds a
 build here when it publishes it; write new notes in `RELEASE_NOTES.md`, not here.
 Builds before 31 had no release notes.
 
+## Build 46 — 2026-11-14
+
+- #559: Project indexing respects SRC lists so unused reference scripts no longer cause project errors
+- #558: Syntax-error details stay in Problems instead of replacing the Dialog Editor
+
 ## Build 45 — 2026-11-13
 
 - #557: Functions with different parameter signatures no longer cause duplicate-declaration errors
