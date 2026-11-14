@@ -79,7 +79,8 @@ test.describe('NPC editor', () => {
     await expect(editor.getByLabel('Name', { exact: true })).toHaveValue('Onar');
     await expect(editor.getByLabel('Guild')).toHaveValue('GIL_BAU');
     await expect(editor.getByLabel('Level')).toHaveValue('20');
-    await expect(editor.getByLabel('Daily routine')).toHaveValue('Rtn_Start_900');
+    // The start routine is marked on its card, not repeated in a field.
+    await expect(editor.getByRole('group', { name: 'Routine RTN_START_900' })).toContainText('Start routine');
     await expect(editor.getByLabel('Head mesh')).toHaveValue('Hum_Head_Fatbald');
     await expect(editor.getByLabel('Armor')).toHaveValue('ITAR_Vlk_H');
     await expect(editor.getByLabel('Melee weapon')).toHaveValue('ItMw_1h_Bau_Mace');
@@ -183,7 +184,7 @@ test.describe('NPC editor', () => {
     await expect(editor).toBeVisible();
     await expect(editor.getByLabel('Name', { exact: true })).toHaveValue('Harald');
     await expect(editor.getByLabel('Melee weapon')).toHaveValue('ItMw_1h_Bau_Mace');
-    await expect(editor.getByLabel('Daily routine')).toHaveValue('');
+    await expect(editor.getByLabel('Start routine', { exact: true })).toHaveValue('');
     await editor.getByRole('button', { name: 'Cancel' }).click();
 
     await expect(page.getByText('BAU_901_Harald')).toBeVisible();
@@ -257,13 +258,14 @@ test.describe('NPC editor: routine jumps', () => {
 
   test('lists the routine and says why a waypoint cannot be shown while no world is open', async ({ page }) => {
     const editor = await openEditor(page);
-    const daily = editor.getByRole('list', { name: 'Daily: RTN_START_900' });
+    const daily = editor.getByRole('list', { name: 'Activities of RTN_START_900' });
     await expect(daily).toContainText('08:00–20:00');
-    await expect(daily).toContainText('TA_STAND_ARMSCROSSED');
+    await expect(daily.getByTitle('TA_STAND_ARMSCROSSED')).toHaveText(/^Stand arms ?crossed$/i);
     await expect(daily).toContainText('NW_BIGFARM_HOUSE_ONAR_BED');
     const show = editor.getByRole('button', { name: 'Show NW_BIGFARM_HOUSE_ONAR in the world' });
     await expect(show).toBeDisabled();
-    await expect(editor.getByTitle('No world is open').first()).toBeVisible();
+    // Said once, in words, rather than only on hover over every button.
+    await expect(editor.getByRole('note')).toHaveText('Waypoint jumps are unavailable: No world is open');
   });
 
   test('opens the routine source at the indexed TA line', async ({ page }) => {
@@ -401,9 +403,9 @@ test.describe('NPC editor: start routine', () => {
     await expect(editor).toBeVisible();
 
     // Below the list, because the routine it names does not exist yet.
-    await expect(editor.getByLabel('Daily routine')).toHaveValue('');
+    await expect(editor.getByLabel('Start routine', { exact: true })).toHaveValue('');
     const routines = (await editor.getByText('Routines', { exact: true }).boundingBox())!;
-    const field = (await editor.getByLabel('Daily routine').boundingBox())!;
+    const field = (await editor.getByLabel('Start routine', { exact: true }).boundingBox())!;
     expect(field.y).toBeGreaterThan(routines.y);
 
     await editor.getByRole('button', { name: 'Create routine' }).click();
@@ -417,12 +419,24 @@ test.describe('NPC editor: start routine', () => {
     await routineEditor.getByRole('button', { name: 'Cancel' }).click();
     await expect(routineEditor).toBeHidden();
 
-    // Filled without being touched, and offered even once cleared: the
-    // routine created here is not in the project's routine list until the
-    // next index load.
-    await expect(editor.getByLabel('Daily routine')).toHaveValue('RTN_START_901');
-    await editor.getByLabel('Daily routine').fill('');
-    await editor.getByLabel('Daily routine').press('ArrowDown');
+    // Filled without being touched: its card is marked as the start routine,
+    // and the fallback field gives way to it.
+    const card = editor.getByRole('group', { name: 'Routine RTN_START_901' });
+    await expect(card).toContainText('Start routine');
+    await expect(editor.getByLabel('Start routine', { exact: true })).toBeHidden();
+
+    // Offered even once cleared: the routine created here is not in the
+    // project's routine list until the next index load.
+    await editor.getByRole('button', { name: 'Choose another start routine' }).click();
+    await expect(editor.getByLabel('Start routine', { exact: true })).toHaveValue('RTN_START_901');
+    await editor.getByLabel('Start routine', { exact: true }).fill('');
+    await editor.getByLabel('Start routine', { exact: true }).press('ArrowDown');
     await expect(page.getByRole('option', { name: 'RTN_START_901' })).toBeVisible();
+    await page.keyboard.press('Escape');
+
+    // And the card offers itself back as the start routine.
+    await card.getByRole('button', { name: 'Set RTN_START_901 as start routine' }).click();
+    await expect(card).toContainText('Start routine');
+    await expect(card.getByRole('button', { name: 'Set RTN_START_901 as start routine' })).toHaveCount(0);
   });
 });

@@ -48,7 +48,9 @@ it('re-indexes the file it saved, so a changed daily routine is current', async 
   await useEditorStore.getState().openFile('test.d');
   render(<NpcEditorDialog npcName="NPC_TEST" filePath="test.d" onClose={jest.fn()} />);
 
-  const daily = await screen.findByLabelText('Daily routine');
+  // RTN_FARM_11 is not one of this NPC's routines, so no card offers it.
+  fireEvent.click(await screen.findByRole('button', { name: 'Choose another start routine' }));
+  const daily = await screen.findByLabelText('Start routine');
   fireEvent.focus(daily);
   fireEvent.click(await screen.findByRole('option', { name: 'RTN_FARM_11' }));
   expect(daily).toHaveValue('RTN_FARM_11');

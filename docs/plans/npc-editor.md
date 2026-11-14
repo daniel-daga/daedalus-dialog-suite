@@ -173,6 +173,16 @@ surface's insert already does that, and it needs a waypoint.
   jump closes the dialog. **A source jump is built (2026-09-27):** it opens the
   routine's raw file at the indexed TA line in a read-only view and highlights
   that line, and labels each entry with its TA state name (`TA_Sit`, …).
+- **Routine cards (2026-11-14).** `components/NpcRoutinesSection.tsx` shows
+  each routine as a card: the day as a read-only 24-hour bar (the routine
+  editor's colours, in script order, gaps red), then the activities under
+  Time / Activity / Waypoint columns. An activity is named in words
+  (`activityLabel`: `TA_Stand_ArmsCrossed` → "Stand arms crossed", the
+  wrapper's declared spelling splitting the index's uppercased name) with the
+  `TA_` name as its tooltip. The waypoint and source jumps are icon buttons in
+  a fixed column; a reason every waypoint jump shares, or the unsaved-form
+  hold, is said once above the cards rather than only on hover. A variant card
+  shows its state, chapter and switch sites, as the routine editor does.
 - **Real-Electron disk truth is covered (2026-09-27).**
   `tests/e2e-electron/npc-editor-disk-truth.spec.ts` edits an NPC field through
   the real app, checks the bytes on disk, and reparses them through the real
@@ -455,13 +465,16 @@ adds:
    declares is refused before anything is written. `components/routineSave.ts`'s
    `createRoutine` saves, re-indexes the file, and records the new routine in
    `projectStore` (`registerRoutine`) so the list shows it without a reload.
-   That index is also what the NPC editor's start-routine field reads (#429):
-   the field sits below the Routines list — create first, then pick — and it
-   fills itself with the first routine as soon as one exists, because an NPC
-   with no `daily_routine` cannot spawn. The field offers the NPC's own
-   routines as well as the project's, which is stale until the next load.
+   That index is also what the NPC editor's start routine reads (#429): it is
+   chosen in the Routines section — create first, then pick — and fills
+   itself with the first routine as soon as one exists, because an NPC with
+   no `daily_routine` cannot spawn. The start routine's card is marked and
+   every other card offers "Set as start" (2026-11-14); the "Start routine"
+   field appears only when no card is the start routine, or on "Other start
+   routine…", for a routine no card lists. It offers the NPC's own routines
+   as well as the project's, which is stale until the next load.
 6. **Editing without a world** (#317). **Built 2026-09-28** as the same panel
-   in a modal, `RoutineEditorDialog`, opened by "Edit" beside each routine
+   in a modal, `RoutineEditorDialog`, opened by "Edit…" on each routine card
    in the NPC editor's routines section. That section now follows the index,
    so a saved routine shows there without reopening.
 7. **The state-needs check** (#318). **Built 2026-10-12** as the `routine-mob-missing` Problems hint (`docs/architecture/problems-panel.md`).

@@ -105,7 +105,7 @@ test.describe('Routine editor', () => {
 
     // The NPC editor's list reads the index, which the save re-read.
     const npcEditor = page.getByRole('dialog', { name: /BAU_900_Onar/ });
-    await expect(npcEditor.getByRole('list', { name: 'Daily: RTN_START_900' })).toContainText('07:00–21:30');
+    await expect(npcEditor.getByRole('list', { name: 'Activities of RTN_START_900' })).toContainText('07:00–21:30');
   });
 
   test('dragging a boundary on the timeline snaps to the quarter hour', async ({ page }) => {

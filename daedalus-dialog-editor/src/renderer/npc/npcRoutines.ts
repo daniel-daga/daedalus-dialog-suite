@@ -87,3 +87,23 @@ export function formatMinute(minute: number): string {
   const pad = (n: number) => String(n).padStart(2, '0');
   return `${pad(Math.floor(minute / 60))}:${pad(minute % 60)}`;
 }
+
+/**
+ * An activity in words for the NPC editor's routine cards: `TA_Sit_Bench` is
+ * "Sit bench". A trailing `WP` only says the activity happens at the
+ * waypoint, so `TA_Stand_WP` is "Stand". Words split at underscores and at
+ * the wrapper's own capitals — the index uppercases names, so pass the
+ * wrapper's declared spelling when there is one. A name that is not a `TA_`
+ * wrapper is returned as written.
+ */
+export function activityLabel(name: string): string {
+  const match = /^TA_(.+)$/i.exec(name);
+  if (!match) return name;
+  const words = match[1]
+    .split('_')
+    .flatMap((part) => part.split(/(?<=[a-z])(?=[A-Z])/))
+    .filter(Boolean);
+  if (words.length > 1 && words[words.length - 1].toUpperCase() === 'WP') words.pop();
+  const text = words.join(' ').toLowerCase();
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}

@@ -36,6 +36,14 @@ export function routineColor(index: number): string {
 }
 
 const DAY = 24 * 60;
+
+/** A window on a linear day, split in two where it wraps midnight; an empty
+ *  window is the whole day. For drawing a routine on a 24-hour bar. */
+export function segmentsOf(window: { startMinute: number; endMinute: number }): Array<[number, number]> {
+  const { startMinute: start, endMinute: end } = window;
+  if (start === end) return [[0, DAY]];
+  return start < end ? [[start, end]] : [[start, DAY], [0, end]];
+}
 const mod =(n: number) => ((n % DAY) + DAY) % DAY;
 /** Minutes a window lasts; an empty one is the whole day. */
 const lengthOf = (entry: RoutineEntry) => mod(entry.endMinute - entry.startMinute) || DAY;

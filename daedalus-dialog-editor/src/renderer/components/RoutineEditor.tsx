@@ -20,7 +20,7 @@ import { npcRoutines, formatMinute, variantSwitches } from '../npc/npcRoutines';
 import { coverageOf, type RoutineWindow } from '../routines/routineSchedule';
 import type { RoutineEntry } from '../routines/routineEntries';
 import {
-  moveBoundary, removeEntry, routineColor, setState, setWaypoint, splitEntry,
+  moveBoundary, removeEntry, routineColor, segmentsOf, setState, setWaypoint, splitEntry,
 } from '../routines/routineDraft';
 import type { RoutineSite } from '../../shared/types';
 import {
@@ -47,13 +47,6 @@ function parseTime(text: string): number | null {
   const minute = Number(match[2]);
   if (hour > 24 || minute > 59 || (hour === 24 && minute !== 0)) return null;
   return (hour * 60 + minute) % DAY;
-}
-
-/** A window on the bar's linear day, split in two where it wraps midnight. */
-function segmentsOf(entry: RoutineEntry): Array<[number, number]> {
-  const { startMinute: start, endMinute: end } = entry;
-  if (start === end) return [[0, DAY]];
-  return start < end ? [[start, end]] : [[start, DAY], [0, end]];
 }
 
 const asSites = (entries: readonly RoutineEntry[]): RoutineSite[] => entries.map((entry) => ({
@@ -164,7 +157,7 @@ const RoutineTimeline: React.FC<TimelineProps> = ({ entries, selected, onSelect,
 
   const percent = (minute: number) => `${(minute / DAY) * 100}%`;
   const marks = (windows: RoutineWindow[], label: 'Gap' | 'Overlap') => windows.flatMap((window, i) =>
-    segmentsOf({ state: '', waypoint: '', ...window }).map(([a, b], j) => (
+    segmentsOf(window).map(([a, b], j) => (
       <Box
         key={`${label}-${i}-${j}`}
         title={`${label} ${windowLabel(window)}`}

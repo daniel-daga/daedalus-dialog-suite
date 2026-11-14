@@ -1,7 +1,7 @@
 import { describe, it, expect } from '@jest/globals';
 import type { ExchangeSite, RoutineSite } from '../src/shared/types';
 import {
-  npcRoutines, formatMinute, variantSwitches, routineOwner, routinePreview,
+  npcRoutines, formatMinute, variantSwitches, routineOwner, routinePreview, activityLabel,
 } from '../src/renderer/npc/npcRoutines';
 
 const site = (routine: string, startMinute: number, endMinute: number, waypoint: string): RoutineSite =>
@@ -104,5 +104,30 @@ describe('routinePreview', () => {
       { state: 'TA_SMITH', startMinute: 8 * 60, endMinute: 20 * 60, waypoint: 'WORK' },
       { state: 'TA_SLEEP', startMinute: 20 * 60, endMinute: 8 * 60, waypoint: 'SLEEP' },
     ]);
+  });
+});
+
+// The NPC editor's routine cards name an activity in words; the TA_ name
+// stays in the tooltip. The index holds it uppercased, so the wrapper's own
+// spelling is what splits its words.
+describe('activityLabel', () => {
+  it('drops the TA_ prefix and splits the wrapper name into words', () => {
+    expect(activityLabel('TA_Stand_ArmsCrossed')).toBe('Stand arms crossed');
+    expect(activityLabel('TA_Sit_Bench')).toBe('Sit bench');
+    expect(activityLabel('TA_Smalltalk')).toBe('Smalltalk');
+  });
+
+  it('drops a trailing WP, which only says the activity happens at the waypoint', () => {
+    expect(activityLabel('TA_Stand_WP')).toBe('Stand');
+    expect(activityLabel('TA_STAND_WP')).toBe('Stand');
+  });
+
+  it('reads an uppercased name as one word per underscore', () => {
+    expect(activityLabel('TA_PRACTICE_SWORD')).toBe('Practice sword');
+  });
+
+  it('leaves a name that is not a TA_ wrapper as written', () => {
+    expect(activityLabel('ZS_Guard')).toBe('ZS_Guard');
+    expect(activityLabel('')).toBe('');
   });
 });

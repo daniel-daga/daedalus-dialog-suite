@@ -54,7 +54,7 @@ export const NPC_FORM_FIELDS: NpcFormField[] = [
   f('npctype', 'NPC type', 'main', 'npctype', undefined, { constantPrefix: 'NPCTYPE_' }),
   f('level', 'Level', 'main', 'level'),
   f('fightTactic', 'Fight tactic', 'main', 'fight_tactic', undefined, { constantPrefix: 'FAI_' }),
-  f('dailyRoutine', 'Daily routine', 'main', 'daily_routine', undefined, { routines: true }),
+  f('dailyRoutine', 'Start routine', 'main', 'daily_routine', undefined, { routines: true }),
   f('strength', 'Strength', 'attributes', 'attribute', 'ATR_STRENGTH'),
   f('dexterity', 'Dexterity', 'attributes', 'attribute', 'ATR_DEXTERITY'),
   f('mana', 'Mana', 'attributes', 'attribute', 'ATR_MANA_MAX'),

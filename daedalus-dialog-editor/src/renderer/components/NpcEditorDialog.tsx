@@ -27,7 +27,8 @@ import {
   type NpcFormValues,
 } from '../npc/npcForm';
 import { fieldOptions, parsedModels, projectConstantLookup, projectItemCategoryLookup } from '../npc/npcFieldOptions';
-import { npcRoutines, formatMinute, type NpcRoutine } from '../npc/npcRoutines';
+import { npcRoutines, variantSwitches } from '../npc/npcRoutines';
+import NpcRoutinesSection from './NpcRoutinesSection';
 import { useWorldStore } from '../store/worldStore';
 import { useUISelectionStore } from '../store/uiSelectionStore';
 import {
@@ -60,8 +61,9 @@ const GROUPS: Array<{ id: NpcFormField['group']; title: string }> = [
   { id: 'equipment', title: 'Equipment (EquipItem)' },
 ];
 
-// #429: the start routine is chosen below the Routines list — create first,
-// then pick — because a routine is what makes an NPC spawn.
+// #429: the start routine is chosen in the Routines section — create first,
+// then pick — because a routine is what makes an NPC spawn. A card marks it
+// and offers the others; this field is the fallback for one no card lists.
 const DAILY_ROUTINE_FIELD = NPC_FORM_FIELDS.find((field) => field.key === 'dailyRoutine')!;
 
 function findInstanceKey(model: SemanticModel, npcName: string): string | undefined {
@@ -79,112 +81,6 @@ function projectItemSource(): (instance: string) => string | undefined {
   }
   return (instance) => sources.get(instance.toUpperCase());
 }
-
-/** Read-only: the project index's routines for the NPC, as of the last
- *  project load or reindex. */
-interface NpcRoutinesSectionProps {
-  routines: NpcRoutine[];
-  /** Go to a TA entry's waypoint in the World surface (#285). */
-  onShowWaypoint?: (waypoint: string) => void;
-  /** Read the routine source file at an indexed TA call (#285). */
-  onShowSource?: (routine: string, filePath: string, line: number) => void;
-  /** Why a waypoint cannot be shown — the insert-NPC jump's answers. */
-  waypointReason?: (waypoint: string) => string | null;
-  /** Why neither jump may leave the editor now, e.g. unsaved changes. */
-  blockedReason?: string | null;
-  /** Open the routine editor on this routine (npc-editor.md §6). */
-  onEditRoutine?: (routine: string) => void;
-  /** Open the routine editor to create the NPC's first routine (#316). */
-  onCreateRoutine?: () => void;
-  /** Open this routine in the World surface's routine mode instead — which
-   *  opens a world for it when none is, so it is never off for want of one. */
-  onEditRoutineInWorld?: (routine: string) => void;
-}
-
-/** A jump button that says why it is off, rather than just being off. */
-const JumpButton: React.FC<{ label: string; reason: string | null; onClick: () => void; children: React.ReactNode }> = (
-  { label, reason, onClick, children },
-) => (
-  <span title={reason ?? label}>
-    <Button size="small" sx={{ minWidth: 0, py: 0, fontSize: 11 }} aria-label={label} disabled={reason !== null} onClick={onClick}>
-      {children}
-    </Button>
-  </span>
-);
-
-export const NpcRoutinesSection: React.FC<NpcRoutinesSectionProps> = (
-  {
-    routines, onShowWaypoint, onShowSource, waypointReason, blockedReason = null, onEditRoutine,
-    onEditRoutineInWorld, onCreateRoutine,
-  },
-) => (
-  <Box sx={{ mb: 2 }}>
-    <Typography variant="subtitle2">Routines</Typography>
-    {routines.length === 0 && (
-      <Typography variant="caption" color="text.secondary">
-        No routine in the project index.
-        {onCreateRoutine && (
-          <Button size="small" sx={{ py: 0, ml: 1, fontSize: 11 }} onClick={onCreateRoutine}>Create routine</Button>
-        )}
-      </Typography>
-    )}
-    {routines.map(({ label, routine, entries }) => (
-      <Box key={routine} component="ul" aria-label={`${label}: ${routine}`} sx={{ m: 0, mt: 0.5, pl: 0, listStyle: 'none' }}>
-        <Typography component="li" variant="body2" sx={{ fontWeight: 500 }}>
-          {`${label}: ${routine}`}
-          {onEditRoutine && (
-            <Button
-              size="small"
-              sx={{ minWidth: 0, py: 0, ml: 1, fontSize: 11 }}
-              aria-label={`Edit routine ${routine}`}
-              onClick={() => onEditRoutine(routine)}
-            >
-              Edit
-            </Button>
-          )}
-          {onEditRoutineInWorld && (
-            <JumpButton
-              label={`Edit routine ${routine} in the world`}
-              reason={blockedReason}
-              onClick={() => onEditRoutineInWorld(routine)}
-            >
-              In world
-            </JumpButton>
-          )}
-        </Typography>
-        {entries.length === 0 && (
-          <Typography component="li" variant="caption" color="text.secondary">No TA entries indexed</Typography>
-        )}
-        {entries.map((entry) => (
-          <Box component="li" key={`${entry.startMinute}-${entry.waypoint}`} sx={{ display: 'flex', gap: 2, fontSize: 12 }}>
-            {entry.stateName && <span>{entry.stateName}</span>}
-            <span>{`${formatMinute(entry.startMinute)}–${formatMinute(entry.endMinute)}`}</span>
-            <span>{entry.waypoint}</span>
-            {onShowWaypoint && (
-              <JumpButton
-                label={`Show ${entry.waypoint} in the world`}
-                reason={blockedReason ?? waypointReason?.(entry.waypoint) ?? null}
-                onClick={() => onShowWaypoint(entry.waypoint)}
-              >
-                World
-              </JumpButton>
-            )}
-            {onShowSource && (
-              <Button
-                size="small"
-                sx={{ minWidth: 0, py: 0, fontSize: 11 }}
-                aria-label={`Show source for ${routine} at line ${entry.line}`}
-                onClick={() => onShowSource(routine, entry.filePath, entry.line)}
-              >
-                Source
-              </Button>
-            )}
-          </Box>
-        ))}
-      </Box>
-    ))}
-  </Box>
-);
 
 const NpcEditorDialog: React.FC<NpcEditorDialogProps> = ({ npcName, filePath, onClose }) => {
   const [definition, setDefinition] = useState<NpcDefinition | null>(null);
@@ -277,6 +173,13 @@ const NpcEditorDialog: React.FC<NpcEditorDialogProps> = ({ npcName, filePath, on
   // Subscribed, so a routine saved from the routine editor — which re-indexes
   // its file — shows here without reopening.
   const routineSites = useProjectStore((s) => s.routineSiteIndex);
+  const exchangeSites = useProjectStore((s) => s.exchangeSiteIndex);
+  const routineLayouts = useProjectStore((s) => s.routineLayoutIndex);
+  // The index uppercases a TA name; the wrapper's declaration has its words.
+  const activityName = useMemo(() => {
+    const spelled = new Map(Object.entries(routineLayouts ?? {}).map(([key, layout]) => [key.toUpperCase(), layout.name ?? key]));
+    return (state: string) => spelled.get(state.toUpperCase()) ?? state;
+  }, [routineLayouts]);
   const routines = useMemo(() => {
     const project = useProjectStore.getState();
     return npcRoutines({
@@ -452,6 +355,11 @@ const NpcEditorDialog: React.FC<NpcEditorDialogProps> = ({ npcName, filePath, on
               ))}
               <NpcRoutinesSection
                 routines={routines}
+                startRoutine={values.dailyRoutine ?? ''}
+                onSetStart={(routine) => setValues((current) => ({ ...current, dailyRoutine: routine }))}
+                startField={renderField(DAILY_ROUTINE_FIELD)}
+                switchesOf={(state) => variantSwitches(exchangeSites ?? [], npcName, state)}
+                activityName={activityName}
                 onShowWaypoint={showWaypoint}
                 onShowSource={(routine, sourceFilePath, line) => setRoutineSource({ routine, filePath: sourceFilePath, line })}
                 waypointReason={(waypoint) => waypointJumpReason(waypoint, world)}
@@ -462,12 +370,6 @@ const NpcEditorDialog: React.FC<NpcEditorDialogProps> = ({ npcName, filePath, on
                 onCreateRoutine={() => setEditingRoutine('')}
                 onEditRoutineInWorld={editRoutineInWorld}
               />
-              <Box sx={{ mb: 1 }}>
-                <Typography variant="subtitle2" sx={{ mb: 0.5 }}>Start routine</Typography>
-                <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 1 }}>
-                  {renderField(DAILY_ROUTINE_FIELD)}
-                </Box>
-              </Box>
               {uncovered.length > 0 && (
                 <Box>
                   <Typography variant="subtitle2">Other statements</Typography>
