@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   Autocomplete,
@@ -52,14 +52,45 @@ interface NpcEditorDialogProps {
   onClose: () => void;
 }
 
-const GROUPS: Array<{ id: NpcFormField['group']; title: string }> = [
-  { id: 'main', title: 'Main' },
-  { id: 'attributes', title: 'Attributes' },
-  { id: 'hitChance', title: 'Hit chance' },
-  { id: 'protection', title: 'Protection' },
-  { id: 'visual', title: 'Visual (B_SetNpcVisual)' },
-  { id: 'equipment', title: 'Equipment (EquipItem)' },
+// #564: the dialog reads in the order an NPC is worked on — who they are,
+// when they are where, how they fight — and the appearance fields sit beside
+// the preview they change.
+const fieldsOf = (group: NpcFormField['group'], except: readonly string[] = []) =>
+  NPC_FORM_FIELDS.filter((field) => field.group === group && !except.includes(field.key));
+const IDENTITY_FIELDS = fieldsOf('main', ['dailyRoutine', 'fightTactic']);
+const APPEARANCE_FIELDS = [...fieldsOf('visual'), ...fieldsOf('equipment')];
+const COMBAT_ROWS: Array<{ title: string; fields: NpcFormField[]; wide?: boolean }> = [
+  { title: 'Tactic', fields: NPC_FORM_FIELDS.filter((field) => field.key === 'fightTactic'), wide: true },
+  { title: 'Attributes', fields: fieldsOf('attributes') },
+  { title: 'Hit chance', fields: fieldsOf('hitChance') },
+  { title: 'Protection', fields: fieldsOf('protection') },
 ];
+
+const isChanged = (before: NpcFormValues, after: NpcFormValues, key: string) =>
+  (before[key] ?? '').trim() !== (after[key] ?? '').trim();
+
+/** An edited field's outline, in the warning colour: it is not saved yet. */
+const CHANGED_SX = {
+  '& .MuiOutlinedInput-notchedOutline': { borderColor: 'warning.main', borderWidth: 2 },
+} as const;
+
+/** The declaring file as the project names it, not as the disk does. */
+function projectRelative(filePath: string, projectPath: string | null): string {
+  const file = filePath.replace(/\\/g, '/');
+  const root = projectPath?.replace(/\\/g, '/').replace(/\/$/, '');
+  return root && file.toLowerCase().startsWith(`${root.toLowerCase()}/`) ? file.slice(root.length + 1) : file;
+}
+
+/** One of the dialog's sections: a heading that names it as a region. */
+const Section: React.FC<{ title: string; children: React.ReactNode }> = ({ title, children }) => {
+  const id = useId();
+  return (
+    <Box component="section" aria-labelledby={id} sx={{ mb: 2.5 }}>
+      <Typography id={id} variant="subtitle2" sx={{ mb: 0.75 }}>{title}</Typography>
+      {children}
+    </Box>
+  );
+};
 
 // #429: the start routine is chosen in the Routines section — create first,
 // then pick — because a routine is what makes an NPC spawn. A card marks it
@@ -95,6 +126,7 @@ const NpcEditorDialog: React.FC<NpcEditorDialogProps> = ({ npcName, filePath, on
   const [routineSource, setRoutineSource] = useState<NpcRoutineSourceTarget | null>(null);
   /** The routine the routine editor is open on; '' opens it on its "New routine" form. */
   const [editingRoutine, setEditingRoutine] = useState<string | null>(null);
+  const [showOther, setShowOther] = useState(false);
   const [assetEntries, setAssetEntries] = useState<{ heads: readonly VfsEntry[]; overlays: readonly VfsEntry[] }>({
     heads: [], overlays: [],
   });
@@ -282,8 +314,17 @@ const NpcEditorDialog: React.FC<NpcEditorDialogProps> = ({ npcName, filePath, on
     }
   };
 
+  const changedCount = NPC_FORM_FIELDS.filter((field) => isChanged(initial, values, field.key)).length;
+  const canSave = !!definition && !invalid && !saving;
+  const projectPath = useProjectStore((s) => s.projectPath);
+  const subtitle = [
+    npcName, values.guild, values.level ? `Level ${values.level}` : '', projectRelative(filePath, projectPath),
+  ].filter(Boolean).join(' · ');
+
   const renderField = (field: NpcFormField) => {
     const value = values[field.key] ?? '';
+    const changed = isChanged(initial, values, field.key);
+    const mark = { 'data-changed': changed ? 'true' : undefined, sx: changed ? CHANGED_SX : undefined };
     const onChange = (next: string) => setValues((current) => ({ ...current, [field.key]: next }));
     const fieldOptions = field.options && 'assets' in field.options
       ? (field.options.assets === 'headMesh' ? assetSuggestions.headMeshes : assetSuggestions.walkOverlays)
@@ -293,6 +334,7 @@ const NpcEditorDialog: React.FC<NpcEditorDialogProps> = ({ npcName, filePath, on
       return (
         <TextField
           key={field.key}
+          {...mark}
           select
           label={field.label}
           size="small"
@@ -317,43 +359,46 @@ const NpcEditorDialog: React.FC<NpcEditorDialogProps> = ({ npcName, filePath, on
           options={choices}
           value={value || null}
           onChange={(_e, next) => onChange(next ?? '')}
-          renderInput={(params) => <TextField {...params} label={field.label} />}
+          renderInput={(params) => <TextField {...params} {...mark} label={field.label} />}
         />
       );
     }
-    if (fieldOptions.length === 0) {
-      return (
-        <TextField
-          key={field.key}
-          label={field.label}
-          size="small"
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-        />
-      );
-    }
-    return <TextField key={field.key} label={field.label} size="small" value={value} onChange={(e) => onChange(e.target.value)} />;
+    return <TextField key={field.key} {...mark} label={field.label} size="small" value={value} onChange={(e) => onChange(e.target.value)} />;
   };
 
+  const grid = (min: number) => ({ display: 'grid', gridTemplateColumns: `repeat(auto-fill, minmax(${min}px, 1fr))`, gap: 1 });
+
   return (
-    <Dialog open onClose={saving ? undefined : onClose} maxWidth="xl" fullWidth aria-labelledby="npc-editor-title">
-      <DialogTitle id="npc-editor-title" sx={{ py: 1.25 }}>{`NPC ${npcName}`}</DialogTitle>
-      <DialogContent dividers sx={{ p: 1.5 }}>
+    <Dialog
+      open
+      onClose={saving ? undefined : onClose}
+      maxWidth="xl"
+      fullWidth
+      aria-labelledby="npc-editor-title"
+      onKeyDown={(event) => {
+        // Ctrl+S saves the NPC, not the file behind the dialog — the global
+        // shortcut listens on window, so the key stops here. A dialog over
+        // this one (the routine editor) bubbles through React, not the DOM.
+        const isSave = (event.ctrlKey || event.metaKey) && !event.shiftKey && !event.altKey && event.key.toLowerCase() === 's';
+        if (!isSave || !event.currentTarget.contains(event.target as Node)) return;
+        event.preventDefault();
+        event.stopPropagation();
+        if (canSave) void handleSave();
+      }}
+    >
+      <DialogTitle id="npc-editor-title" component="div" data-testid="npc-editor-header" sx={{ py: 1.25 }}>
+        <Typography component="h2" variant="h6" sx={{ lineHeight: 1.3 }}>{values.name?.trim() || npcName}</Typography>
+        <Typography variant="caption" color="text.secondary">{subtitle}</Typography>
+      </DialogTitle>
+      <DialogContent dividers sx={{ p: 2 }}>
         {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
         {!definition && !error && <CircularProgress size={24} />}
         {definition && (
-          // The preview beside the form rather than above it, and sticky, so
-          // it stays in view while the visual fields near the bottom change.
-          <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'minmax(0, 1fr) 260px' }, gap: 2 }}>
+          <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'minmax(0, 1fr) 340px' }, gap: 3 }}>
             <Box sx={{ minWidth: 0 }}>
-              {GROUPS.map((group) => (
-                <Box key={group.id} sx={{ mb: 1 }}>
-                  <Typography variant="subtitle2" sx={{ mb: 0.5 }}>{group.title}</Typography>
-                  <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 1 }}>
-                    {NPC_FORM_FIELDS.filter((field) => field.group === group.id && field !== DAILY_ROUTINE_FIELD).map(renderField)}
-                  </Box>
-                </Box>
-              ))}
+              <Section title="Identity">
+                <Box sx={grid(170)}>{IDENTITY_FIELDS.map(renderField)}</Box>
+              </Section>
               <NpcRoutinesSection
                 routines={routines}
                 startRoutine={values.dailyRoutine ?? ''}
@@ -371,36 +416,71 @@ const NpcEditorDialog: React.FC<NpcEditorDialogProps> = ({ npcName, filePath, on
                 onCreateRoutine={() => setEditingRoutine('')}
                 onEditRoutineInWorld={editRoutineInWorld}
               />
+              <Section title="Combat">
+                <Box sx={{ display: 'grid', gridTemplateColumns: '84px minmax(0, 1fr)', columnGap: 1.5, rowGap: 1, alignItems: 'center' }}>
+                  {COMBAT_ROWS.map((row) => (
+                    <React.Fragment key={row.title}>
+                      <Typography variant="caption" color="text.secondary">{row.title}</Typography>
+                      <Box sx={row.wide ? { display: 'grid', maxWidth: 320 } : grid(96)}>{row.fields.map(renderField)}</Box>
+                    </React.Fragment>
+                  ))}
+                </Box>
+              </Section>
               {uncovered.length > 0 && (
                 <Box>
-                  <Typography variant="subtitle2">Other statements</Typography>
-                  <Typography variant="caption" color="text.secondary">
+                  <Button
+                    size="small"
+                    sx={{ px: 0.5, textTransform: 'none' }}
+                    aria-expanded={showOther}
+                    onClick={() => setShowOther((open) => !open)}
+                  >
+                    {`${showOther ? '▾' : '▸'} Other statements (${uncovered.length})`}
+                  </Button>
+                  <Typography variant="caption" color="text.secondary" sx={{ ml: 1 }}>
                     Kept exactly as written; edit them in the script.
                   </Typography>
-                  <Box component="pre" sx={{ m: 0, mt: 0.5, fontSize: 12, whiteSpace: 'pre-wrap' }}>
-                    {uncovered.map((statement) => statement.text).join('\n')}
-                  </Box>
+                  {showOther && (
+                    <Box component="pre" sx={{ m: 0, mt: 0.5, fontSize: 12, whiteSpace: 'pre-wrap' }}>
+                      {uncovered.map((statement) => statement.text).join('\n')}
+                    </Box>
+                  )}
                 </Box>
               )}
             </Box>
-            <Box sx={{ position: { md: 'sticky' }, top: 0, alignSelf: 'start', order: { xs: -1, md: 0 } }}>
-              <NpcVisualPreview
-                definition={definition}
-                edits={pendingEdits}
-                lookupConstant={lookupConstant}
-                itemSource={itemSource}
-                weapon={values.meleeWeapon ?? ''}
-                assetsReady={previewAssetsReady}
-                assetsError={previewAssetsError}
-              />
+            {/* Sticky, so the preview stays in view while the left column
+                scrolls; it scrolls on its own when taller than the dialog. */}
+            <Box
+              sx={{
+                position: { md: 'sticky' }, top: 0, alignSelf: 'start', order: { xs: -1, md: 0 },
+                maxHeight: { md: 'calc(100vh - 200px)' }, overflowY: { md: 'auto' },
+                p: 1.5, borderRadius: 1, bgcolor: 'action.hover',
+              }}
+            >
+              <Section title="Appearance">
+                <NpcVisualPreview
+                  definition={definition}
+                  edits={pendingEdits}
+                  lookupConstant={lookupConstant}
+                  itemSource={itemSource}
+                  weapon={values.meleeWeapon ?? ''}
+                  assetsReady={previewAssetsReady}
+                  assetsError={previewAssetsError}
+                />
+                <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1 }}>{APPEARANCE_FIELDS.map(renderField)}</Box>
+              </Section>
             </Box>
           </Box>
         )}
       </DialogContent>
-      <DialogActions>
-        {invalid && <Typography variant="caption" color="error" sx={{ mr: 'auto', ml: 1 }}>{invalid}</Typography>}
+      <DialogActions sx={{ px: 2 }}>
+        <Box sx={{ mr: 'auto', display: 'flex', flexDirection: 'column' }}>
+          <Typography variant="caption" color={changedCount > 0 ? 'warning.main' : 'text.secondary'} data-testid="npc-editor-changes">
+            {changedCount === 0 ? 'No unsaved changes' : `${changedCount} unsaved change${changedCount === 1 ? '' : 's'}`}
+          </Typography>
+          {invalid && <Typography variant="caption" color="error">{invalid}</Typography>}
+        </Box>
         <Button onClick={onClose} disabled={saving}>Cancel</Button>
-        <Button variant="contained" onClick={handleSave} disabled={!definition || !!invalid || saving}>
+        <Button variant="contained" onClick={handleSave} disabled={!canSave} title="Save (Ctrl+S)">
           Save
         </Button>
       </DialogActions>

@@ -144,7 +144,7 @@ export const NpcRoutinesSection: React.FC<NpcRoutinesSectionProps> = ({
     : sharedReason ? `Waypoint jumps are unavailable: ${sharedReason}` : null;
 
   return (
-    <Box component="section" aria-labelledby="npc-routines-heading" sx={{ mb: 2 }}>
+    <Box component="section" aria-labelledby="npc-routines-heading" sx={{ mb: 2.5 }}>
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
         <Typography id="npc-routines-heading" variant="subtitle2">Routines</Typography>
         <Box sx={{ flex: 1 }} />

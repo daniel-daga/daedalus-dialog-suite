@@ -443,3 +443,62 @@ test.describe('NPC editor: start routine', () => {
     await expect(card.getByRole('button', { name: 'Set RTN_START_901 as start routine' })).toBeVisible();
   });
 });
+
+// #564: the dialog reads in the order the NPC is worked on — who, when, how
+// they fight — with the appearance fields beside the preview they change, a
+// header that names the NPC, and edits that say they are edits.
+test.describe('NPC editor: layout', () => {
+  test.beforeEach(async ({ page }) => {
+    await openProject(page, { 'Choices.d': CHOICES_FILE });
+  });
+
+  test('names the NPC in the header, by name, guild, level and file', async ({ page }) => {
+    const editor = await openEditor(page);
+    const header = editor.getByTestId('npc-editor-header');
+    await expect(header.getByRole('heading', { name: 'Onar' })).toBeVisible();
+    await expect(header).toContainText('BAU_900_Onar · GIL_BAU · Level 20 · NPC/BAU_900_Onar.d');
+  });
+
+  test('orders identity, routines and combat, with appearance beside the preview', async ({ page }) => {
+    const editor = await openEditor(page);
+    const top = async (name: string) => (await editor.getByRole('region', { name }).boundingBox())!;
+    const identity = await top('Identity');
+    const routines = await top('Routines');
+    const combat = await top('Combat');
+    expect(identity.y).toBeLessThan(routines.y);
+    expect(routines.y).toBeLessThan(combat.y);
+
+    const appearance = editor.getByRole('region', { name: 'Appearance' });
+    await expect(appearance.getByTestId('npc-preview')).toBeVisible();
+    await expect(appearance.getByLabel('Head mesh')).toBeVisible();
+    await expect(appearance.getByLabel('Melee weapon')).toBeVisible();
+    expect((await appearance.boundingBox())!.x).toBeGreaterThan(identity.x + identity.width - 1);
+  });
+
+  test('marks an edited field and counts the unsaved changes', async ({ page }) => {
+    const editor = await openEditor(page);
+    const status = editor.getByTestId('npc-editor-changes');
+    await expect(status).toHaveText('No unsaved changes');
+
+    await editor.getByLabel('Level').fill('25');
+    await expect(editor.locator('[data-changed="true"]')).toHaveCount(1);
+    await expect(editor.locator('[data-changed="true"]').getByLabel('Level')).toBeVisible();
+    await editor.getByLabel('Strength').fill('80');
+    await expect(status).toHaveText('2 unsaved changes');
+
+    // Typing the old value back is not an edit.
+    await editor.getByLabel('Level').fill('20');
+    await editor.getByLabel('Strength').fill('');
+    await expect(editor.locator('[data-changed="true"]')).toHaveCount(0);
+    await expect(status).toHaveText('No unsaved changes');
+  });
+
+  test('Ctrl+S saves the NPC', async ({ page }) => {
+    const editor = await openEditor(page);
+    await editor.getByLabel('Level').fill('25');
+    await editor.getByLabel('Level').press('Control+s');
+    await expect(editor).toBeHidden();
+    const written = await page.evaluate(() => localStorage.getItem('mockapi_file_project/NPC/BAU_900_Onar.d'));
+    expect(written).toContain('level = 25;');
+  });
+});

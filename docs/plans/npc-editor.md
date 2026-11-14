@@ -154,6 +154,17 @@ editor's own writes, so it is indexed and gets its EXIT dialog (#141) like a
 dropped-in file. The `Wld_InsertNpc` offer is not part of it: the World
 surface's insert already does that, and it needs a waypoint.
 
+**Layout (#564, 2026-11-14).** The dialog reads in the order an NPC is
+worked on: Identity, then Routines, then Combat (fight tactic, attributes,
+hit chance and protection as labelled rows of narrow fields), with "Other
+statements" folded away. The appearance fields (`B_SetNpcVisual`, overlay,
+equipment) sit under the preview in a sticky right column, which scrolls on
+its own when taller than the dialog. The header names the NPC by its `name`,
+then instance, guild, level and project-relative file. An edited field is
+outlined in the warning colour (`data-changed`), the footer counts unsaved
+changes, and Ctrl+S saves — claimed by the dialog, so the global save
+shortcut does not also save the file behind it.
+
 **Phase 2 completed (2026-09-27):**
 
 - **VFS suggestions are built (2026-09-27).** Head mesh and walk overlay
