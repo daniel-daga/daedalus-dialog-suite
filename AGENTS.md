@@ -23,6 +23,10 @@
   `agent/<name>` from `master`, seeds native addons, and installs dependencies.
   `--from <ref>` changes the base; `wt:list` and `wt:rm -- <name>` manage them.
   Seeded binaries are copies, not proof they match your changed source.
+- Browser specs serve each checkout on its own port, derived from its path
+  (`E2E_PORT` overrides), so parallel worktrees never test each other's
+  renderer. The run prints `Browser harness: <url>`. If a spec sees UI your
+  tree does not have, check that URL's listener before debugging the spec.
 - `zenkit-node/vendor/ZenKit` is intentionally patched/dirty. Never stage its
   submodule pointer as routine cleanup; stage named paths or use
   `git add -A -- . ':!zenkit-node/vendor/ZenKit'`.

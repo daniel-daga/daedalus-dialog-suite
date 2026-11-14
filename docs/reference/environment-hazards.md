@@ -33,11 +33,8 @@ cannot run. This was observed on 2026-10-14.
   PowerShell and `$LASTEXITCODE` whenever a native crash is a possible result.
 - **Editor source files are CRLF.** Normalize before matching multi-line
   anchors.
-- **Playwright can reuse another checkout's Vite server.** `localhost:5173`
-  can reach an existing IPv6 listener even when this worktree starts a separate
-  IPv4 listener. If a test sees old UI, verify `/App.tsx`'s served source path;
-  use an uncommitted config with an explicit `127.0.0.1` base URL and server URL
-  (and start Vite with `--host 127.0.0.1 --strictPort`) to isolate the run.
+- **Playwright drove another checkout's Vite server** until each checkout got
+  its own port (2026-11-14); see "Playwright in a worktree" below.
 
 ## `os.tmpdir()` on GitHub's Windows runner is an 8.3 short path
 
@@ -424,20 +421,25 @@ nothing. Cause unknown. To check for it:
 
 ## Playwright in a worktree
 
-- **The browser harness reuses whatever is already on port 5173 — including
-  another checkout's vite.** `playwright.config.ts` has
-  `reuseExistingServer: true` outside CI and a fixed `baseURL`, so when the
-  main checkout (or a neighbouring worktree) has `vite` running, a worktree's
-  `npx playwright test` silently drives *that* renderer: specs asserting
-  code that exists only in the worktree fail as "not implemented", specs
-  asserting code the other tree also has pass, and nothing says which tree
-  served the page. Seen 2026-09-03 — two new specs failed for an hour against
-  a main-checkout vite before `Get-NetTCPConnection -LocalPort 5173` named
-  it. Check the listener before reading a Playwright failure in a worktree,
-  and run on a port of your own: a config that spreads the base one with
-  `webServer.command: 'npx vite --port 5199 --strictPort'`,
-  `reuseExistingServer: false` and the matching `baseURL`, passed via
-  `--config`. Never kill the 5173 listener — it is somebody's.
+- **Each checkout serves the browser harness on its own port** (2026-11-14).
+  `playwright.config.ts` derives it from the checkout's path (5200-5999),
+  binds Vite to `127.0.0.1` with `--strictPort`, and global setup prints it
+  (`Browser harness: http://127.0.0.1:<port>`). `E2E_PORT=<port>` overrides
+  it. Before this the harness used `localhost:5173` with
+  `reuseExistingServer`, so a worktree silently drove whichever checkout's
+  Vite was already up there: specs for worktree-only code failed as "not
+  implemented" while the rest passed, and nothing said which tree served the
+  page. It cost an hour on 2026-09-03 and again on 2026-11-14, each time with
+  this entry already written as a workaround. `localhost` could also reach
+  another process's IPv6 listener while this tree's Vite bound IPv4.
+- **Two paths can still hash to one port.** It is unlikely across a few
+  worktrees, but reuse would then be silent again. If a run sees old UI,
+  check the listener with `Get-NetTCPConnection -LocalPort <port>` and rerun
+  with another `E2E_PORT`. Never kill a listener you did not start — it is
+  somebody's.
+- **5173 is still the Electron dev server's** (`npm run dev`, `main.ts`,
+  `windowSecurity.ts`). A manual `npm run dev:browser` also takes it; the
+  harness no longer does.
 
 ## The intermittent `3221226505`, and what it is not
 

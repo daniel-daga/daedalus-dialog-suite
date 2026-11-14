@@ -1,4 +1,17 @@
+import { createHash } from 'node:crypto';
 import { defineConfig, devices } from '@playwright/test';
+
+/**
+ * Each checkout serves the harness on its own port, derived from its path, so
+ * a worktree never drives another checkout's Vite: with one shared port,
+ * `reuseExistingServer` silently tested whichever tree's server was already
+ * up (environment-hazards.md, "Playwright in a worktree"). `E2E_PORT`
+ * overrides it. 127.0.0.1 rather than localhost, which can resolve to another
+ * process's IPv6 listener. The Electron dev server keeps 5173.
+ */
+const pathHash = parseInt(createHash('sha1').update(__dirname.toLowerCase()).digest('hex').slice(0, 8), 16);
+const E2E_PORT = Number(process.env.E2E_PORT) || 5200 + (pathHash % 800);
+const BASE_URL = `http://127.0.0.1:${E2E_PORT}`;
 
 /**
  * Playwright configuration for the browser mock-harness UI suite.
@@ -34,7 +47,7 @@ export default defineConfig({
 
   use: {
     // Base URL for the dev server
-    baseURL: 'http://localhost:5173',
+    baseURL: BASE_URL,
 
     // Keep the trace of a failed test (there is no retry to record one on)
     trace: 'retain-on-failure',
@@ -56,8 +69,8 @@ export default defineConfig({
 
   // Run dev server before starting tests
   webServer: {
-    command: 'npm run dev:browser',
-    url: 'http://localhost:5173',
+    command: `npm run dev:browser -- --host 127.0.0.1 --port ${E2E_PORT} --strictPort`,
+    url: BASE_URL,
     reuseExistingServer: !process.env.CI,
     timeout: 120 * 1000,
   },

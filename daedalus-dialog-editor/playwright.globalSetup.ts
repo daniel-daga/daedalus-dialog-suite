@@ -15,7 +15,11 @@ export default async function warmUpApp(config: FullConfig): Promise<void> {
   const browser = await chromium.launch();
   const page = await browser.newPage();
   try {
-    await page.goto(config.projects[0]?.use?.baseURL ?? 'http://localhost:5173');
+    const baseURL = config.projects[0]?.use?.baseURL;
+    if (!baseURL) throw new Error('playwright.config.ts names no baseURL');
+    // Which server this run drives, said once: the port is per checkout.
+    console.log(`Browser harness: ${baseURL}`);
+    await page.goto(baseURL);
     // The signal every spec opens with, so "ready" means ready for them.
     await page.getByText('Welcome to Dandelion').waitFor();
   } finally {
