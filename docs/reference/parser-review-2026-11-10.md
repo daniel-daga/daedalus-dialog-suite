@@ -102,13 +102,21 @@ upkeep grows with every fidelity fix.
       (−27%), model build 5.0× → 3.9× the parse; pass 1 is unchanged. Model JSON
       is byte-identical across the fixtures and that corpus (374 models
       compared).
+    - **Landed (#553):** the call-site sweep reads the cursor instead of the
+      native `descendantsOfType` query, so a skipped subtree is walked one level
+      at a time and only its calls are materialised; the call the action parser
+      projects is handed back from that walk rather than looked up again.
+      *Measured on the MDK tree* with both builds interleaved in one process
+      (4 pairs, 355 files): pass 2 8,957 → 9,087 ms, 9,291 → 9,335, 9,028 →
+      9,399, 7,775 → 9,567 — no gain. The query was already C-side, and the
+      cursor walk costs about what it saved. Kept for the hand-off (one fewer
+      node per projected call), not for speed.
     - **What remains:** the pass is now roughly 15% `unmarshalNode` plus the
       `startIndex` / `childForFieldName` / `type` / `namedChildren` getters,
       spread across projection: every statement, call and argument the model
       keeps is still materialised once. Only a pass that reads the cursor and
       builds the projections without node objects would move it much further,
       and that is a rewrite whose remaining gain no corpus has justified.
-      Tracked as #553.
     - **What this is:** pass 2 builds actions, conditions and call sites.
     - **Problem at audit time:** *measured* on 2.3 MB of dialog source: parse 114 ms, pass 1
       190 ms, pass 2 1,983 ms, generation 62 ms. A CPU profile puts roughly 60%

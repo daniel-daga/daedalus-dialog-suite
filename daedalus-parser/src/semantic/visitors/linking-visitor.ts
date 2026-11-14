@@ -161,10 +161,13 @@ export class LinkingVisitor {
     // A skipped subtree is never projected, so one walk over it is all the
     // project index needs — and the only walk. Indexing runs before the
     // statement is handled, so nothing below materialises a node twice (#541).
+    // A top-level call is the one node the action parser needs, and the walk
+    // hands it over from the cursor (#553).
+    let projectedCall: TreeSitterNode | null = null;
     if (skipChildren && this.currentFunction) {
-      this.recordCallSitesInSubtree(cursor.currentNode);
+      projectedCall = this.recordCallSitesInSubtree(cursor);
     }
-    this.handleStatementNode(type, cursor);
+    this.handleStatementNode(type, cursor, projectedCall);
 
     if (!skipChildren && cursor.gotoFirstChild()) {
       do {
@@ -358,7 +361,7 @@ export class LinkingVisitor {
     }
   }
 
-  private handleStatementNode(type: string, cursor: TreeCursor): void {
+  private handleStatementNode(type: string, cursor: TreeCursor, projectedCall: TreeSitterNode | null): void {
     if (type === 'comment') {
       // A standalone comment at the top level of a (non-condition) function
       // body is preserved in position as a CommentAction. Condition-function
@@ -386,7 +389,9 @@ export class LinkingVisitor {
     }
 
     if (type === 'call_expression' && this.currentFunction) {
-      this.processFunctionCall(cursor.currentNode);
+      // The walk projected this call and already parsed its arguments (#553);
+      // anything else reaching here has no call site to reuse.
+      this.processFunctionCall(projectedCall ?? cursor.currentNode);
     }
   }
 
@@ -667,20 +672,45 @@ export class LinkingVisitor {
    * Sweep the complete function body once for calls. `callSites` is the
    * project index's only view of a call, including calls in local initializers
    * and raw statements that semantic extraction does not descend into.
+   *
+   * Reads the cursor (#553): only a call is materialised, and the one the
+   * action parser must project is handed back instead of looked up again.
+   * Pre-order, as the calls appear in the source; `open` holds the ranges of
+   * enclosing calls, popped as a sibling starts, so call-in-call nesting is
+   * still bounded by the same rule as the cursor walk it replaces (#538, #541).
    */
-  private recordCallSitesInSubtree(root: TreeSitterNode): void {
-    // Pre-order, as the calls appear in the source. The native query walks the
-    // subtree C-side and includes `root` when it is itself a call; only the
-    // calls are then materialised. `open` holds the ranges of enclosing calls,
-    // popped as a sibling starts, so call-in-call nesting is still bounded by
-    // the same rule as the cursor walk it replaces (#538, #541).
-    const calls = root.descendantsOfType('call_expression');
+  private recordCallSitesInSubtree(cursor: TreeCursor): TreeSitterNode | null {
+    // The node the walk started from, when it is itself a call (`root` is
+    // included, as the native query did).
+    const root = cursor.currentNode;
+    const rootCall = root.type === 'call_expression' ? root : null;
     const open: Array<{ startIndex: number; endIndex: number }> = [];
-    for (const call of calls) {
+    const record = (call: TreeSitterNode): void => {
       while (open.length > 0 && call.startIndex >= open[open.length - 1].endIndex) open.pop();
       if (open.length >= MAX_NESTING_DEPTH) throw new NestingTooDeepError(call, 'nested call');
       open.push({ startIndex: call.startIndex, endIndex: call.endIndex });
       this.recordCallSite(call);
+    };
+    if (rootCall) record(rootCall);
+    // Pre-order, one level at a time: a child that is a call is recorded and
+    // not descended (a call never holds a call); any other child is descended.
+    // The walk stops on the root's last child, because `gotoParent()` from the
+    // root would move the caller's cursor out of the subtree it owns.
+    const atRoot = () => cursor.startIndex === root.startIndex && cursor.endIndex === root.endIndex;
+    const visit = () => {
+      if (cursor.nodeType === 'call_expression') record(cursor.currentNode);
+    };
+    if (!cursor.gotoFirstChild()) return rootCall;
+    visit();
+    for (;;) {
+      if (cursor.gotoFirstChild()) {
+        visit();
+        continue;
+      }
+      while (!cursor.gotoNextSibling()) {
+        if (!cursor.gotoParent() || atRoot()) return rootCall;
+      }
+      visit();
     }
   }
 
