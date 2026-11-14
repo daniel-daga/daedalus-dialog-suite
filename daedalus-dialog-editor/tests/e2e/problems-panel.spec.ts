@@ -57,6 +57,37 @@ test('large problem lists render one page and search across every page', async (
   await expect(panel.getByTestId('problem-row-0')).toContainText('Broken statement 9999');
 });
 
+test('Kind counts show other findings even while one kind is selected', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.getByText('Welcome to Dandelion')).toBeVisible();
+  await page.evaluate((content) => {
+    localStorage.setItem('mockapi_file_probtest/dia.d', content);
+  }, `${PROJECT_FILE_CONTENT}\nFUNC VOID UnusedHelper() { };\nFUNC VOID AnotherHelper() { };`);
+  page.on('dialog', async (dialog) => {
+    if (dialog.message().includes('project folder path')) await dialog.accept('probtest');
+    else await dialog.dismiss();
+  });
+  await page.getByRole('button', { name: /Open Project/i }).first().click();
+  await page.getByTestId('problems-toggle').click();
+  const panel = page.getByTestId('problems-panel');
+  await expect(panel.getByTestId('problems-filter-count')).toHaveText('3 / 3 shown');
+  await panel.getByRole('combobox', { name: 'Kind', exact: true }).click();
+  await expect(page.getByRole('option', { name: 'All kinds (3)', exact: true })).toBeVisible();
+  await page.getByRole('option', { name: 'Orphaned function (2)', exact: true }).click();
+  await expect(panel.getByTestId('problems-filter-count')).toHaveText('2 / 3 shown');
+  await panel.getByRole('combobox', { name: /^Kind/ }).click();
+  await expect(page.getByRole('option', { name: 'Orphaned function (2)', exact: true })).toBeVisible();
+  await page.getByRole('option', { name: 'Malformed voice ID (1)', exact: true }).click();
+  await expect(panel.getByTestId('problem-row-0')).toContainText('BadVoiceId');
+  await expect(panel.getByTestId('problems-filter-count')).toHaveText('1 / 3 shown');
+  await panel.getByRole('textbox', { name: 'Search problems' }).fill('UnusedHelper');
+  await panel.getByRole('combobox', { name: /^Kind/ }).click();
+  await expect(page.getByRole('option', { name: 'All kinds (1)', exact: true })).toBeVisible();
+  await expect(page.getByRole('option', { name: 'Malformed voice ID (0)', exact: true })).toBeVisible();
+  await page.getByRole('option', { name: 'Orphaned function (1)', exact: true }).click();
+  await expect(panel.getByTestId('problem-row-0')).toContainText('UnusedHelper');
+});
+
 test.describe('Problems panel', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/');
@@ -132,7 +163,9 @@ test.describe('Problems panel', () => {
     await panel.getByRole('combobox', { name: 'Location', exact: true }).click();
     await page.getByRole('option', { name: 'probtest/dia.d', exact: true }).click();
     await panel.getByRole('combobox', { name: 'Kind', exact: true }).click();
-    await page.getByRole('option', { name: 'Malformed voice ID', exact: true }).click();
+    await expect(page.getByRole('option', { name: 'All kinds (1)', exact: true })).toBeVisible();
+    await expect(page.getByRole('option', { name: 'Orphaned function (0)', exact: true })).toBeVisible();
+    await page.getByRole('option', { name: 'Malformed voice ID (1)', exact: true }).click();
     await panel.getByRole('textbox', { name: 'Search problems' }).fill('bAdVoIcEiD');
     await expect(row).toContainText('BadVoiceId');
     await expect(panel.getByTestId('problems-filter-count')).toHaveText('1 / 1 shown');
@@ -142,6 +175,10 @@ test.describe('Problems panel', () => {
     await expect(row).toHaveCount(0);
     await expect(panel.getByTestId('problems-empty')).toHaveText('No problems match your filters.');
     await expect(panel.getByTestId('problems-filter-count')).toHaveText('0 / 1 shown');
+    await panel.getByRole('combobox', { name: /^Kind/ }).click();
+    await expect(page.getByRole('option', { name: 'All kinds (0)', exact: true })).toBeVisible();
+    await expect(page.getByRole('option', { name: 'Malformed voice ID (0)', exact: true })).toBeVisible();
+    await page.keyboard.press('Escape');
 
     await panel.getByRole('button', { name: 'Reset filters' }).click();
     await expect(row).toContainText('BadVoiceId');

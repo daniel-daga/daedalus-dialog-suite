@@ -58,11 +58,10 @@ const ProblemsPanel: React.FC = () => {
     if (location && location !== 'script' && location !== 'world') paths.add(location);
     return [...paths].sort();
   }, [problems, location]);
-  const filteredProblems = useMemo(() => {
+  const problemsBeforeKind = useMemo(() => {
     const query = search.trim().toLowerCase();
     return problems.filter((problem) => {
       if (severity && problem.severity !== severity) return false;
-      if (rule && problem.rule !== rule) return false;
       if (location && (location === 'world' || location === 'script'
         ? problem.locus.kind !== location
         : problem.locus.kind !== 'script' || problem.locus.filePath !== location)) return false;
@@ -70,7 +69,17 @@ const ProblemsPanel: React.FC = () => {
       return !query || `${problem.message} ${RULE_LABEL[problem.rule]} ${secondaryText(problem)} ${filePath}`
         .toLowerCase().includes(query);
     });
-  }, [problems, severity, location, rule, search]);
+  }, [problems, severity, location, search]);
+  const kindCounts = useMemo(() => {
+    const counts = new Map<Problem['rule'], number>();
+    for (const problem of problemsBeforeKind) {
+      counts.set(problem.rule, (counts.get(problem.rule) ?? 0) + 1);
+    }
+    return counts;
+  }, [problemsBeforeKind]);
+  const filteredProblems = useMemo(() => (
+    rule ? problemsBeforeKind.filter((problem) => problem.rule === rule) : problemsBeforeKind
+  ), [problemsBeforeKind, rule]);
   const emptyMessage = !projectOpen
     ? 'Open a project to scan for problems.'
     : scanning
@@ -253,8 +262,10 @@ const ProblemsPanel: React.FC = () => {
             {locations.map((filePath) => <MenuItem key={filePath} value={filePath}>{filePath}</MenuItem>)}
           </TextField>
           <TextField select size="small" label="Kind" value={rule} onChange={(event) => setRule(event.target.value)} sx={{ minWidth: 200 }}>
-            <MenuItem value="">All kinds</MenuItem>
-            {Object.entries(RULE_LABEL).map(([value, label]) => <MenuItem key={value} value={value}>{label}</MenuItem>)}
+            <MenuItem value="">{`All kinds (${problemsBeforeKind.length})`}</MenuItem>
+            {Object.entries(RULE_LABEL).map(([value, label]) => (
+              <MenuItem key={value} value={value}>{`${label} (${kindCounts.get(value as Problem['rule']) ?? 0})`}</MenuItem>
+            ))}
           </TextField>
         </Box>
         <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mt: 0.5 }}>

@@ -39,10 +39,10 @@ describe('ProblemsPanel filters', () => {
     expect(rows()).toHaveLength(1);
     expect(rows()[0]).toHaveTextContent('Missing bed');
     select('Type', 'All types');
-    select('Kind', 'Missing NPC');
+    select('Kind', 'Missing NPC (1)');
     expect(rows()).toHaveLength(1);
     expect(rows()[0]).toHaveTextContent('Unknown NPC');
-    select('Kind', 'All kinds');
+    select('Kind', 'All kinds (4)');
     select('Location', 'C:/mod/dialog/a.d');
     expect(rows()).toHaveLength(2);
     select('Location', 'C:/mod/npc/a.d');
@@ -84,5 +84,14 @@ describe('ProblemsPanel filters', () => {
     expect(screen.getByRole('combobox', { name: /^Location/ })).toHaveTextContent('C:/mod/npc/a.d');
     act(() => { useProblemsStore.setState({ problems: [] }); });
     expect(screen.getByTestId('problems-empty')).toHaveTextContent('No problems found.');
+  });
+
+  it('updates the selected kind count when a rescan clears its last finding', () => {
+    render(<ProblemsPanel />);
+    select('Kind', 'Missing NPC (1)');
+    act(() => { useProblemsStore.setState({ problems: [problems[0]] }); });
+    expect(screen.getByRole('combobox', { name: /^Kind/ })).toHaveTextContent('Missing NPC (0)');
+    select('Kind', 'All kinds (1)');
+    expect(rows()).toHaveLength(1);
   });
 });

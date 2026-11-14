@@ -7,6 +7,9 @@ a persistent, navigable list.
 
 ## Layer boundary
 
+The Kind filter shows counts after Search, Type and Location are applied, but
+before Kind itself, so selecting one kind keeps the other kinds' counts visible.
+
 Imports flow one way — UI → application → domain — mirroring the simulator and
 quest-editor boundaries:
 

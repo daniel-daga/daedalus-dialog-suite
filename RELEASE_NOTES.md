@@ -2,6 +2,7 @@
 
 ## One line per change, newest on top, `- #123: Short description` (120 characters max). A build ships only the lines added since the last one, and CHANGELOG.md keeps them; old lines may be pruned at any time.
 
+- #562: Problems Kind options show finding counts, respecting the search, type and location filters
 - #559: Project indexing respects SRC lists so unused reference scripts no longer cause project errors
 - #559: SRC headers and missing scripts no longer reintroduce unused reference files into project diagnostics
 - #557: Functions with different parameter signatures no longer cause duplicate-declaration errors
