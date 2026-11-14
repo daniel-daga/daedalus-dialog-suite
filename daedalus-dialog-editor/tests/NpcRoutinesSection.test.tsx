@@ -61,17 +61,21 @@ describe('NpcRoutinesSection', () => {
   });
 
   // The fallback field only where no card can carry the start routine.
-  it('shows the start field when no listed routine is the start routine, or on request', () => {
+  it('shows the start field only when no listed routine is the start routine', () => {
     const field = <input aria-label="Start routine field" />;
     const { rerender } = render(<NpcRoutinesSection routines={[daily()]} startRoutine="RTN_START_900" startField={field} />);
     expect(screen.queryByLabelText('Start routine field')).not.toBeInTheDocument();
 
-    // A routine no card lists — another NPC's, say — is still a choice.
-    fireEvent.click(screen.getByRole('button', { name: 'Choose another start routine' }));
+    rerender(<NpcRoutinesSection routines={[]} startRoutine="" startField={field} />);
     expect(screen.getByLabelText('Start routine field')).toBeInTheDocument();
+  });
 
-    rerender(<NpcRoutinesSection routines={[]} startRoutine="RTN_ELSEWHERE" startField={field} />);
-    expect(screen.getByLabelText('Start routine field')).toBeInTheDocument();
+  // A new routine is one click from the NPC editor, not behind a routine's Edit.
+  it('offers a new routine beside the heading once the NPC has one', () => {
+    const onCreateRoutine = jest.fn();
+    render(<NpcRoutinesSection routines={[daily()]} onCreateRoutine={onCreateRoutine} />);
+    fireEvent.click(screen.getByRole('button', { name: 'New routine' }));
+    expect(onCreateRoutine).toHaveBeenCalled();
   });
 
   it('says where a variant is switched to, and when nothing does', () => {

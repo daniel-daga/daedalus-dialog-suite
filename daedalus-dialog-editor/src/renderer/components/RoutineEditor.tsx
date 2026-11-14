@@ -254,6 +254,8 @@ export interface RoutineEditorPanelProps {
   npc: string;
   /** The routine to open on; the declared daily routine when absent. */
   initialRoutine?: string;
+  /** Open on the "New routine" form — the NPC editor's "New routine". */
+  startCreating?: boolean;
   /** The waypoints a stop may use — the saved world's — or null for free
    *  text, when no world is open to say which exist. */
   waypoints?: readonly string[] | null;
@@ -273,7 +275,7 @@ interface Draft {
 }
 
 export const RoutineEditorPanel: React.FC<RoutineEditorPanelProps> = (
-  { npc, initialRoutine, waypoints = null, onPickWaypoint, onDraftChange, onDone },
+  { npc, initialRoutine, startCreating = false, waypoints = null, onPickWaypoint, onDraftChange, onDone },
 ) => {
   const siteIndex = useProjectStore((s) => s.routineSiteIndex);
   const npcIndex = useProjectStore((s) => s.routineNpcIndex);
@@ -304,7 +306,7 @@ export const RoutineEditorPanel: React.FC<RoutineEditorPanelProps> = (
   // undefined while loading, null when the NPC has no literal one.
   const functionList = useProjectStore((s) => s.functionList);
   const spawnSites = useProjectStore((s) => s.spawnSiteIndex);
-  const [creating, setCreating] = useState(false);
+  const [creating, setCreating] = useState(startCreating);
   const [npcId, setNpcId] = useState<number | null | undefined>(undefined);
   const [newState, setNewState] = useState('');
   const [newActivity, setNewActivity] = useState<string | null>(null);
@@ -698,18 +700,20 @@ export const RoutineEditorPanel: React.FC<RoutineEditorPanelProps> = (
 const RoutineEditorDialog: React.FC<{
   npc: string;
   initialRoutine?: string;
+  startCreating?: boolean;
   onClose: () => void;
   waypoints?: readonly string[] | null;
   onPickWaypoint?: RoutineEditorPanelProps['onPickWaypoint'];
   onDraftChange?: RoutineEditorPanelProps['onDraftChange'];
   hidden?: boolean;
-}> = ({ npc, initialRoutine, onClose, waypoints, onPickWaypoint, onDraftChange, hidden = false }) => (
+}> = ({ npc, initialRoutine, startCreating, onClose, waypoints, onPickWaypoint, onDraftChange, hidden = false }) => (
   <Dialog open={!hidden} keepMounted onClose={onClose} maxWidth="md" fullWidth aria-labelledby="routine-editor-title">
     <DialogTitle id="routine-editor-title">{`Routines of ${npc}`}</DialogTitle>
     <DialogContent dividers>
       <RoutineEditorPanel
         npc={npc}
         initialRoutine={initialRoutine}
+        startCreating={startCreating}
         waypoints={waypoints}
         onPickWaypoint={onPickWaypoint}
         onDraftChange={onDraftChange}

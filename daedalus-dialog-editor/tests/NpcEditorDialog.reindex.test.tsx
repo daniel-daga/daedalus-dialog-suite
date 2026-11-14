@@ -1,5 +1,5 @@
 import React from 'react';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { useEditorStore } from '../src/renderer/store/editorStore';
 import { useHistoryStore } from '../src/renderer/store/historyStore';
@@ -37,6 +37,7 @@ beforeEach(() => {
     npcFileIndex: { NPC_TEST: 'test.d' },
     npcIdIndex: { NPC_TEST: 11 },
     routineNpcIndex: { NPC_TEST: 'RTN_START_11' },
+    routineStateIndex: { NPC_TEST: { states: { START: 'RTN_START_11', FARM: 'RTN_FARM_11' } } },
     routineList: ['RTN_START_11', 'RTN_FARM_11'],
     routineSiteIndex: [],
     dialogIndex: new Map(),
@@ -48,12 +49,8 @@ it('re-indexes the file it saved, so a changed daily routine is current', async 
   await useEditorStore.getState().openFile('test.d');
   render(<NpcEditorDialog npcName="NPC_TEST" filePath="test.d" onClose={jest.fn()} />);
 
-  // RTN_FARM_11 is not one of this NPC's routines, so no card offers it.
-  fireEvent.click(await screen.findByRole('button', { name: 'Choose another start routine' }));
-  const daily = await screen.findByLabelText('Start routine');
-  fireEvent.focus(daily);
-  fireEvent.click(await screen.findByRole('option', { name: 'RTN_FARM_11' }));
-  expect(daily).toHaveValue('RTN_FARM_11');
+  fireEvent.click(await screen.findByRole('button', { name: 'Set RTN_FARM_11 as start routine' }));
+  expect(within(screen.getByRole('group', { name: 'Routine RTN_FARM_11' })).getByText('Start routine')).toBeInTheDocument();
 
   fireEvent.click(screen.getByRole('button', { name: 'Save' }));
 

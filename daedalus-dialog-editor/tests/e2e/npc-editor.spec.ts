@@ -425,18 +425,21 @@ test.describe('NPC editor: start routine', () => {
     await expect(card).toContainText('Start routine');
     await expect(editor.getByLabel('Start routine', { exact: true })).toBeHidden();
 
-    // Offered even once cleared: the routine created here is not in the
-    // project's routine list until the next index load.
-    await editor.getByRole('button', { name: 'Choose another start routine' }).click();
-    await expect(editor.getByLabel('Start routine', { exact: true })).toHaveValue('RTN_START_901');
-    await editor.getByLabel('Start routine', { exact: true }).fill('');
-    await editor.getByLabel('Start routine', { exact: true }).press('ArrowDown');
-    await expect(page.getByRole('option', { name: 'RTN_START_901' })).toBeVisible();
-    await page.keyboard.press('Escape');
+    // A second routine starts from the NPC editor, straight in the routine
+    // editor's "New routine" form; it is offered as the start routine.
+    await editor.getByRole('button', { name: 'New routine' }).click();
+    await expect(routineEditor).toBeVisible();
+    const variantForm = routineEditor.getByRole('group', { name: 'New routine' });
+    await variantForm.getByLabel('Name').fill('Farm');
+    await variantForm.getByRole('button', { name: 'Create routine' }).click();
+    await expect(routineEditor.getByRole('button', { name: 'FARM: RTN_FARM_901' })).toHaveAttribute('aria-pressed', 'true');
+    await routineEditor.getByRole('button', { name: 'Cancel' }).click();
+    await expect(routineEditor).toBeHidden();
 
-    // And the card offers itself back as the start routine.
-    await card.getByRole('button', { name: 'Set RTN_START_901 as start routine' }).click();
-    await expect(card).toContainText('Start routine');
-    await expect(card.getByRole('button', { name: 'Set RTN_START_901 as start routine' })).toHaveCount(0);
+    const variant = editor.getByRole('group', { name: 'Routine RTN_FARM_901' });
+    await variant.getByRole('button', { name: 'Set RTN_FARM_901 as start routine' }).click();
+    await expect(variant).toContainText('Start routine');
+    await expect(variant.getByRole('button', { name: 'Set RTN_FARM_901 as start routine' })).toHaveCount(0);
+    await expect(card.getByRole('button', { name: 'Set RTN_START_901 as start routine' })).toBeVisible();
   });
 });

@@ -470,9 +470,11 @@ adds:
    itself with the first routine as soon as one exists, because an NPC with
    no `daily_routine` cannot spawn. The start routine's card is marked and
    every other card offers "Set as start" (2026-11-14); the "Start routine"
-   field appears only when no card is the start routine, or on "Other start
-   routine…", for a routine no card lists. It offers the NPC's own routines
-   as well as the project's, which is stale until the next load.
+   field appears only when no card is the start routine — none yet, or one
+   the index does not list. It offers the NPC's own routines as well as the
+   project's, which is stale until the next load. "New routine" beside the
+   section heading opens the routine editor on its creation form
+   (`startCreating`), so a variant needs no detour through a routine's Edit.
 6. **Editing without a world** (#317). **Built 2026-09-28** as the same panel
    in a modal, `RoutineEditorDialog`, opened by "Edit…" on each routine card
    in the NPC editor's routines section. That section now follows the index,

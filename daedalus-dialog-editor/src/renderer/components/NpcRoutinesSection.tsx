@@ -1,5 +1,6 @@
 import React from 'react';
 import { Box, Button, Chip, IconButton, Typography } from '@mui/material';
+import AddIcon from '@mui/icons-material/Add';
 import CodeIcon from '@mui/icons-material/Code';
 import PlaceOutlinedIcon from '@mui/icons-material/PlaceOutlined';
 import { activityLabel, formatMinute, type NpcRoutine, type VariantSwitch } from '../npc/npcRoutines';
@@ -22,8 +23,8 @@ export interface NpcRoutinesSectionProps {
   startRoutine?: string;
   /** Make this routine the start routine (a form edit, saved with the form). */
   onSetStart?: (routine: string) => void;
-  /** The field that can name a start routine no card lists, or clear it.
-   *  Shown when no listed routine is the start routine, else on request. */
+  /** The field for a start routine no card carries: shown only when no listed
+   *  routine is the start routine (none yet, or one the index does not list). */
   startField?: React.ReactNode;
   /** The calls that switch the NPC to a state variant (`variantSwitches`). */
   switchesOf?: (state: string) => VariantSwitch[];
@@ -39,7 +40,8 @@ export interface NpcRoutinesSectionProps {
   blockedReason?: string | null;
   /** Open the routine editor on this routine (npc-editor.md §6). */
   onEditRoutine?: (routine: string) => void;
-  /** Open the routine editor to create the NPC's first routine (#316). */
+  /** Open the routine editor on its "New routine" form (#316): the daily
+   *  routine when the NPC has none, else a variant. */
   onCreateRoutine?: () => void;
   /** Open this routine in the World surface's routine mode instead — which
    *  opens a world for it when none is, so it is never off for want of one. */
@@ -131,7 +133,6 @@ export const NpcRoutinesSection: React.FC<NpcRoutinesSectionProps> = ({
 }) => {
   const isStart = (routine: string) => startRoutine !== '' && routine.toUpperCase() === startRoutine.toUpperCase();
   const startListed = routines.some((r) => isStart(r.routine));
-  const [choosing, setChoosing] = React.useState(false);
 
   // One reason every waypoint jump shares is said once, in words; a per-
   // waypoint reason stays on its own button.
@@ -147,9 +148,9 @@ export const NpcRoutinesSection: React.FC<NpcRoutinesSectionProps> = ({
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
         <Typography id="npc-routines-heading" variant="subtitle2">Routines</Typography>
         <Box sx={{ flex: 1 }} />
-        {startField && startListed && !choosing && (
-          <Button size="small" sx={{ py: 0, fontSize: 12 }} aria-label="Choose another start routine" onClick={() => setChoosing(true)}>
-            Other start routine…
+        {onCreateRoutine && routines.length > 0 && (
+          <Button size="small" variant="outlined" sx={{ py: 0 }} startIcon={<AddIcon />} onClick={onCreateRoutine}>
+            New routine
           </Button>
         )}
       </Box>
@@ -280,7 +281,7 @@ export const NpcRoutinesSection: React.FC<NpcRoutinesSectionProps> = ({
         );
       })}
 
-      {startField && (!startListed || choosing) && <Box sx={{ mt: 1, maxWidth: 320 }}>{startField}</Box>}
+      {startField && !startListed && <Box sx={{ mt: 1, maxWidth: 320 }}>{startField}</Box>}
     </Box>
   );
 };

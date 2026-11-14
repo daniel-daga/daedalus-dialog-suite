@@ -93,6 +93,7 @@ const NpcEditorDialog: React.FC<NpcEditorDialogProps> = ({ npcName, filePath, on
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [routineSource, setRoutineSource] = useState<NpcRoutineSourceTarget | null>(null);
+  /** The routine the routine editor is open on; '' opens it on its "New routine" form. */
   const [editingRoutine, setEditingRoutine] = useState<string | null>(null);
   const [assetEntries, setAssetEntries] = useState<{ heads: readonly VfsEntry[]; overlays: readonly VfsEntry[] }>({
     heads: [], overlays: [],
@@ -410,6 +411,7 @@ const NpcEditorDialog: React.FC<NpcEditorDialogProps> = ({ npcName, filePath, on
         <RoutineEditorDialog
           npc={npcName}
           initialRoutine={editingRoutine || undefined}
+          startCreating={editingRoutine === ''}
           onClose={() => setEditingRoutine(null)}
         />
       )}
