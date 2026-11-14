@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import {
   Box, AppBar, Toolbar, Typography, Button, Container, Stack, Chip, Tooltip, IconButton,
   List, ListItem, ListItemButton, ListItemIcon, ListItemText, Paper, Divider, CircularProgress,
-  Snackbar, Alert, Badge
+  Snackbar, Alert, Badge, Menu, MenuItem
 } from '@mui/material';
 import {
   FolderOpen as FolderOpenIcon,
@@ -18,8 +18,9 @@ import {
   Undo as UndoIcon,
   Redo as RedoIcon,
   Description as DescriptionIcon,
-  Close as CloseIcon,
-  HelpOutline as HelpOutlineIcon
+  HelpOutline as HelpOutlineIcon,
+  ExpandMore as ExpandMoreIcon,
+  Palette as PaletteIcon
 } from '@mui/icons-material';
 import { useEditorStore } from './store/editorStore';
 import { useHistoryStore } from './store/historyStore';
@@ -141,6 +142,8 @@ const AppContent: React.FC<AppProps> = ({ buildChanges = [] }) => {
   const [triggerUpdateCheck, setTriggerUpdateCheck] = useState(false);
   const [assetSourcesOpen, setAssetSourcesOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const [projectMenuAnchor, setProjectMenuAnchor] = useState<HTMLElement | null>(null);
+  const [themeMenuAnchor, setThemeMenuAnchor] = useState<HTMLElement | null>(null);
   const [projectSession, setProjectSession] = useState(0);
   const [discardPrompt, setDiscardPrompt] = useState<{ context: string; proceed: () => void } | null>(null);
   const [dismissedProjectWarnings, setDismissedProjectWarnings] = useState<Set<string>>(() => new Set());
@@ -160,6 +163,7 @@ const AppContent: React.FC<AppProps> = ({ buildChanges = [] }) => {
   useEffect(() => {
     setDismissedProjectWarnings(new Set());
     setAssetSourcesOpen(false);
+    setProjectMenuAnchor(null);
   }, [projectPath]);
 
 
@@ -300,9 +304,29 @@ const AppContent: React.FC<AppProps> = ({ buildChanges = [] }) => {
       {appVersion && <WhatChangedDialog version={appVersion} changes={buildChanges} />}
       <AppBar position="static">
         <Toolbar>
-          <Typography variant="h6" component="div" sx={{ flexGrow: 1 }}>
+          <Typography variant="h6" component="div" noWrap sx={{ mr: 2, flexShrink: 0 }}>
             Dandelion
           </Typography>
+          {projectName && (
+            <Tooltip title={projectPath} describeChild>
+              <Button
+                id="project-menu-button"
+                color="inherit"
+                startIcon={<FolderIcon />}
+                endIcon={<ExpandMoreIcon />}
+                aria-haspopup="menu"
+                aria-controls={projectMenuAnchor ? 'project-menu' : undefined}
+                aria-expanded={!!projectMenuAnchor}
+                onClick={(event) => setProjectMenuAnchor(event.currentTarget)}
+                sx={{ minWidth: 0, maxWidth: { xs: 160, sm: 280 }, textTransform: 'none' }}
+              >
+                <Box component="span" sx={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  Project: {projectName}
+                </Box>
+              </Button>
+            </Tooltip>
+          )}
+          <Box sx={{ flexGrow: 1 }} />
           {activeFile && (
             <>
               <Tooltip title="Undo (Ctrl+Z)">
@@ -417,18 +441,6 @@ const AppContent: React.FC<AppProps> = ({ buildChanges = [] }) => {
               />
             </Tooltip>
           )}
-          {projectName && (
-            <Chip
-              icon={<FolderIcon />}
-              label={`Project: ${projectName}`}
-              sx={{ mr: 2, bgcolor: 'rgba(255,255,255,0.1)', color: 'white' }}
-            />
-          )}
-          {projectPath && projectConfig && (
-            <Button color="inherit" onClick={() => setAssetSourcesOpen(true)} sx={{ mr: 1 }}>
-              Asset sources...
-            </Button>
-          )}
            <Tooltip title={isIngesting ? `Ingesting files: ${Math.round(ingestionProgress)}%` : 'Ingested Files'}>
             <Box sx={{ position: 'relative', display: 'inline-flex', mr: 1, alignItems: 'center', justifyContent: 'center' }}>
               {isIngesting && (
@@ -460,6 +472,7 @@ const AppContent: React.FC<AppProps> = ({ buildChanges = [] }) => {
               )}
               <IconButton
                 color="inherit"
+                aria-label="Ingested Files"
                 onClick={() => setIngestedFilesOpen(true)}
                 sx={{ zIndex: 1 }}
               >
@@ -469,29 +482,24 @@ const AppContent: React.FC<AppProps> = ({ buildChanges = [] }) => {
               </IconButton>
             </Box>
           </Tooltip>
-          <Stack direction="row" spacing={0.5} sx={{ mr: 2 }}>
-            {themeOptions.map((option) => (
-              <Tooltip key={option.value} title={`${option.label} theme`}>
-                <Chip
-                  onClick={() => setMode(option.value)}
-                  icon={option.icon}
-                  label={option.label}
-                  size="small"
-                  variant={mode === option.value ? 'filled' : 'outlined'}
-                  color={mode === option.value ? 'primary' : 'default'}
-                  sx={{
-                    cursor: 'pointer',
-                    color: mode === option.value ? 'primary.contrastText' : 'white',
-                    bgcolor: mode === option.value ? 'primary.main' : 'rgba(255,255,255,0.08)',
-                    '& .MuiChip-icon': { color: 'inherit' },
-                  }}
-                />
-              </Tooltip>
-            ))}
-          </Stack>
-          <Button color="inherit" onClick={handleOpenProject} sx={{ mr: 1 }}>
-            Open Project
-          </Button>
+          <Tooltip title="Change theme">
+            <IconButton
+              id="theme-menu-button"
+              color="inherit"
+              aria-label={`Theme: ${themeOptions.find((option) => option.value === mode)?.label}`}
+              aria-haspopup="menu"
+              aria-controls={themeMenuAnchor ? 'theme-menu' : undefined}
+              aria-expanded={!!themeMenuAnchor}
+              onClick={(event) => setThemeMenuAnchor(event.currentTarget)}
+            >
+              <PaletteIcon />
+            </IconButton>
+          </Tooltip>
+          <Tooltip title="Open Project">
+            <IconButton color="inherit" aria-label="Open Project" onClick={handleOpenProject}>
+              <FolderOpenIcon />
+            </IconButton>
+          </Tooltip>
           <Tooltip title="Reload">
             <span>
               <IconButton
@@ -513,20 +521,48 @@ const AppContent: React.FC<AppProps> = ({ buildChanges = [] }) => {
               <HelpOutlineIcon />
             </IconButton>
           </Tooltip>
-          {projectPath && (
-            <Tooltip title="Close Project">
-              <IconButton
-                color="inherit"
-                aria-label="Close Project"
-                data-testid="close-project-button"
-                onClick={handleCloseProject}
-              >
-                <CloseIcon />
-              </IconButton>
-            </Tooltip>
-          )}
         </Toolbar>
       </AppBar>
+
+      <Menu
+        id="project-menu"
+        anchorEl={projectMenuAnchor}
+        open={!!projectMenuAnchor}
+        onClose={() => setProjectMenuAnchor(null)}
+        MenuListProps={{ 'aria-labelledby': 'project-menu-button' }}
+      >
+        {projectPath && projectConfig && (
+          <MenuItem onClick={() => { setProjectMenuAnchor(null); setAssetSourcesOpen(true); }}>
+            Asset sources...
+          </MenuItem>
+        )}
+        <MenuItem
+          data-testid="close-project-button"
+          onClick={() => { setProjectMenuAnchor(null); handleCloseProject(); }}
+        >
+          Close Project
+        </MenuItem>
+      </Menu>
+      <Menu
+        id="theme-menu"
+        anchorEl={themeMenuAnchor}
+        open={!!themeMenuAnchor}
+        onClose={() => setThemeMenuAnchor(null)}
+        MenuListProps={{ 'aria-labelledby': 'theme-menu-button' }}
+      >
+        {themeOptions.map((option) => (
+          <MenuItem
+            key={option.value}
+            role="menuitemradio"
+            aria-checked={mode === option.value}
+            selected={mode === option.value}
+            onClick={() => { setMode(option.value); setThemeMenuAnchor(null); }}
+          >
+            <ListItemIcon>{option.icon}</ListItemIcon>
+            {option.label}
+          </MenuItem>
+        ))}
+      </Menu>
 
       <KeyboardShortcutsDialog open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
 

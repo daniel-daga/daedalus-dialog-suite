@@ -61,7 +61,21 @@ test.describe('Close Project', () => {
     });
     await openProject(page);
 
-    await page.getByTestId('close-project-button').click();
+    await page.setViewportSize({ width: 800, height: 700 });
+    const bar = page.getByRole('banner');
+    await expect(bar.getByRole('button')).toHaveCount(6);
+    await expect(bar.getByRole('button', { name: 'Close Project' })).toHaveCount(0);
+    for (const button of await bar.getByRole('button').all()) {
+      const bounds = await button.boundingBox();
+      expect(bounds).not.toBeNull();
+      expect(bounds!.x).toBeGreaterThanOrEqual(0);
+      expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(800);
+    }
+    await page.getByRole('button', { name: 'Project: project' }).click();
+    await page.keyboard.press('Escape');
+    await expect(page.getByRole('button', { name: 'Project: project' })).toBeFocused();
+    await page.getByRole('button', { name: 'Project: project' }).click();
+    await page.getByRole('menuitem', { name: 'Close Project' }).click();
 
     await expect(page.getByText('Welcome to Dandelion')).toBeVisible();
     // Single-file mode and the recent-projects list are reachable again.
@@ -80,7 +94,8 @@ test.describe('Close Project', () => {
     });
     await openProject(page);
 
-    await page.getByTestId('close-project-button').click();
+    await page.getByRole('button', { name: 'Project: project' }).click();
+    await page.getByRole('menuitem', { name: 'Close Project' }).click();
     await expect(page.getByText('Welcome to Dandelion')).toBeVisible();
 
     // Reopen via the recent-projects list (no folder prompt involved).
@@ -117,7 +132,8 @@ test.describe('Close Project', () => {
 
     // The guard is the in-app dialog, not a native confirm. Cancel keeps the
     // project open.
-    await page.getByTestId('close-project-button').click();
+    await page.getByRole('button', { name: 'Project: project' }).click();
+    await page.getByRole('menuitem', { name: 'Close Project' }).click();
     const guard = page.getByRole('dialog', { name: 'Unsaved changes' });
     await expect(guard).toBeVisible();
     await expect(guard).toContainText('close the project');
@@ -129,7 +145,8 @@ test.describe('Close Project', () => {
 
     // Discarding (or no guard at all if auto-save has since cleaned the file)
     // closes the project.
-    await page.getByTestId('close-project-button').click();
+    await page.getByRole('button', { name: 'Project: project' }).click();
+    await page.getByRole('menuitem', { name: 'Close Project' }).click();
     if (await guard.isVisible()) {
       await guard.getByRole('button', { name: 'Discard and continue' }).click();
     }

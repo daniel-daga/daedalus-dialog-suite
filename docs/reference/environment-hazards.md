@@ -33,6 +33,11 @@ cannot run. This was observed on 2026-10-14.
   PowerShell and `$LASTEXITCODE` whenever a native crash is a possible result.
 - **Editor source files are CRLF.** Normalize before matching multi-line
   anchors.
+- **Playwright can reuse another checkout's Vite server.** `localhost:5173`
+  can reach an existing IPv6 listener even when this worktree starts a separate
+  IPv4 listener. If a test sees old UI, verify `/App.tsx`'s served source path;
+  use an uncommitted config with an explicit `127.0.0.1` base URL and server URL
+  (and start Vite with `--host 127.0.0.1 --strictPort`) to isolate the run.
 
 ## `os.tmpdir()` on GitHub's Windows runner is an 8.3 short path
 

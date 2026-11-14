@@ -99,7 +99,8 @@ test.describe('project asset sources', () => {
       expect(settings.gothicInstallPath).toBe(gothicInstall);
     }).toPass({ timeout: 20_000 });
 
-    await fixture.page.getByRole('button', { name: 'Asset sources...' }).click();
+    await fixture.page.getByRole('button', { name: /^Project:/ }).click();
+    await fixture.page.getByRole('menuitem', { name: 'Asset sources...' }).click();
     const dialog = fixture.page.getByRole('dialog', { name: /Asset sources/i });
     await expect(dialog.getByTestId('gothic-install-path')).toHaveText(gothicInstall);
   });
@@ -113,7 +114,8 @@ test.describe('project asset sources', () => {
     fixture = await launchApp();
     await openProject(fixture, projectDir, addedSource);
 
-    await fixture.page.getByRole('button', { name: 'Asset sources...' }).click();
+    await fixture.page.getByRole('button', { name: /^Project:/ }).click();
+    await fixture.page.getByRole('menuitem', { name: 'Asset sources...' }).click();
     let dialog = fixture.page.getByRole('dialog', { name: /Asset sources/i });
     await expect(dialog).toContainText(/later sources override earlier sources/i);
     await expect(sourceRow(dialog, '.').getByRole('button', { name: /remove/i })).toBeDisabled();
@@ -137,7 +139,8 @@ test.describe('project asset sources', () => {
       ]);
     }).toPass({ timeout: 10_000 });
 
-    await fixture.page.getByRole('button', { name: 'Asset sources...' }).click();
+    await fixture.page.getByRole('button', { name: /^Project:/ }).click();
+    await fixture.page.getByRole('menuitem', { name: 'Asset sources...' }).click();
     dialog = fixture.page.getByRole('dialog', { name: /Asset sources/i });
     await expect(dialog.getByRole('listitem').nth(0)).toContainText('.');
     await expect(dialog.getByRole('listitem').nth(1)).toContainText(addedSource);
@@ -155,7 +158,8 @@ test.describe('project asset sources', () => {
     await expect(warning).toBeVisible({ timeout: 20_000 });
     await expect(fixture.page.getByText('SLD_99005_Arog')).toBeVisible({ timeout: 20_000 });
 
-    await fixture.page.getByRole('button', { name: 'Asset sources...' }).click();
+    await fixture.page.getByRole('button', { name: /^Project:/ }).click();
+    await fixture.page.getByRole('menuitem', { name: 'Asset sources...' }).click();
     const dialog = fixture.page.getByRole('dialog', { name: /Asset sources/i });
     await expect(sourceRow(dialog, missingSource)).toBeVisible();
     await expect(sourceRow(dialog, missingSource).getByRole('button', { name: /remove/i })).toBeEnabled();

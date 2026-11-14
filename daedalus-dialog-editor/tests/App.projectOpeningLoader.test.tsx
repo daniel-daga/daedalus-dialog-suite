@@ -188,11 +188,13 @@ describe('App project opening loader', () => {
 
   test('updates the asset-source world notice when the world summary appears', () => {
     mockProjectState.projectPath = 'C:/project';
+    mockProjectState.projectName = 'project';
     mockProjectState.projectFilePath = 'C:/project/project.gothicproject.json';
     mockProjectState.projectConfig = { version: 1, target: 'g2-notr', scriptsRoot: '.', worlds: [], assetSources: ['.'] };
     mockProjectState.projectWarnings = [];
     const { rerender } = render(<App />);
-    fireEvent.click(screen.getByRole('button', { name: 'Asset sources...' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Project: project' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Asset sources...' }));
     expect(screen.queryByText(/reopen the world to apply changes/i)).not.toBeInTheDocument();
 
     mockWorldState.summary = { worldPath: 'C:/project/world.zen' };
@@ -208,6 +210,7 @@ describe('App project opening loader', () => {
       message: 'Asset source is unavailable: missing-assets',
     };
     mockProjectState.projectPath = 'C:/project';
+    mockProjectState.projectName = 'project';
     mockProjectState.projectFilePath = 'C:/project/project.gothicproject.json';
     mockProjectState.projectConfig = { version: 1, target: 'g2-notr', scriptsRoot: '.', worlds: [], assetSources: ['.', 'missing-assets'] };
     mockProjectState.projectWarnings = [warning];
@@ -216,7 +219,8 @@ describe('App project opening loader', () => {
     fireEvent.click(screen.getByRole('alert').querySelector('button')!);
     expect(screen.queryByText(warning.message)).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Asset sources...' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Project: project' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Asset sources...' }));
     expect(screen.getByRole('dialog')).toHaveTextContent(warning.message);
     expect(mockProjectState.dismissProjectWarning).not.toHaveBeenCalled();
     rerender(<App />);
@@ -224,11 +228,13 @@ describe('App project opening loader', () => {
 
   test('closes the asset sources dialog when the project changes', async () => {
     mockProjectState.projectPath = 'C:/project';
+    mockProjectState.projectName = 'project';
     mockProjectState.projectFilePath = 'C:/project/project.gothicproject.json';
     mockProjectState.projectConfig = { version: 1, target: 'g2-notr', scriptsRoot: '.', worlds: [], assetSources: ['.'] };
     mockProjectState.projectWarnings = [];
     const { rerender } = render(<App />);
-    fireEvent.click(screen.getByRole('button', { name: 'Asset sources...' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Project: project' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Asset sources...' }));
     expect(screen.getByRole('dialog', { name: /asset sources/i })).toBeInTheDocument();
 
     mockProjectState.projectPath = 'C:/successor';

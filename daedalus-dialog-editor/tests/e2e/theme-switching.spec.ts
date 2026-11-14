@@ -1,53 +1,36 @@
 import { test, expect } from '@playwright/test';
 
-/**
- * E2E tests for theme switching.
- * Covers clicking Dark, Light, and Gothic theme chips in the app bar.
- */
-
-test.describe('Theme Switching', () => {
+test.describe('Theme menu', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/');
     await expect(page.getByText('Welcome to Dandelion')).toBeVisible();
   });
 
-  test('Dark, Light, and Gothic theme chips are visible in the app bar', async ({ page }) => {
-    // Theme chips are rendered with Tooltip titles "<Name> theme", so their accessible
-    // button name includes the tooltip text: "Dark theme", "Light theme", "Gothic theme"
-    await expect(page.getByRole('button', { name: 'Dark theme' })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Light theme' })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Gothic theme' })).toBeVisible();
+  test('one compact control exposes all themes and supports keyboard dismissal', async ({ page }) => {
+    const themeButton = page.getByRole('button', { name: 'Theme: Dark' });
+    await expect(themeButton).toHaveAttribute('aria-expanded', 'false');
+    await expect(page.getByRole('button', { name: 'Light theme' })).toHaveCount(0);
+    await themeButton.click();
+    for (const name of ['Dark', 'Light', 'Gothic']) {
+      await expect(page.getByRole('menuitemradio', { name, exact: true })).toBeVisible();
+    }
+    await expect(page.getByRole('menuitemradio', { name: 'Dark', exact: true })).toHaveAttribute('aria-checked', 'true');
+    await page.keyboard.press('Escape');
+    await expect(themeButton).toBeFocused();
+    await expect(page.getByRole('menu')).toBeHidden();
   });
 
-  test('clicking the Light theme chip activates it', async ({ page }) => {
-    await page.getByRole('button', { name: 'Light theme' }).click();
-    await expect(page.getByRole('button', { name: 'Light theme' })).toBeVisible();
-    await expect(page.getByText('Welcome to Dandelion')).toBeVisible();
-  });
-
-  test('clicking the Dark theme chip activates it', async ({ page }) => {
-    // Switch to Light first so we have a known state change
-    await page.getByRole('button', { name: 'Light theme' }).click();
-    await page.waitForTimeout(200);
-
-    await page.getByRole('button', { name: 'Dark theme' }).click();
-    await expect(page.getByRole('button', { name: 'Dark theme' })).toBeVisible();
-    await expect(page.getByText('Welcome to Dandelion')).toBeVisible();
-  });
-
-  test('clicking the Gothic theme chip activates it', async ({ page }) => {
-    await page.getByRole('button', { name: 'Gothic theme' }).click();
-    await expect(page.getByRole('button', { name: 'Gothic theme' })).toBeVisible();
-    // Gothic theme changes the palette; verify the page still renders correctly
-    await expect(page.getByText('Welcome to Dandelion')).toBeVisible();
-  });
-
-  test('theme persists after switching multiple times', async ({ page }) => {
-    await page.getByRole('button', { name: 'Light theme' }).click();
-    await page.waitForTimeout(100);
-    await page.getByRole('button', { name: 'Gothic theme' }).click();
-    await page.waitForTimeout(100);
-    await page.getByRole('button', { name: 'Dark theme' }).click();
-    await expect(page.getByText('Welcome to Dandelion')).toBeVisible();
+  test('switching themes updates the selected option and persists after reload', async ({ page }) => {
+    for (const name of ['Light', 'Gothic', 'Dark', 'Light']) {
+      await page.getByRole('button', { name: /^Theme:/ }).click();
+      await page.getByRole('menuitemradio', { name, exact: true }).click();
+      await expect(page.getByRole('menu')).toBeHidden();
+      await expect(page.getByRole('button', { name: `Theme: ${name}` })).toBeVisible();
+      await page.getByRole('button', { name: /^Theme:/ }).click();
+      await expect(page.getByRole('menuitemradio', { name, exact: true })).toHaveAttribute('aria-checked', 'true');
+      await page.keyboard.press('Escape');
+    }
+    await page.reload();
+    await expect(page.getByRole('button', { name: 'Theme: Light' })).toBeVisible();
   });
 });

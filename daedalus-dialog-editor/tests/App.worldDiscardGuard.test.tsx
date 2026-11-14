@@ -55,7 +55,8 @@ describe('project transitions with a dirty world', () => {
     dirtyWorld();
     render(<App />);
 
-    fireEvent.click(screen.getByTestId('close-project-button'));
+    fireEvent.click(screen.getByRole('button', { name: 'Project: proj' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Close Project' }));
 
     expect(screen.getByRole('dialog', { name: 'Unsaved changes' })).toHaveTextContent('close the project');
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
@@ -69,7 +70,8 @@ describe('project transitions with a dirty world', () => {
     dirtyWorld();
     render(<App />);
 
-    fireEvent.click(screen.getByTestId('close-project-button'));
+    fireEvent.click(screen.getByRole('button', { name: 'Project: proj' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Close Project' }));
     fireEvent.click(screen.getByRole('button', { name: 'Discard and continue' }));
 
     expect(useProjectStore.getState().projectPath).toBeNull();
@@ -82,7 +84,8 @@ describe('project transitions with a dirty world', () => {
     useWorldStore.setState({ status: 'ready', summary: { worldPath: '/proj/WORLD.ZEN' } as never });
     render(<App />);
 
-    fireEvent.click(screen.getByTestId('close-project-button'));
+    fireEvent.click(screen.getByRole('button', { name: 'Project: proj' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Close Project' }));
 
     expect(screen.queryByRole('dialog', { name: 'Unsaved changes' })).not.toBeInTheDocument();
     expect(closeWorld).toHaveBeenCalledTimes(1);

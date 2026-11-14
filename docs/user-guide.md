@@ -24,6 +24,11 @@ On the welcome screen:
 - **Open Single File** — edit one `.d` file without a project. Cross-file
   features (quests, Problems, NPC lists) need a project.
 
+In the top bar, the **project name ▾** opens **Asset sources…** and **Close
+Project**. The **palette** button switches between Dark, Light and Gothic
+themes. Open Project, Reload and keyboard help remain available as icons
+with tooltips.
+
 The bar on the left switches between the editors: **Dialog Editor**,
 **Quest Editor**, **Variable Manager**, **Problems** and **World Editor**.
 
@@ -76,7 +81,7 @@ world, routines are edited on the map itself.
 
 The World Editor opens a ZenGin `.zen` world in a 3D viewport.
 
-1. In the project bar, open **Asset sources…** and add at least one asset
+1. Click the project name in the top bar, choose **Asset sources…**, and add at least one asset
    source (your Gothic installation's data, or extracted asset folders), so
    meshes and textures can be found.
 2. Open a world. The scene tree is on the left, the viewport in the middle and
