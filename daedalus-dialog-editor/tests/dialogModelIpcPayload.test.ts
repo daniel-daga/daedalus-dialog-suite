@@ -67,7 +67,7 @@ jest.mock('../src/main/services/serviceRegistry', () => {
     parserService: { parseSource: jest.fn(async () => registry.__model) },
     fileService: { readFile: jest.fn(async () => 'source') },
     codeGeneratorService: {}, validationService: {},
-    projectService: { takeParsedModel: jest.fn(async () => null) },
+    projectService: { takeParsedModel: jest.fn(async () => null), isProjectSource: () => true },
     settingsService: {}, fileWatcherService: {}, updaterService: {}, worldService: {},
     worldFoldersService: { sidecarPath: (p: string) => `${p}.folders.json` },
     thumbnailCacheService: {}, assetCatalogService: {},

@@ -222,6 +222,13 @@ describe('FileWatcherService', () => {
       expect(ignored('/project/DIA_Test.d', fileStats)).toBe(false);
     });
 
+    it('does not ignore .src compilation lists, whose edits change what the project compiles (#568)', async () => {
+      const ignored = await getIgnored('/project');
+      expect(ignored('/project/Content/Gothic.src', fileStats)).toBe(false);
+      expect(ignored('/project/Content/GOTHIC.SRC', fileStats)).toBe(false);
+      expect(ignored('/project/Content/Gothic.src.bak', fileStats)).toBe(true);
+    });
+
     it('never ignores directories, even with a dot in the name', async () => {
       const ignored = await getIgnored('/project');
       // A directory like "Mod.bak/" must be traversed so its .d files are seen

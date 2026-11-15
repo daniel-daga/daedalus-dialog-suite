@@ -1,7 +1,7 @@
 /**
  * FileWatcherService - Watches project directories for external file changes
  *
- * Uses chokidar to monitor .d files in the project folder and emits events
+ * Uses chokidar to monitor .d and .src files in the project folder and emits events
  * when files are added, changed, or removed outside the editor. This allows
  * the renderer to refresh its semantic model cache accordingly.
  *
@@ -112,7 +112,7 @@ export class FileWatcherService {
   }
 
   /**
-   * Start watching a project directory for .d file changes.
+   * Start watching a project directory for .d and .src file changes.
    * Any previous watcher is stopped first.
    */
   async startWatching(projectPath: string): Promise<void> {
@@ -140,14 +140,15 @@ export class FileWatcherService {
     };
 
     this.watcher = watch(projectPath, {
-      // Only watch .d files (Daedalus source files); always recurse into
-      // directories so their .d files are seen.
+      // Only watch .d files (Daedalus source files) and the .src lists that
+      // decide which of them compile (#568); always recurse into directories
+      // so their files are seen.
       ignored: (filePath: string, stats?: PathStats) => {
         if (filePath === projectPath) return false;
         // Directories must be traversed. Without stats we cannot tell a
         // dotted directory (e.g. "Mod.bak/") from a file, so we do NOT ignore
         // — chokidar will re-evaluate with stats on the next pass.
-        if (stats && !stats.isDirectory() && !filePath.toLowerCase().endsWith('.d')) return true;
+        if (stats && !stats.isDirectory() && !/\.(d|src)$/i.test(filePath)) return true;
         return resolvesOutsideRoot(filePath);
       },
       persistent: true,

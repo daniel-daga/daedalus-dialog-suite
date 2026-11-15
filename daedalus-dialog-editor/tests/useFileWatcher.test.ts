@@ -353,6 +353,50 @@ describe('useFileWatcher — add event', () => {
   });
 });
 
+describe('useFileWatcher — SRC membership (#568)', () => {
+  test('a new file the compilation lists exclude does not enter the project', async () => {
+    const isProjectSource = jest.spyOn(window.editorAPI, 'isProjectSource').mockResolvedValue(false);
+    const { unmount } = await setupHook();
+    await emitFileChange({ type: 'add', filePath: FILE_A });
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 50)); });
+    expect(isProjectSource).toHaveBeenCalledWith(FILE_A);
+    isProjectSource.mockRestore();
+    expect(mockParseDialogFile).not.toHaveBeenCalled();
+    expect(mockIndexFile).not.toHaveBeenCalled();
+    expect(useProjectStore.getState().allDialogFiles).not.toContain(FILE_A);
+    expect(useProjectStore.getState().parsedFiles.has(FILE_A)).toBe(false);
+    expect(useProjectStore.getState().dialogIndex.size).toBe(0);
+    unmount();
+  });
+
+  test('a changed file the compilation lists exclude does not enter the model cache', async () => {
+    mockIndexFile.mockImplementation(async () => ({ excluded: true as const }));
+    const { unmount } = await setupHook();
+    await emitFileChange({ type: 'change', filePath: FILE_A });
+
+    expect(mockIndexFile).toHaveBeenCalledWith(FILE_A, expect.anything());
+    expect(useProjectStore.getState().parsedFiles.has(FILE_A)).toBe(false);
+    unmount();
+  });
+
+  test.each(['change', 'add', 'unlink'] as const)('a compilation list %s re-indexes the project once', async (type) => {
+    const refresh = jest.spyOn(useProjectStore.getState(), 'refreshProjectIndex').mockResolvedValue(undefined);
+    const { unmount } = await setupHook();
+    await act(async () => {
+      capturedOnFileChanged!({ type, filePath: 'C:/project/Content/Gothic.src' });
+      capturedOnFileChanged!({ type: 'change', filePath: 'C:/project/System/MENU.SRC' });
+      await new Promise((resolve) => setTimeout(resolve, 350));
+    });
+
+    expect(refresh).toHaveBeenCalledTimes(1);
+    expect(mockIndexFile).not.toHaveBeenCalled();
+    expect(mockParseDialogFile).not.toHaveBeenCalled();
+    expect(useProjectStore.getState().allDialogFiles).toEqual([]);
+    refresh.mockRestore();
+    unmount();
+  });
+});
+
 describe('useFileWatcher — add event auto-creates EXIT dialog (issue #141)', () => {
   const NPC_FILE = 'C:/project/NPC/VLK_99099_Robert.d';
   const EXISTING_DIALOG_FILE = 'C:/project/Dialoge/DIA_Alrik.d';

@@ -101,8 +101,3 @@ export async function resolveSourceMembership(
       unknownScopes.some(scope => isPathInside(scope, file));
   };
 }
-
-export async function selectSourceFiles(rootPath: string, scripts: string[], sourceLists: string[]): Promise<string[]> {
-  if (sourceLists.length === 0) return scripts;
-  return scripts.filter(await resolveSourceMembership(rootPath, scripts, sourceLists));
-}

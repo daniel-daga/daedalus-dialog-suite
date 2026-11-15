@@ -191,4 +191,25 @@ describe('SRC-backed project indexing (#559)', () => {
       expect(compiled).toHaveLength(1);
     });
   });
+
+  describe('membership outlives the index build (#568)', () => {
+    it('answers for one file with the decision the last build made', async () => {
+      const service = new ProjectService();
+      const reference = write('Content/AI/Externals.d', 'func void Reference() {};');
+      const live = write('Content/Story/Live.d', 'func void Live() {};');
+      const list = write('Content/Gothic.src', 'STORY\\*.D\n');
+      // Nothing is known before a build, and unknown must not hide a file.
+      expect(service.isProjectSource(reference)).toBe(true);
+      await service.buildProjectIndex(root);
+      expect(service.isProjectSource(live)).toBe(true);
+      expect(service.isProjectSource(reference)).toBe(false);
+      // A script added later is judged by the same lists.
+      expect(service.isProjectSource(path.join(root, 'Content', 'Story', 'Added.d'))).toBe(true);
+      expect(service.isProjectSource(path.join(root, 'Content', 'AI', 'Added.d'))).toBe(false);
+      expect(service.isProjectSource(path.join(os.tmpdir(), 'Elsewhere.d'))).toBe(true);
+      fs.writeFileSync(list, 'Story\\*.d\nAI\\Externals.d\n');
+      await service.buildProjectIndex(root);
+      expect(service.isProjectSource(reference)).toBe(true);
+    });
+  });
 });

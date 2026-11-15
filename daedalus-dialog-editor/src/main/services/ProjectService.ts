@@ -28,7 +28,7 @@ import { MetadataWorkerPool } from './MetadataWorkerPool';
 import type { MetadataResult } from './MetadataWorkerPool';
 import { LruMap } from '../utils/lruMap';
 import { isPathInside } from '../utils/pathContainment';
-import { selectSourceFiles } from '../utils/sourceFiles';
+import { resolveSourceMembership } from '../utils/sourceFiles';
 
 function normalizeIdentifier(value: string): string {
   return value.trim().toUpperCase();
@@ -73,6 +73,24 @@ class ProjectService {
     }
     return entry.model;
   }
+  /**
+   * What the last index build decided the SRC lists compile. Kept so the
+   * per-file paths (a watcher event, a save) give the answer the build gave
+   * instead of putting an excluded script back into the index (#568).
+   */
+  private sourceMembership: { rootPath: string; isSource: (filePath: string) => boolean } | null = null;
+
+  /**
+   * Whether the project index holds this script. True when nothing is known:
+   * before a build, or for a file outside the indexed folder. It reflects the
+   * lists as the last build read them; a changed list needs a new build.
+   */
+  isProjectSource(filePath: string): boolean {
+    const membership = this.sourceMembership;
+    if (!membership || !isPathInside(membership.rootPath, filePath)) return true;
+    return membership.isSource(filePath);
+  }
+
   /** The project's `.d` scripts, or its `.src` compilation lists. */
   async scanDirectory(rootPath: string, extension: '.d' | '.src' = '.d'): Promise<string[]> {
     const { scripts, sourceLists } = await this.scanProject(rootPath);
@@ -179,7 +197,9 @@ class ProjectService {
     this.primedModels.clear();
 
     const { scripts, sourceLists } = await this.scanProject(rootPath);
-    const allFiles = await selectSourceFiles(rootPath, scripts, sourceLists);
+    const isSource = await resolveSourceMembership(rootPath, scripts, sourceLists);
+    this.sourceMembership = { rootPath, isSource };
+    const allFiles = scripts.filter(isSource);
 
     // Map to store dialogs by NPC
     const dialogsByNpc = new Map<string, DialogMetadata[]>();

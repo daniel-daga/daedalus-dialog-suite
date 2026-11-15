@@ -54,8 +54,15 @@ the reading that indexes more rather than less. Empty wildcard matches are
 allowed.
 This filters metadata, background ingestion and project diagnostics together;
 it does not relax parser validation or saving of directly opened files.
-Membership is refreshed by a full index build; `.src` edits require reopening
-the project because the file watcher only watches `.d` files.
+The main process keeps the decision of the last index build
+(`ProjectService.isProjectSource`) and applies it wherever one file re-enters
+the index (#568): `project:indexFile` answers `excluded` for a script the lists
+leave out, so a watcher change or a save cannot put it back, and a file that
+appears asks `project:isProjectSource` before it is registered. Unknown is
+included: before a build, or outside the indexed folder. The watcher also
+watches `.src` files; a change to one makes the renderer take the whole index
+again (`refreshProjectIndex`), which drops the models of files that left it and
+ingests the ones that joined, without closing open files.
 
 ## Reference, hydration and export ownership
 
