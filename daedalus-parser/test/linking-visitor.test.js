@@ -1,6 +1,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert');
-const { parseSemanticModel } = require('../dist/semantic/semantic-visitor-index');
+const { createParser } = require('./helpers');
+const { parseSemanticModel, SemanticModelBuilderVisitor } = require('../dist/semantic/semantic-visitor-index');
 
 // Direct coverage for the linking pass (pass 2): resolving instance property
 // references to function objects, syncing info-function actions onto the
@@ -343,3 +344,39 @@ test('a condition carries the line of the expression it was parsed from', () => 
     ]
   );
 });
+
+// #570: the call-site walk must end on the node it started from. A statement
+// whose `;` is missing spans exactly the bytes of its sole real child (the
+// MISSING token is zero-width), so "back at the root" cannot be told by range.
+// `parseSemanticModel` stops at a syntax error; the two passes are public and
+// run on whatever tree they are given. The expression and the parenthesized
+// call are the two that lost B and C; the other two guard the same shape.
+for (const [what, statement] of [
+  ['an expression', 'a + b'],
+  ['a call', 'Middle()'],
+  ['a parenthesized call', '(Middle())'],
+  ['a return', 'return']
+]) {
+  test(`${what} spanning its statement's whole range does not end the walk early`, () => {
+    const source = [
+      `func void A() { First(); ${statement} };`,
+      'func void B() { Later(); };',
+      'func void C() { Last(); };'
+    ].join('\n');
+    const root = createParser().parse(source).rootNode;
+    assert.strictEqual(root.hasError, true, 'the statement is missing its semicolon');
+
+    const visitor = new SemanticModelBuilderVisitor();
+    visitor.pass1_createObjects(root);
+    visitor.pass2_analyzeAndLink(root);
+    const { functions } = visitor.semanticModel;
+
+    assert.deepStrictEqual(functions.B.calls, ['Later']);
+    assert.strictEqual(functions.B.callSites.length, 1);
+    assert.strictEqual(functions.B.actions.length, 1);
+    assert.deepStrictEqual(functions.C.calls, ['Last']);
+    assert.strictEqual(functions.C.actions.length, 1);
+    const expected = statement.includes('Middle') ? ['First', 'Middle'] : ['First'];
+    assert.deepStrictEqual(functions.A.calls, expected);
+  });
+}

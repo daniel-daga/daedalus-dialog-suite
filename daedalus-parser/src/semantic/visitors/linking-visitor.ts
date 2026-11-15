@@ -694,21 +694,25 @@ export class LinkingVisitor {
     if (rootCall) record(rootCall);
     // Pre-order, one level at a time: a child that is a call is recorded and
     // not descended (a call never holds a call); any other child is descended.
-    // The walk stops on the root's last child, because `gotoParent()` from the
-    // root would move the caller's cursor out of the subtree it owns.
-    const atRoot = () => cursor.startIndex === root.startIndex && cursor.endIndex === root.endIndex;
+    // The walk counts its own depth and stops when it climbs back to the
+    // root, because `gotoParent()` from the root would move the caller's cursor
+    // out of the subtree it owns. Depth, not byte range: a statement whose `;`
+    // is missing spans exactly the bytes of its sole real child (#570).
     const visit = () => {
       if (cursor.nodeType === 'call_expression') record(cursor.currentNode);
     };
     if (!cursor.gotoFirstChild()) return rootCall;
+    let depth = 1;
     visit();
     for (;;) {
       if (cursor.gotoFirstChild()) {
+        depth++;
         visit();
         continue;
       }
       while (!cursor.gotoNextSibling()) {
-        if (!cursor.gotoParent() || atRoot()) return rootCall;
+        cursor.gotoParent();
+        if (--depth === 0) return rootCall;
       }
       visit();
     }
