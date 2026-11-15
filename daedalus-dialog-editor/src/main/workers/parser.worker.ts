@@ -149,15 +149,22 @@ if (send) {
     // workers only), so awaiting `validate` here cannot interleave answers.
     Promise.resolve()
       .then(() => handleParserRequest(message))
-      .then(
-        (result) => send({ id: message.id, result }),
-        (error: unknown) => {
-          console.error('[Worker] Error during request:', error);
-          send({
-            id: message.id,
-            error: error instanceof Error ? error.message : 'Unknown worker error'
-          });
-        },
-      );
+      // `send` is inside the chain the `catch` covers: structured clone throws
+      // synchronously for a result it cannot serialise, and that is this
+      // request's error, not a reason for the worker to die (#571).
+      .then((result) => { send({ id: message.id, result }); })
+      .catch((error: unknown) => {
+        console.error('[Worker] Error during request:', error);
+        send({
+          id: message.id,
+          error: error instanceof Error ? error.message : 'Unknown worker error'
+        });
+      })
+      // No reply could be sent at all. The parent settles the request from
+      // the worker's exit or its own timeout; an unhandled rejection here
+      // would only turn a lost reply into a crashed worker.
+      .catch((error: unknown) => {
+        console.error('[Worker] Could not send a reply:', error);
+      });
   });
 }
