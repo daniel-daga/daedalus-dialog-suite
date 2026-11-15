@@ -821,6 +821,10 @@ export const mockEditorAPI: EditorAPI = {
     };
   },
 
+  async isProjectSource(_filePath: string): Promise<boolean> {
+    return true;
+  },
+
   async indexFile(filePath: string): Promise<{ index: FileIndex; model: SemanticModel }> {
     const content = MockFileSystem.readFile(filePath);
     const dailyRoutines = mockDailyRoutines(content);

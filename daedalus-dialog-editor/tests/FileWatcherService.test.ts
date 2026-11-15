@@ -222,6 +222,13 @@ describe('FileWatcherService', () => {
       expect(ignored('/project/DIA_Test.d', fileStats)).toBe(false);
     });
 
+    it('does not ignore .src compilation lists, whose edits change what the project compiles (#568)', async () => {
+      const ignored = await getIgnored('/project');
+      expect(ignored('/project/Content/Gothic.src', fileStats)).toBe(false);
+      expect(ignored('/project/Content/GOTHIC.SRC', fileStats)).toBe(false);
+      expect(ignored('/project/Content/Gothic.src.bak', fileStats)).toBe(true);
+    });
+
     it('never ignores directories, even with a dot in the name', async () => {
       const ignored = await getIgnored('/project');
       // A directory like "Mod.bak/" must be traversed so its .d files are seen
@@ -262,6 +269,92 @@ describe('FileWatcherService', () => {
         fs.rmSync(root, { recursive: true, force: true });
         fs.rmSync(outside, { recursive: true, force: true });
       }
+    });
+
+    describe('without a realpath per path (#572)', () => {
+      let root: string;
+      let outside: string;
+      beforeEach(() => {
+        root = fs.mkdtempSync(path.join(os.tmpdir(), 'watch-root-'));
+        outside = fs.mkdtempSync(path.join(os.tmpdir(), 'watch-outside-'));
+        fs.mkdirSync(path.join(root, 'Inner', 'Deep'), { recursive: true });
+        for (const name of ['a.d', 'b.d', 'notes.txt']) fs.writeFileSync(path.join(root, 'Inner', name), '');
+        fs.writeFileSync(path.join(root, 'Inner', 'Deep', 'c.d'), '');
+        fs.writeFileSync(path.join(outside, 'far.d'), '');
+      });
+      afterEach(() => {
+        jest.restoreAllMocks();
+        fs.rmSync(root, { recursive: true, force: true });
+        fs.rmSync(outside, { recursive: true, force: true });
+      });
+
+      it('resolves no path, and stats none, for ordinary files and folders', async () => {
+        const ignored = await getIgnored(root);
+        const realpath = jest.spyOn(fs.realpathSync, 'native');
+        // The module object itself: the `import * as fs` namespace cannot be spied on.
+        const nodeFs = jest.requireActual<typeof import('fs')>('fs');
+        const lstat = jest.spyOn(nodeFs, 'lstatSync');
+        const readdir = jest.spyOn(nodeFs, 'readdirSync');
+        const inner = path.join(root, 'Inner');
+        // chokidar asks about each path twice: without stats, then with them.
+        for (const stats of [undefined, dirStats]) {
+          expect(ignored(inner, stats)).toBe(false);
+          expect(ignored(path.join(inner, 'Deep'), stats)).toBe(false);
+        }
+        for (const stats of [undefined, fileStats]) {
+          expect(ignored(path.join(inner, 'a.d'), stats)).toBe(false);
+          expect(ignored(path.join(inner, 'b.d'), stats)).toBe(false);
+          expect(ignored(path.join(inner, 'Deep', 'c.d'), stats)).toBe(false);
+        }
+        expect(ignored(path.join(inner, 'notes.txt'), fileStats)).toBe(true);
+        expect(realpath).not.toHaveBeenCalled();
+        expect(lstat).not.toHaveBeenCalled();
+        // One listing per folder holding the paths asked about.
+        expect(readdir.mock.calls.map(([dir]) => String(dir)).sort())
+          .toEqual([root, inner, path.join(inner, 'Deep')].sort());
+      });
+
+      it('resolves a link once, and its verdict covers what lies behind it', async () => {
+        fs.symlinkSync(outside, path.join(root, 'Out'), 'junction');
+        fs.symlinkSync(path.join(root, 'Inner'), path.join(root, 'InLink'), 'junction');
+        const ignored = await getIgnored(root);
+        const realpath = jest.spyOn(fs.realpathSync, 'native');
+        for (const stats of [undefined, dirStats]) {
+          expect(ignored(path.join(root, 'Out'), stats)).toBe(true);
+          expect(ignored(path.join(root, 'InLink'), stats)).toBe(false);
+        }
+        // A file behind a linked folder carries no link bit of its own.
+        expect(ignored(path.join(root, 'Out', 'far.d'), fileStats)).toBe(true);
+        expect(ignored(path.join(root, 'InLink', 'a.d'), fileStats)).toBe(false);
+        expect(realpath).toHaveBeenCalledTimes(2);
+      });
+
+      it('judges a path again after it was removed, so a link that replaces a file is seen', async () => {
+        const target = path.join(root, 'Inner', 'a.d');
+        const ignored = await getIgnored(root);
+        expect(ignored(target, fileStats)).toBe(false);
+        fs.rmSync(target);
+        mockWatcher._emit('unlink', target);
+        fs.symlinkSync(path.join(outside, 'far.d'), target, 'file');
+        expect(ignored(target, fileStats)).toBe(true);
+
+        const folder = path.join(root, 'Inner', 'Deep');
+        expect(ignored(folder, dirStats)).toBe(false);
+        fs.rmSync(folder, { recursive: true });
+        mockWatcher._emit('unlinkDir', folder);
+        fs.symlinkSync(outside, folder, 'junction');
+        expect(ignored(folder, dirStats)).toBe(true);
+        expect(ignored(path.join(folder, 'far.d'), fileStats)).toBe(true);
+      });
+
+      it('sees a link created after its folder was listed', async () => {
+        const ignored = await getIgnored(root);
+        expect(ignored(path.join(root, 'Inner', 'a.d'), fileStats)).toBe(false);
+        fs.symlinkSync(path.join(outside, 'far.d'), path.join(root, 'Inner', 'new.d'), 'file');
+        fs.writeFileSync(path.join(root, 'Inner', 'plain.d'), '');
+        expect(ignored(path.join(root, 'Inner', 'new.d'), fileStats)).toBe(true);
+        expect(ignored(path.join(root, 'Inner', 'plain.d'), fileStats)).toBe(false);
+      });
     });
   });
 

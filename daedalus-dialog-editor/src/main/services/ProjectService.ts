@@ -28,7 +28,7 @@ import { MetadataWorkerPool } from './MetadataWorkerPool';
 import type { MetadataResult } from './MetadataWorkerPool';
 import { LruMap } from '../utils/lruMap';
 import { isPathInside } from '../utils/pathContainment';
-import { selectSourceFiles } from '../utils/sourceFiles';
+import { resolveSourceMembership } from '../utils/sourceFiles';
 
 function normalizeIdentifier(value: string): string {
   return value.trim().toUpperCase();
@@ -74,7 +74,32 @@ class ProjectService {
     return entry.model;
   }
   /**
-   * Recursively scan directory for .d files (or .src compilation lists).
+   * What the last index build decided the SRC lists compile. Kept so the
+   * per-file paths (a watcher event, a save) give the answer the build gave
+   * instead of putting an excluded script back into the index (#568).
+   */
+  private sourceMembership: { rootPath: string; isSource: (filePath: string) => boolean } | null = null;
+
+  /**
+   * Whether the project index holds this script. True when nothing is known:
+   * before a build, or for a file outside the indexed folder. It reflects the
+   * lists as the last build read them; a changed list needs a new build.
+   */
+  isProjectSource(filePath: string): boolean {
+    const membership = this.sourceMembership;
+    if (!membership || !isPathInside(membership.rootPath, filePath)) return true;
+    return membership.isSource(filePath);
+  }
+
+  /** The project's `.d` scripts, or its `.src` compilation lists. */
+  async scanDirectory(rootPath: string, extension: '.d' | '.src' = '.d'): Promise<string[]> {
+    const { scripts, sourceLists } = await this.scanProject(rootPath);
+    return extension === '.d' ? scripts : sourceLists;
+  }
+
+  /**
+   * Recursively scan a directory for .d files and .src compilation lists, in
+   * one walk (#573).
    *
    * Junctions and symlinks are followed only while their real path stays
    * inside the project root: `PathValidationService` refuses to read a path
@@ -85,13 +110,18 @@ class ProjectService {
    * cannot be read is logged and skipped so one bad folder does not hide the
    * rest of the project; the root itself failing is the caller's error.
    */
-  async scanDirectory(rootPath: string, extension: '.d' | '.src' = '.d'): Promise<string[]> {
-    const files: string[] = [];
+  async scanProject(rootPath: string): Promise<{ scripts: string[]; sourceLists: string[] }> {
+    const scripts: string[] = [];
+    const sourceLists: string[] = [];
     const visited = new Set<string>();
     const outsideLinks: string[] = [];
     const realRoot = await fs.realpath(rootPath);
 
-    const matchesExtension = (name: string) => path.extname(name).toLowerCase() === extension;
+    const collect = (filePath: string): void => {
+      const extension = path.extname(filePath).toLowerCase();
+      if (extension === '.d') scripts.push(filePath);
+      else if (extension === '.src') sourceLists.push(filePath);
+    };
 
     const scanRecursive = async (dir: string): Promise<void> => {
       const realDir = await fs.realpath(dir);
@@ -108,8 +138,8 @@ class ProjectService {
           promises.push(scanLink(fullPath));
         } else if (entry.isDirectory()) {
           promises.push(scanSubdirectory(fullPath));
-        } else if (entry.isFile() && matchesExtension(entry.name)) {
-          files.push(fullPath);
+        } else if (entry.isFile()) {
+          collect(fullPath);
         }
       }
 
@@ -139,8 +169,8 @@ class ProjectService {
       }
       if (stat.isDirectory()) {
         await scanSubdirectory(linkPath);
-      } else if (stat.isFile() && matchesExtension(linkPath)) {
-        files.push(linkPath);
+      } else if (stat.isFile()) {
+        collect(linkPath);
       }
     };
 
@@ -156,7 +186,7 @@ class ProjectService {
     // A path order, not an I/O-completion one: the index it feeds is
     // last-writer-wins, so an unstable order makes which file owns a name
     // declared twice differ between opens (#470).
-    return files.sort();
+    return { scripts: scripts.sort(), sourceLists: sourceLists.sort() };
   }
 
   /**
@@ -166,10 +196,10 @@ class ProjectService {
     // A reindex invalidates every previously primed model.
     this.primedModels.clear();
 
-    const [scripts, sourceLists] = await Promise.all([
-      this.scanDirectory(rootPath), this.scanDirectory(rootPath, '.src')
-    ]);
-    const allFiles = await selectSourceFiles(rootPath, scripts, sourceLists);
+    const { scripts, sourceLists } = await this.scanProject(rootPath);
+    const isSource = await resolveSourceMembership(rootPath, scripts, sourceLists);
+    this.sourceMembership = { rootPath, isSource };
+    const allFiles = scripts.filter(isSource);
 
     // Map to store dialogs by NPC
     const dialogsByNpc = new Map<string, DialogMetadata[]>();

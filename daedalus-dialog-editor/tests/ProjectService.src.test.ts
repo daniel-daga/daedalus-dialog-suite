@@ -78,7 +78,7 @@ describe('SRC-backed project indexing (#559)', () => {
     } finally { warn.mockRestore(); }
   });
 
-  it.each(['..\\outside.src', '..\\*.d', 'Missing.src'])(
+  it.each(['..\\outside.src', 'Missing.src'])(
     'does not hide errors for an unresolved or unsafe compilation entry: %s', async entry => {
       write('Gothic.src', entry + '\n');
       const file = write('Broken.d', 'func int Broken() { return 0; };\n'.repeat(2));
@@ -90,4 +90,126 @@ describe('SRC-backed project indexing (#559)', () => {
         expect(warn).toHaveBeenCalled();
       } finally { warn.mockRestore(); }
     });
+
+  describe('scoped fallback (#569)', () => {
+    let warn: jest.SpyInstance;
+    beforeEach(() => { warn = jest.spyOn(console, 'warn').mockImplementation(() => {}); });
+    afterEach(() => { warn.mockRestore(); });
+
+    it('falls back only inside the scope of the list that cannot be resolved', async () => {
+      write('Content/Gothic.src', 'Missing.src\nStory\\Live.d\n');
+      const live = write('Content/Story/Live.d', 'func void Live() {};');
+      const unlisted = write('Content/Unlisted.d', 'func void Unlisted() {};');
+      write('System/Menu.src', 'Menu\\*.d\n');
+      const menu = write('System/Menu/Main.d', 'func void MenuFunction() {};');
+      write('System/Unused.d', 'func void UnusedSystem() {};');
+      const index = await new ProjectService().buildProjectIndex(root);
+      expect(index.allFiles).toEqual([live, unlisted, menu].sort());
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('Missing.src'));
+    });
+
+    it('keeps the outer list when a nested list cannot be resolved', async () => {
+      write('Content/Gothic.src', 'Story\\Sub.src\nAI\\Used.d\n');
+      write('Content/Story/Sub.src', '..\\..\\..\\outside.src\nLive.d\n');
+      const live = write('Content/Story/Live.d', 'func void Live() {};');
+      const storyUnlisted = write('Content/Story/Unlisted.d', 'func void StoryUnlisted() {};');
+      const used = write('Content/AI/Used.d', 'func void Used() {};');
+      write('Content/AI/Reference.d', 'func void Reference() {};');
+      const index = await new ProjectService().buildProjectIndex(root);
+      expect(index.allFiles).toEqual([used, live, storyUnlisted].sort());
+    });
+
+    it('also distrusts the folder a missing nested list would have governed', async () => {
+      write('Content/Gothic.src', '..\\System\\Extra.src\n');
+      const content = write('Content/Any.d', 'func void Any() {};');
+      write('System/Menu.src', 'Menu\\*.d\n');
+      const menu = write('System/Menu/Main.d', 'func void MenuFunction() {};');
+      const maybeExtra = write('System/Extra/Maybe.d', 'func void Maybe() {};');
+      const index = await new ProjectService().buildProjectIndex(root);
+      expect(index.allFiles).toEqual([content, maybeExtra, menu].sort());
+    });
+
+    it('reads a leading separator as relative to the list, as the engine concatenates paths', async () => {
+      write('Content/Gothic.src', '\\Story\\Live.d\n/Story/Other.d\n');
+      const live = write('Content/Story/Live.d', 'func void Live() {};');
+      const other = write('Content/Story/Other.d', 'func void Other() {};');
+      write('Content/Reference.d', 'func void Reference() {};');
+      const index = await new ProjectService().buildProjectIndex(root);
+      expect(index.allFiles).toEqual([live, other].sort());
+      expect(warn).not.toHaveBeenCalled();
+    });
+
+    it('skips a script entry outside the project and keeps the rest of its list', async () => {
+      write('Content/Gothic.src', '..\\..\\Elsewhere\\Shared.d\n..\\..\\*.d\nStory\\Live.d\n');
+      const live = write('Content/Story/Live.d', 'func void Live() {};');
+      write('Content/Reference.d', 'func void Reference() {};');
+      const index = await new ProjectService().buildProjectIndex(root);
+      expect(index.allFiles).toEqual([live]);
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('Shared.d'));
+      expect(warn.mock.calls.some(([message]) => String(message).includes('indexing all scripts'))).toBe(false);
+    });
+  });
+
+  describe('one walk, one lookup per literal entry (#573)', () => {
+    it('reads each directory once and reports an outside link once', async () => {
+      write('Content/Gothic.src', 'Story\\*.d\n');
+      const live = write('Content/Story/Live.d', 'func void Live() {};');
+      const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'project-src-outside-'));
+      fs.symlinkSync(outside, path.join(root, 'Linked'), 'dir');
+      const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+      const readdir = jest.spyOn(fs.promises, 'readdir');
+      try {
+        const index = await new ProjectService().buildProjectIndex(root);
+        expect(index.allFiles).toEqual([live]);
+        const read = readdir.mock.calls.map(([dir]) => String(dir)).sort();
+        expect(read).toEqual([root, path.join(root, 'Content'), path.join(root, 'Content', 'Story')].sort());
+        expect(warn.mock.calls.filter(([message]) => String(message).includes('outside the project folder'))).toHaveLength(1);
+      } finally {
+        readdir.mockRestore();
+        warn.mockRestore();
+        fs.rmSync(outside, { recursive: true, force: true });
+      }
+    });
+
+    it('does not compile a pattern for a literal entry', async () => {
+      const { resolveSourceMembership } = await import('../src/main/utils/sourceFiles');
+      const list = write('Gothic.src', 'A.d\nSub\\B.D\nSub\\C_*.d\n');
+      const files = ['A.d', 'Sub/b.d', 'Sub/C_1.d', 'Sub/Other.d'].map(name => write(name, ''));
+      const RealRegExp = RegExp;
+      const compiled: string[] = [];
+      const spy = jest.spyOn(global, 'RegExp').mockImplementation(((source: string, flags?: string) => {
+        compiled.push(String(source));
+        return new RealRegExp(source, flags);
+      }) as never);
+      try {
+        const isSource = await resolveSourceMembership(root, files, [list]);
+        expect(files.filter(isSource)).toEqual(files.slice(0, 3));
+        // A script that appears later is judged by the same lists.
+        expect(isSource(path.join(root, 'Sub', 'c_2.D'))).toBe(true);
+        expect(isSource(path.join(root, 'Sub', 'D.d'))).toBe(false);
+      } finally { spy.mockRestore(); }
+      expect(compiled).toHaveLength(1);
+    });
+  });
+
+  describe('membership outlives the index build (#568)', () => {
+    it('answers for one file with the decision the last build made', async () => {
+      const service = new ProjectService();
+      const reference = write('Content/AI/Externals.d', 'func void Reference() {};');
+      const live = write('Content/Story/Live.d', 'func void Live() {};');
+      const list = write('Content/Gothic.src', 'STORY\\*.D\n');
+      // Nothing is known before a build, and unknown must not hide a file.
+      expect(service.isProjectSource(reference)).toBe(true);
+      await service.buildProjectIndex(root);
+      expect(service.isProjectSource(live)).toBe(true);
+      expect(service.isProjectSource(reference)).toBe(false);
+      // A script added later is judged by the same lists.
+      expect(service.isProjectSource(path.join(root, 'Content', 'Story', 'Added.d'))).toBe(true);
+      expect(service.isProjectSource(path.join(root, 'Content', 'AI', 'Added.d'))).toBe(false);
+      expect(service.isProjectSource(path.join(os.tmpdir(), 'Elsewhere.d'))).toBe(true);
+      fs.writeFileSync(list, 'Story\\*.d\nAI\\Externals.d\n');
+      await service.buildProjectIndex(root);
+      expect(service.isProjectSource(reference)).toBe(true);
+    });
+  });
 });

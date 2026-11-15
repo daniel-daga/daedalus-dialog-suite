@@ -67,8 +67,8 @@ until the next reindex.
 ## Atomic writes (FileService)
 
 `FileService.writeFile` stages to a sibling temp file
-`.<basename>.<pid>.<random>.tmp` — the name must **not** end in `.d`, so the
-chokidar watcher (which only watches `.d`) never sees temp churn — then
+`.<basename>.<pid>.<random>.tmp` — the name must **not** end in `.d` or `.src`, so the
+chokidar watcher (which only watches those) never sees temp churn — then
 `write → fsync → stat staged file → close → begin watcher write → rename`. The
 rename retries 3× with 50 ms backoff for transient Windows `EPERM`/`EBUSY` (AV
 locks). Every failure mode leaves the original file untouched and best-effort

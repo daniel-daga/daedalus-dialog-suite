@@ -15,6 +15,7 @@ const CHANGE_BATCH_WINDOW_MS = 250;
 
 const pendingChangedPaths = new Set<string>();
 let changeFlushTimer: ReturnType<typeof setTimeout> | null = null;
+let sourceListTimer: ReturnType<typeof setTimeout> | null = null;
 // Watcher work runs one task at a time, in event order: a batch still parsing
 // X would otherwise finish after a newer batch, add or unlink of X and
 // overwrite its model and index with older ones (#382, #390). A flush collects
@@ -40,6 +41,10 @@ function clearPendingChanges(): void {
     clearTimeout(changeFlushTimer);
     changeFlushTimer = null;
   }
+  if (sourceListTimer !== null) {
+    clearTimeout(sourceListTimer);
+    sourceListTimer = null;
+  }
 }
 
 function queueChangedFile(filePath: string): void {
@@ -57,7 +62,8 @@ function queueChangedFile(filePath: string): void {
  *
  * When a .d file is added, changed, or removed outside the editor, the
  * corresponding semantic model cache is invalidated and re-parsed so the
- * UI stays in sync with the file system.
+ * UI stays in sync with the file system. A change to a .src compilation list
+ * re-indexes the project.
  */
 export function useFileWatcher(): void {
   const projectPath = useProjectStore((s) => s.projectPath);
@@ -94,8 +100,26 @@ export function useFileWatcher(): void {
   }, [watchRoot]);
 }
 
+/**
+ * A compilation list was added, edited or removed: which scripts the project
+ * holds may have changed, so the whole index is taken again (#568). A bulk
+ * operation touches several lists; they share one refresh.
+ */
+function queueSourceListChange(): void {
+  if (sourceListTimer !== null) return;
+  sourceListTimer = setTimeout(() => {
+    sourceListTimer = null;
+    enqueue(() => useProjectStore.getState().refreshProjectIndex());
+  }, CHANGE_BATCH_WINDOW_MS);
+}
+
 function handleFileChange(event: FileChangeEvent): void {
   const { type, filePath } = event;
+
+  if (/\.src$/i.test(filePath)) {
+    queueSourceListChange();
+    return;
+  }
 
   switch (type) {
     case 'change':
@@ -223,6 +247,16 @@ export async function handleFileAdded(
   projectStore: ReturnType<typeof useProjectStore.getState>
 ): Promise<void> {
   const isCurrent = captureProjectSession();
+  // Main decides whether the project's SRC lists compile this file. One they
+  // leave out is not part of the project, whoever created it (#568). A failed
+  // question is not an exclusion: unknown membership must not hide a file.
+  const isSource = await window.editorAPI.isProjectSource(filePath).catch(() => true);
+  if (!isCurrent()) return;
+  if (!isSource) {
+    console.warn('[FileWatcher] Not indexing a script the SRC lists exclude:', filePath);
+    return;
+  }
+
   // Register the file path in the project
   projectStore.addProjectFile(filePath);
 

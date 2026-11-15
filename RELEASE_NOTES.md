@@ -161,3 +161,6 @@
 - #566: Closing a world or switching project while it is being saved lets the save finish instead of losing it
 - #565: World findings in Problems show their location, and Show in World jumps to them in the World Editor
 - #567: A function overload's body is indexed (spawns, routines, voice ids, calls) and listed in Problems as a hint
+- #569: A compilation list the editor cannot resolve no longer makes every other list's excluded scripts reappear
+- #568: Scripts a .src list excludes stay out of the project when they change on disk, and editing a .src re-indexes
+- #572: Watching a large project no longer resolves every file's real path on the main process

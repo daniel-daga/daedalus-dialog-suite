@@ -242,6 +242,11 @@ interface ProjectActions {
    *  what it had. Returns the models main parsed on the way, so a caller that
    *  needs them does not ask for a second parse of the same file (#473). */
   reindexFiles: (filePaths: readonly string[]) => Promise<Map<string, SemanticModel>>;
+  /**
+   * Take the whole index again without closing anything: the answer to a
+   * changed `.src` list, which moves files in and out of the project (#568).
+   */
+  refreshProjectIndex: () => Promise<void>;
   /** Forget a removed file's share of the index (#319). */
   dropFileFromIndex: (filePath: string) => void;
   /** A routine the editor just created: the NPC's declared one (`state` null)
@@ -1298,9 +1303,15 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
       while (next < filePaths.length) {
         const filePath = filePaths[next++];
         try {
-          const { index, model } = await window.editorAPI.indexFile(filePath, layouts);
-          files.set(filePath, index);
-          models.set(filePath, model);
+          const result = await window.editorAPI.indexFile(filePath, layouts);
+          if ('excluded' in result) {
+            // The SRC lists leave this script out: it has no model here, and
+            // whatever share of the index it held goes (#568).
+            files.set(filePath, EMPTY_FILE_INDEX);
+            continue;
+          }
+          files.set(filePath, result.index);
+          models.set(filePath, result.model);
         } catch (err) {
           console.error('[projectStore] Failed to re-index file:', filePath, err);
         }
@@ -1324,6 +1335,32 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
       set((state) => withFileIndexes(state, files));
     }
     return models;
+  },
+
+  refreshProjectIndex: async () => {
+    const { projectPath, scriptsRoot } = get();
+    if (!scriptsRoot) return;
+    const sessionAtStart = projectSession;
+    const rawIndex = await window.editorAPI.buildProjectIndex(scriptsRoot);
+    if (projectSession !== sessionAtStart || get().projectPath !== projectPath) return;
+    const fields = indexFields(rawIndex);
+    const indexed = new Set([...(fields.allDialogFiles ?? []), ...(fields.questFiles ?? [])]);
+    set((state) => {
+      // Only files the previous index held are forgotten: a model cached for a
+      // file opened from outside it is not the index's to drop.
+      const left = [...state.allDialogFiles, ...state.questFiles]
+        .filter((filePath) => !indexed.has(filePath) && state.parsedFiles.has(filePath));
+      if (left.length === 0) return fields;
+      const parsedFiles = new Map(state.parsedFiles);
+      for (const filePath of left) {
+        parsedFiles.delete(filePath);
+        parsedFileRecency.delete(filePath);
+      }
+      return { ...fields, parsedFiles, parseGeneration: state.parseGeneration + 1 };
+    });
+    get().loadAndMergeNpcModels(get().selectedNpc);
+    // Files that joined the index have no model yet; ingestion skips the rest.
+    void get().startBackgroundIngestion();
   },
 
   dropFileFromIndex: (filePath) => {

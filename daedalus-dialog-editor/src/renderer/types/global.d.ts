@@ -169,7 +169,9 @@ export interface EditorAPI {
   openProjectFolderDialog: () => Promise<string | null>;
   buildProjectIndex: (folderPath: string) => Promise<ProjectIndex>;
   parseDialogFile: (filePath: string) => Promise<SemanticModel>;
-  indexFile: (filePath: string, layouts: Record<string, RoutineArgIndex>) => Promise<{ index: FileIndex; model: SemanticModel }>;
+  /** Whether the project's SRC lists compile this script; main's decision (#568). */
+  isProjectSource: (filePath: string) => Promise<boolean>;
+  indexFile: (filePath: string, layouts: Record<string, RoutineArgIndex>) => Promise<IndexFileResult>;
   addAllowedPath: (folderPath: string) => Promise<void>;
   loadProjectConfig: (projectRoot: string) => Promise<OpenedProjectConfig>;
   /** The project's OutputUnit database, or null when the install has none (#264). */
@@ -317,6 +319,12 @@ export interface EditorAPI {
   openScriptInExternalEditor: (filePath: string) => Promise<void>;
   onDownloadProgress: (callback: (percent: number) => void) => () => void;
 }
+
+/**
+ * One file's share of the index, or `excluded` for a script the project's SRC
+ * lists do not compile: main decides membership and the index obeys it (#568).
+ */
+export type IndexFileResult = { index: FileIndex; model: SemanticModel } | { excluded: true };
 
 export interface FileChangeEvent {
   type: 'change' | 'add' | 'unlink';

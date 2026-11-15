@@ -712,12 +712,23 @@ export function setupIpcHandlers() {
     guardIpc('project:indexFile', 'Failed to index file', async () => {
       assertIndexFileRequest(request);
       await pathValidator.validatePathResolved(request.filePath);
+      // The SRC lists decide what the index holds, here as at the build: a
+      // script they leave out has no share of it, whoever asks (#568). Opening
+      // or saving that file directly is unaffected.
+      if (!projectService.isProjectSource(request.filePath)) return { excluded: true };
       const content = await fileService.readFile(request.filePath);
       const model = await parserService.parseSource(content);
       // The model rides along: the caller needed the file's index anyway, and
       // asking for the model separately would parse the same file twice (#473).
       // The index is built before the call sites are dropped for the renderer.
       return { index: indexFile(request.filePath, model, request.layouts), model: withoutCallSites(model) };
+    }));
+
+  // A file that appears in the project asks before it is registered (#568).
+  ipcMain.handle('project:isProjectSource', (_event, filePath: unknown) =>
+    guardIpc('project:isProjectSource', 'Failed to check SRC membership', async () => {
+      assertFilePath(filePath);
+      return projectService.isProjectSource(filePath);
     }));
 
   ipcMain.handle('project:addAllowedPath', async (_event, folderPath: unknown) => {
