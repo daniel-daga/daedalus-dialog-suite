@@ -16,6 +16,27 @@ individually resolved at call sites. Signature-aware editing would need a richer
 function identity; accepting overloads must not overwrite or merge their bodies.
 Regression coverage is in `test/semantic-error-handling.test.js`.
 
+An overload's body still runs, so its calls are indexed (#567) under the first
+signature's name, which is how every consumer already addresses a function:
+its callees are appended to that function's `calls`, and its call sites to
+`callSites` with `overload: true`. Nothing reaches `actions` or `conditions`,
+the raw entry's `sourceText` remains what a save writes, and generation is
+unchanged. The marker exists because an overload's arguments name the
+overload's parameters: the routine wrapper-layout derivation skips marked
+sites, and the main-process voice-id index reads an overload's `AI_Output`
+ids from them. The raw entry carries `overloadOf` (the first signature's key)
+and its 1-based `line`; an extension block carries neither.
+
+Still not seen in an overload body: rules that read projected actions in the
+renderer (`voice-id-*`, `output-unit-*`, `knowsinfo-dangling`,
+`choice-no-clearchoices`), since `callSites` stops at the IPC boundary.
+
+Problems reports each overload as a `function-overload` hint, so a
+redeclaration with an accidentally changed parameter list is visible without
+blocking a save. Renaming a dialog refuses when any raw entry's source names a
+renamed identifier, which includes an overload of a renamed function; the
+choice-target `renameFunction` path does not check raw entries.
+
 Dialog deletion removes only dialog/function order entries, never raw entries
 with matching names. Its existing conservative reference check also scans raw
 declaration source, retaining functions called by overloads (and their reachable

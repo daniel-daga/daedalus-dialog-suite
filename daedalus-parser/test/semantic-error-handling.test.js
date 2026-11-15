@@ -605,3 +605,74 @@ describe('nesting deeper than the JS stack (#538)', () => {
     assert.throws(() => visitor.pass2_analyzeAndLink(node), /Invalid array length/);
   });
 });
+
+// ===================================================================
+// RAW OVERLOAD BODIES IN THE PROJECT INDEX (#567)
+// ===================================================================
+
+const OVERLOAD_SOURCE = [
+  'func void B_Foo()',
+  '{',
+  '\tAI_Output (self, other, "DIA_Foo_15_00"); //First',
+  '};',
+  '',
+  '// The other signature',
+  'FUNC VOID b_foo(var int x) {',
+  '\tAI_Output(self, other, "DIA_Foo_15_01"); //Second',
+  '\tif (x) {',
+  '\t\tWld_InsertNpc(Wolf, "WP_FOREST");',
+  '\t};',
+  '\tTA_Min(self, x, 0, 20, 0, ZS_Sleep, "WP_BED");',
+  '\tB_Helper(Hlp_Random(x));',
+  '};',
+  ''
+].join('\n');
+
+test('a raw overload body is indexed without being projected (#567)', () => {
+  const model = parseSemanticModel(OVERLOAD_SOURCE);
+  assert.ok(!model.hasErrors, JSON.stringify(model.errors));
+  assert.deepEqual(Object.keys(model.functions), ['B_Foo'], 'the overload is no editable function');
+
+  const first = model.functions.B_Foo;
+  assert.equal(first.actions.length, 1, 'the overload body is not merged into the editable actions');
+  assert.equal(first.actions[0].id, 'DIA_Foo_15_00');
+  assert.equal(first.parameters, undefined);
+
+  const own = first.callSites.filter(site => !site.overload);
+  assert.deepEqual(own.map(site => site.functionName), ['AI_Output']);
+
+  const overload = first.callSites.filter(site => site.overload);
+  assert.deepEqual(
+    overload.map(site => [site.functionName, site.position.startLine]),
+    [['AI_Output', 8], ['Wld_InsertNpc', 10], ['TA_Min', 12], ['B_Helper', 13], ['Hlp_Random', 13]]
+  );
+  assert.equal(overload[0].args[2].value, 'DIA_Foo_15_01');
+  assert.equal(overload[1].args[1].value, 'WP_FOREST');
+  assert.deepEqual(first.calls, ['AI_Output', 'AI_Output', 'Wld_InsertNpc', 'TA_Min', 'B_Helper', 'Hlp_Random']);
+
+  const raw = model.declarationOrder.filter(entry => entry.type === 'raw');
+  assert.equal(raw.length, 1);
+  assert.equal(raw[0].overloadOf, 'B_Foo', 'the entry names the signature it overloads');
+  assert.equal(raw[0].line, 7);
+});
+
+test('indexing a raw overload body leaves generation byte-identical (#567)', () => {
+  const { deserializeSemanticModel } = require('../dist/semantic/semantic-model');
+  const { SemanticCodeGenerator } = require('../dist/codegen/generator');
+  const parsed = parseSemanticModel(OVERLOAD_SOURCE);
+  const generator = new SemanticCodeGenerator();
+  for (const model of [parsed, deserializeSemanticModel(JSON.parse(JSON.stringify(parsed)))]) {
+    assert.equal(generator.generateSemanticModel(model), OVERLOAD_SOURCE);
+    assert.equal(model.functions.B_Foo.callSites.filter(site => site.overload).length, 5);
+  }
+});
+
+test('a rejected duplicate signature and an extension block are not indexed as overloads (#567)', () => {
+  const model = parseSemanticModel([
+    'func void B_Foo() { First(); };',
+    'func void B_Foo() { Second(); };',
+    'META { Parser = Game; };'
+  ].join('\n'));
+  assert.deepEqual(model.functions.B_Foo.calls, ['First']);
+  assert.ok(model.declarationOrder.every(entry => entry.overloadOf === undefined));
+});

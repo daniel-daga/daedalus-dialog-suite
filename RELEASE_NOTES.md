@@ -160,3 +160,4 @@
 - #564: The NPC editor shows routines as cards with a day timeline, starts a new routine directly, and groups fields as identity, routines, combat and appearance beside the preview, marking unsaved edits; Ctrl+S saves
 - #566: Closing a world or switching project while it is being saved lets the save finish instead of losing it
 - #565: World findings in Problems show their location, and Show in World jumps to them in the World Editor
+- #567: A function overload's body is indexed (spawns, routines, voice ids, calls) and listed in Problems as a hint

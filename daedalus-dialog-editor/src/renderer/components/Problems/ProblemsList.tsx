@@ -9,6 +9,7 @@ export const RULE_LABEL: Record<ProblemRuleId, string> = {
   'knowsinfo-dangling': 'Dangling KnowsInfo',
   'choice-no-clearchoices': 'No ClearChoices',
   'orphaned-function': 'Orphaned function',
+  'function-overload': 'Function overload',
   'voice-id-duplicate': 'Duplicate voice ID',
   'voice-id-malformed': 'Malformed voice ID',
   'output-unit-stale': 'Subtitle not in the OUs',

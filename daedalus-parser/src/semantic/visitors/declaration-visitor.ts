@@ -21,7 +21,15 @@ export class DeclarationVisitor {
   private declaredNames: Record<string, Record<string, true>>;
   private pendingLeadingComments: string[];
 
-  constructor(semanticModel: SemanticModel, functionNameMap: Map<string, string>) {
+  /** Start index of each accepted additional overload → the first signature's key (#567). */
+  private overloadOwners: Map<number, string>;
+
+  constructor(
+    semanticModel: SemanticModel,
+    functionNameMap: Map<string, string>,
+    overloadOwners: Map<number, string> = new Map()
+  ) {
+    this.overloadOwners = overloadOwners;
     this.semanticModel = semanticModel;
     this.functionNameMap = functionNameMap;
     this.declaredNames = createNameRecord();
@@ -127,14 +135,19 @@ export class DeclarationVisitor {
         if (!this.claimDeclarationName('function', nameNode.text, node, signature)) {
           return;
         }
-        if (this.functionNameMap.has(nameNode.text.toLowerCase())) {
+        const firstSignature = this.functionNameMap.get(nameNode.text.toLowerCase());
+        if (firstSignature !== undefined) {
           // shortcut: name-based consumers use the first signature; preserve other overloads until signature-aware editing exists.
           this.semanticModel.declarationOrder?.push({
             type: 'raw',
             name: nameNode.text,
             sourceText: node.text,
-            leadingComments: [...this.pendingLeadingComments]
+            leadingComments: [...this.pendingLeadingComments],
+            overloadOf: firstSignature,
+            line: node.startPosition.row + 1
           });
+          // #567: pass 2 indexes this body's calls under the first signature.
+          this.overloadOwners.set(node.startIndex, firstSignature);
           return;
         }
         const func = new DialogFunction(nameNode.text, typeNode.text);

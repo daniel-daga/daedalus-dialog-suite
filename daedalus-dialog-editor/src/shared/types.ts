@@ -627,6 +627,9 @@ export interface ParsedArg {
 export interface FunctionCallSite {
   functionName: string;
   args: ParsedArg[];
+  /** A call in the body of an additional overload (#567): indexed under the
+   *  first signature's name, written against the overload's own parameters. */
+  overload?: true;
   position: { startLine: number; startColumn: number; endLine: number; endColumn: number };
 }
 
@@ -863,6 +866,10 @@ export interface SemanticModel {
     name: string;
     /** Verbatim extension syntax (#392) or an additional function overload (#557). */
     sourceText?: string;
+    /** On a `raw` function overload only (#567): the first signature's key in `functions`. */
+    overloadOf?: string;
+    /** 1-based line a `raw` function overload starts on (#567). */
+    line?: number;
     leadingComments?: string[];
     /** Blank lines before the declaration and its leading comments, as parsed (#286) */
     blankLinesBefore?: number;

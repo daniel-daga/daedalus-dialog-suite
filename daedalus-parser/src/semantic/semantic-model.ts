@@ -875,6 +875,13 @@ export interface FunctionParameter {
 export interface FunctionCallSite {
   functionName: string;
   args: ParsedArg[];
+  /**
+   * True for a call in the body of an additional overload (#567), which is
+   * indexed under the first signature's name but is not part of that
+   * function's body: its arguments name the overload's parameters, and no
+   * action or condition was projected from it.
+   */
+  overload?: true;
   position: {
     startLine: number;
     startColumn: number;
@@ -908,6 +915,10 @@ export class DialogFunction {
   };
   /** 1-based line the declaration starts on — its `func` keyword (#267). */
   public line?: number;
+  /**
+   * Every callee in the body, then those of any additional overloads of the
+   * same name (#567) — a name-based reference list, not an editable body.
+   */
   public calls: string[];
   public callSites: FunctionCallSite[];
 
@@ -1280,6 +1291,14 @@ export interface SemanticModel {
      * function overload (#557) carried without projecting it into the model.
      */
     sourceText?: string;
+    /**
+     * On a `raw` function overload only (#567): the key in `functions` of the
+     * first signature, which the overload's calls are indexed under. Absent on
+     * an extension block. This is what tells the two kinds of `raw` apart.
+     */
+    overloadOf?: string;
+    /** 1-based line a `raw` function overload starts on (#567). */
+    line?: number;
     leadingComments?: string[];
     /** Blank lines before the declaration and its leading comments, as parsed (#286) */
     blankLinesBefore?: number;

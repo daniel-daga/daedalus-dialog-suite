@@ -19,6 +19,8 @@ export type ProblemRuleId =
   | 'knowsinfo-dangling'
   | 'choice-no-clearchoices'
   | 'orphaned-function'
+  // A second signature of a function name, kept as raw source (#567).
+  | 'function-overload'
   | 'voice-id-duplicate'
   | 'voice-id-malformed'
   // The scripts against the OutputUnit database the game reads (#264).
@@ -174,6 +176,11 @@ export interface FileFacts {
    * anywhere else, and retail names 1,154 routines this way and no other.
    */
   instanceRefs: string[];
+  /**
+   * Additional signatures of a function this file already declares (#567):
+   * the first signature's name and the line the overload starts on.
+   */
+  overloads: Array<{ name: string; line?: number }>;
 }
 
 /** One file's facts together with its path. */
