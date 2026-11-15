@@ -117,8 +117,12 @@ Four decisions worth keeping:
 `information`/`condition` function, so clicking any problem navigates to a
 dialog via `useNavigation().navigateToDialog(dialogName, functionName)`. A
 problem with only a standalone function falls back to `navigateToSymbol`. A
-portal finding is the one world locus, with no file to open: its click frames the
-polygon in the open World view instead.
+portal finding is the one world locus, with no file to open. Its row click stays
+in Problems like every other (#560) and the details pane shows the world file
+and the waypoint, VOB or polygon the locus carries. Where `worldFocusOf` answers
+a focus, the pane's **Show in World** button requests it on the world store and
+switches to the World view (#565); the button is disabled, with the reason,
+while no world is open, and absent for a locus with nothing to frame.
 
 Both navigators search the merged semantic model, which only covers files that
 have been opened — and `waypoint-not-in-world` and `duplicate-spawn` take their sites

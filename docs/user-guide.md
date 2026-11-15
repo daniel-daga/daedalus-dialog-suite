@@ -105,7 +105,8 @@ The Problems panel lists syntax errors and project-wide checks, for example a
 dangling `Npc_KnowsInfo`, overlapping routines, or a routine waypoint that the
 world does not have. Click any problem to inspect its full message and location
 inside Problems, without switching editors or opening a file. World findings can
-be inspected even when no world is open.
+be inspected even when no world is open; with the world open, **Show in World**
+in the details jumps to the waypoint, object or portal polygon in the World Editor.
 
 Combine **Type** (error, warning, hint), **Location** (scripts, world, or an
 individual file) and **Kind** (the check) to narrow the list. **Search problems**

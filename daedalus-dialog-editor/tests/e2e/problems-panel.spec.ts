@@ -1,4 +1,6 @@
 import { test, expect } from '@playwright/test';
+import { resolve } from 'node:path';
+import { viteFsUrl } from '../viteFsUrl';
 
 /**
  * E2E for the project-wide Problems panel.
@@ -216,6 +218,70 @@ FUNC VOID DIA_Ou_Test_Info()
 \tAI_Output(other, self, "DIA_Ou_Test_03_01"); //Ganz neu.
 };
 `;
+
+test.describe('Problems panel: a world finding', () => {
+  // #565: the row click stays in Problems (#560) and shows where the finding
+  // is; the explicit button is the way to it in the World view.
+  test('shows where a portal finding is and offers the way to it in the World view', async ({ page }) => {
+    const warnings: string[] = [];
+    page.on('console', (message) => { if (message.type() === 'warning') warnings.push(message.text()); });
+    await page.goto('/');
+    await expect(page.getByText('Welcome to Dandelion')).toBeVisible();
+    await page.evaluate(() => localStorage.setItem('mockapi_file_probworld/world.d', '// empty\n'));
+    page.on('dialog', async (dialog) => {
+      if (dialog.message().includes('project folder path')) await dialog.accept('probworld');
+      else await dialog.dismiss();
+    });
+    await page.getByRole('button', { name: /Open Project/i }).first().click();
+
+    // The mock backend has no world; the finding is what the zenkit worker
+    // would compute over the mesh, and reaches Problems the real way — the
+    // World surface reads it on open and the scan picks it up from the store.
+    await page.getByTestId('world-toggle').click();
+    await page.evaluate(async (fixturePath) => {
+      const { SUMMARY, vobIndex, BASE_PROPS } = await import(/* @vite-ignore */ fixturePath);
+      const api = (window as unknown as { editorAPI: Record<string, unknown> }).editorAPI;
+      api.listWorlds = async () => [{ path: SUMMARY.worldPath, name: 'NewWorld.zen', source: 'C:/Gothic', isDefault: false }];
+      api.openWorld = async () => ({ ...SUMMARY, assetSources: [], vobIndex: vobIndex([[0, 0, 0]]) });
+      api.getWorldMesh = async () => ({ groups: [], bbox: SUMMARY.bbox });
+      api.getWorldVisuals = async () => ({ visuals: [], decals: { groups: [], count: 0 }, stats: {
+        visualsSeen: 0, visualsResolved: 0, vobsPlaced: 0, instancedDrawGroups: 0,
+        levelCompos: 0, unresolvedByType: {}, unresolved: [],
+      } });
+      api.getWorldItemInstances = async () => ({ vobs: [], instances: [] });
+      api.getVobProps = async () => ({ class: 'zCVob', ...BASE_PROPS });
+      api.getVobFolders = async () => ({ folders: [] });
+      api.getWorldHistoryDepth = async () => ({ undo: 0, redo: 0 });
+      api.getWorldPortalFindings = async () => [{
+        kind: 'portal-reversed', material: 'P:CAPTAIN_', polygon: 456754, sector: 'CAPTAIN',
+        corners: [[10, 0, 0], [10, 100, 0], [10, 100, 100], [10, 0, 100]],
+      }];
+    }, viteFsUrl(resolve(__dirname, '../worldFixtures.ts')));
+    await page.getByTestId('world-open').click();
+    await page.getByTestId('world-picker-entry-NewWorld.zen').click();
+    await expect(page.getByRole('treeitem').first()).toBeVisible();
+
+    await page.getByTestId('problems-toggle').click();
+    const panel = page.getByTestId('problems-panel');
+    const row = panel.getByTestId(/^problem-row-\d+$/).filter({ hasText: 'P:CAPTAIN_' });
+    await expect(row).toContainText('World · polygon 456754');
+    await row.click();
+
+    // The click inspects; it does not leave Problems.
+    await expect(page.getByTestId('problems-toggle')).toHaveAttribute('aria-pressed', 'true');
+    await expect(panel.getByRole('heading', { name: 'Portal reversed', exact: true })).toBeVisible();
+    await expect(panel).toContainText('World: C:/Gothic/NewWorld.zen');
+    await expect(panel).toContainText('Polygon: 456754');
+
+    await panel.getByRole('button', { name: 'Show in World', exact: true }).click();
+    await expect(page.getByTestId('world-toggle')).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.getByTestId('problems-panel')).toBeHidden();
+    await expect(page.getByRole('treeitem').first()).toBeVisible();
+    // The surface took the request and framed the polygon: a jump that does
+    // not land is reported, not swallowed.
+    expect(warnings.filter((text) => text.includes('Could not jump'))).toEqual([]);
+  });
+});
 
 test.describe('Problems panel: updating the OU database', () => {
   test('writes the stale and missing subtitles, and the findings clear', async ({ page }) => {

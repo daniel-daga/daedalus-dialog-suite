@@ -67,8 +67,8 @@ export type WorldFocus =
 
 /**
  * The focus a world locus asks for, or null when the locus names nothing the
- * surface can jump to. The panel uses it twice — to decide whether the row is
- * clickable at all, and to build the request the click sends.
+ * surface can jump to. The Problems details pane uses it twice — to decide
+ * whether "Show in World" is offered at all, and to build the request it sends.
  */
 export const worldFocusOf = (locus: WorldLocus): WorldFocus | null => {
   if (locus.vob !== undefined) return { kind: 'vob', vob: locus.vob };
