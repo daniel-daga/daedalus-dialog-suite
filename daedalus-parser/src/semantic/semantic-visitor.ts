@@ -12,6 +12,8 @@ import { createNameRecord } from './name-utils';
 export class SemanticModelBuilderVisitor {
   public semanticModel: SemanticModel;
   private functionNameMap: Map<string, string>; // Maps lowercase name -> original name
+  /** Pass 1 → pass 2: start index of each additional overload → first signature's key (#567). */
+  private overloadOwners = new Map<number, string>();
 
   constructor() {
     this.semanticModel = {
@@ -48,7 +50,7 @@ export class SemanticModelBuilderVisitor {
     // writes the file back the way it was written.
     const firstNewline = node.text.indexOf('\n');
     this.semanticModel.lineEnding = firstNewline > 0 && node.text[firstNewline - 1] === '\r' ? '\r\n' : '\n';
-    const declarationVisitor = new DeclarationVisitor(this.semanticModel, this.functionNameMap);
+    const declarationVisitor = new DeclarationVisitor(this.semanticModel, this.functionNameMap, this.overloadOwners);
     declarationVisitor.visit(node);
   }
 
@@ -60,7 +62,7 @@ export class SemanticModelBuilderVisitor {
    * Second pass: Link properties and analyze function bodies
    */
   pass2_analyzeAndLink(node: TreeSitterNode): void {
-    const linkingVisitor = new LinkingVisitor(this.semanticModel, this.functionNameMap);
+    const linkingVisitor = new LinkingVisitor(this.semanticModel, this.functionNameMap, this.overloadOwners);
     try {
       linkingVisitor.visit(node);
     } catch (error) {

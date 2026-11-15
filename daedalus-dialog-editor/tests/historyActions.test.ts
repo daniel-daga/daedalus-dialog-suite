@@ -724,6 +724,28 @@ describe('historyActions – renameDialog', () => {
     expect(getModel()?.functions['DIA_Npc_Hello_Info']).toBeDefined();
   });
 
+  it('refuses a rename that would leave a raw overload under the old name (#567)', () => {
+    useFileStore.setState((state) => {
+      const fileState = state.openFiles.get(filePath)!;
+      fileState.semanticModel = {
+        ...fileState.semanticModel,
+        declarationOrder: [
+          { type: 'dialog', name: 'DIA_Npc_Hello' },
+          { type: 'function', name: 'DIA_Npc_Hello_Info' },
+          {
+            type: 'raw', name: 'dia_npc_hello_info', overloadOf: 'DIA_Npc_Hello_Info',
+            sourceText: 'func void dia_npc_hello_info(var int x) {};',
+          },
+        ],
+      } as any;
+    });
+
+    expect(() => historyActions.renameDialog(filePath, 'DIA_Npc_Hello', 'DIA_Npc_Greeting', true))
+      .toThrow(/preserved source refers/i);
+    expect(getModel()?.dialogs['DIA_Npc_Hello']).toBeDefined();
+    expect(getModel()?.functions['DIA_Npc_Hello_Info']).toBeDefined();
+  });
+
   it('leaves class/prototype declarationOrder entries unrenamed', () => {
     // renameDialog only rewrites 'dialog'/'function' declarationOrder entries;
     // 'class'/'prototype' entries (parser fix P1) must pass through untouched.

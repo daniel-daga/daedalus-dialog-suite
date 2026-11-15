@@ -103,5 +103,10 @@ export function extractFileFacts(model: SemanticModel): FileFacts {
     npcNames.push(npc.name);
   }
 
-  return { dialogs, functions, npcNames, instanceRefs: [...instanceRefs] };
+  // Only an overload carries `overloadOf`; an extension block is `raw` too.
+  const overloads = (model.declarationOrder || [])
+    .filter((entry) => entry.type === 'raw' && entry.overloadOf !== undefined)
+    .map((entry) => ({ name: entry.overloadOf as string, line: entry.line }));
+
+  return { dialogs, functions, npcNames, instanceRefs: [...instanceRefs], overloads };
 }

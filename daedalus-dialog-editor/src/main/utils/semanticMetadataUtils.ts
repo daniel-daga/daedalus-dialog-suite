@@ -155,6 +155,13 @@ const extractVoiceIds = (semanticModel: SemanticModel): Array<{ id: string; func
   const voiceIds: Array<{ id: string; functionName: string; line?: number }> = [];
   for (const [functionName, func] of Object.entries(semanticModel.functions || {})) {
     collectDialogLineVoiceIds(func.actions || [], functionName, voiceIds);
+    // An additional overload's body is not projected into actions (#557), so
+    // its lines are read off the call sites the parser indexed for it (#567).
+    for (const call of func.callSites || []) {
+      if (!call.overload || call.functionName.toLowerCase() !== 'ai_output' || call.args?.length !== 3) continue;
+      const id = call.args[2];
+      if (id.isString && id.value) voiceIds.push({ id: id.value, functionName, line: call.position.startLine });
+    }
   }
   return voiceIds;
 };
@@ -352,6 +359,8 @@ export function buildRoutineParamIndex(
         if (parameterAt.size === 0) continue;
 
         for (const call of func.callSites || []) {
+          // An overload's call names the overload's parameters, not these (#567).
+          if (call.overload) continue;
           const carrier = index[call.functionName.toLowerCase()];
           if (!carrier) continue;
 

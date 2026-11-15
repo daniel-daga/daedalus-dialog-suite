@@ -61,6 +61,7 @@ scans the condition/action text the parser left unstructured:
 | `knowsinfo-dangling` | error | a `Npc_KnowsInfo` dialog ref names no known dialog, whether the parser structured it or left it in raw body/guard text |
 | `choice-no-clearchoices` | warning | an `Info_AddChoice` with no `Info_ClearChoices` reachable via the choice-target chain |
 | `orphaned-function` | warning | function referenced by no dialog property, choice target, or `calls` entry |
+| `function-overload` | hint | a function name declared again in one file with a different parameter list; the parser keeps the additional signature as raw source (#567), so an accidental one is otherwise silent |
 | `voice-id-duplicate` / `voice-id-malformed` | warning | a voice id used cross-file, or not matching `…_<n>_<n>` |
 | `output-unit-stale` / `output-unit-missing` | warning | the OutputUnit database holds different text for an `AI_Output` line, or no entry at all; these two rows carry the line the panel's **Update OUs** writes, and are silent when no database was found |
 | `waypoint-not-in-world` | warning | a script site names a waypoint the open world's waynet has no point for; silent when no world is open, and free points are matched by prefix because the engine matches them that way |
@@ -97,7 +98,7 @@ Four decisions worth keeping:
   `C_NPC` instances too; dialog can, and it takes the same corpus to **4**
   findings. Same NPC at the *same* point twice is not this rule (598 retail site
   pairs do it deliberately, a pack on one waypoint).
-- **`routine-mob-missing` is the one hint.** Without its mob a state stands
+- **`routine-mob-missing` is a hint.** Without its mob a state stands
   at the waypoint, so a miss is cosmetic, and retail does it on purpose: of
   1,537 such entries, 1,451 have the mob within 5 m and 80 are beyond 20 m,
   37 of them parked at `TOT` and most of the rest dead NPCs posed with a sleep

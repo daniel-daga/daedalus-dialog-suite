@@ -4,6 +4,7 @@ import { npcNotFoundRule } from './rules/npcNotFound';
 import { knowsInfoDanglingRule } from './rules/knowsInfoDangling';
 import { choiceNoClearChoicesRule } from './rules/choiceNoClearChoices';
 import { orphanedFunctionRule } from './rules/orphanedFunction';
+import { functionOverloadRule } from './rules/functionOverload';
 import { voiceIdRule } from './rules/voiceId';
 import { outputUnitDriftRule } from './rules/outputUnitDrift';
 import { waypointNotInWorldRule } from './rules/waypointNotInWorld';
@@ -19,6 +20,7 @@ export const ALL_RULES: readonly LintRule[] = [
   knowsInfoDanglingRule,
   choiceNoClearChoicesRule,
   orphanedFunctionRule,
+  functionOverloadRule,
   voiceIdRule,
   outputUnitDriftRule,
   waypointNotInWorldRule,

@@ -664,6 +664,14 @@ export const useFileStore = create<FileStore>()(immer((set, get) => ({
           throw new Error('Cannot rename dialog safely: preserved source refers to a renamed identifier');
         }
       }
+      // A raw declaration is source alone: an additional overload of a renamed
+      // function would stay behind under the old name (#567), and any raw body
+      // naming a renamed identifier would keep calling it.
+      for (const entry of model.declarationOrder || []) {
+        if (entry.type === 'raw' && containsRenamedIdentifier(entry.sourceText || '')) {
+          throw new Error('Cannot rename dialog safely: preserved source refers to a renamed identifier');
+        }
+      }
       for (const currentDialog of Object.values(model.dialogs) as Dialog[]) {
         if (opaqueActionText((currentDialog as any).actions || []).some(containsRenamedIdentifier)) {
           throw new Error('Cannot rename dialog safely: preserved source refers to a renamed identifier');
