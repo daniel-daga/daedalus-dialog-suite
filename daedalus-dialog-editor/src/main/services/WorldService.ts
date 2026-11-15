@@ -66,10 +66,16 @@ interface Pending {
   reject: (reason: Error) => void;
   resolve: (value: never) => void;
   timer: NodeJS.Timeout;
+  /** When `timer` fires — a close that waits a write out waits no longer. */
+  deadline: number;
   op: WorldWorkerOp;
   worldPath: string | null;
   phase: string;
 }
+
+/** The requests that write to disk. Killing the worker inside one loses the
+ *  write, so `close()` lets one that is in flight finish (#566). */
+const DISK_WRITES: ReadonlySet<WorldWorkerOp> = new Set<WorldWorkerOp>(['save']);
 
 export class WorldService {
   private worker: WorldWorker | null = null;
@@ -82,6 +88,9 @@ export class WorldService {
   private failure: WorkerRequestError | null = null;
   /** The worker's latest phase message identifies its synchronous call. */
   private activeRequestId: string | null = null;
+  /** Closed workers still finishing a write, each with the request it is
+   *  inside — see `close`. No longer `this.worker`: nothing new reaches them. */
+  private draining = new Map<WorldWorker, { id: string; pending: Pending }>();
   // The authoritative history (§7). A batch is one entry. Both stacks belong to
   // the world that is open: an op addresses a VOB by its index path down *that*
   // world's tree, and replayed against the next one it would resolve to
@@ -89,7 +98,7 @@ export class WorldService {
   private undoStack: WorldOp[][] = [];
   private redoStack: WorldOp[][] = [];
   /**
-   * Which world the stacks belong to, bumped by every `openWorld`.
+   * Which world the stacks belong to, bumped by every `openWorld` and `close`.
    *
    * An edit is recorded *after* the worker confirms it, and an open is not
    * serialized behind edits (see `openWorld`), so a batch sent before an open
@@ -468,10 +477,43 @@ export class WorldService {
     return ops;
   }
 
+  /**
+   * End the open world and its worker.
+   *
+   * Everything waiting is rejected and the worker is killed — except a write
+   * that is already in flight (#566). `terminate()` is a SIGKILL, and since the
+   * worker became a process (#543) it lands in the middle of the native
+   * `saveWorld`: the save is lost, its `<target>.tmp` is left behind, and the
+   * caller is told only that the world was closed. So that one request stays
+   * pending on a worker that is otherwise let go: its caller gets the real
+   * answer, and the worker is killed once it has given it. The wait is bounded
+   * by the request's own timeout, which still kills a wedged worker.
+   *
+   * "In flight" is the oldest pending request: the worker is synchronous and
+   * answers in the order it was posted to, so everything behind it has not
+   * started. Those are still rejected, and the worker dies before it gets far
+   * with them — they are reads, because writes are `serialized` and the next
+   * one is not posted until this one answers, by which time it is refused.
+   */
   close(): void {
+    const worker = this.worker;
+    const oldest = this.pending.entries().next().value;
+    if (worker !== null && oldest !== undefined && DISK_WRITES.has(oldest[1].op)) {
+      const [id, pending] = oldest;
+      this.pending.delete(id);
+      clearTimeout(pending.timer);
+      pending.timer = setTimeout(() => this.settleDraining(worker, (write) => write.reject(new WorkerRequestError(
+        `${write.op} did not answer in ${this.requestTimeoutMs} ms — the world worker was stopped`, 'world-timeout',
+      ))), Math.max(0, pending.deadline - Date.now()));
+      this.draining.set(worker, { id, pending });
+    }
     this.failure ??= new WorkerRequestError('The world was closed', 'world-closed');
     this.rejectAll(this.failure);
+    this.activeRequestId = null;
     this.worldPath = null;
+    // A write still finishing must find the world it wrote gone: `saveWorldAs`
+    // would otherwise move the open path onto a closed world.
+    this.generation += 1;
     this.assetSources = null;
     this.openingWorld = null;
     // The stacks belong to the world that was open — `openWorld` says why —
@@ -481,8 +523,37 @@ export class WorldService {
     // on reporting a closed world's depths where every other read refuses.
     this.undoStack = [];
     this.redoStack = [];
-    void this.worker?.terminate();
+    if (worker !== null && !this.draining.has(worker)) void worker.terminate();
     this.worker = null;
+  }
+
+  /** Answer the write a closed worker was kept alive for, and end the worker. */
+  private settleDraining(worker: WorldWorker, settle: (write: Pending) => void): void {
+    const kept = this.draining.get(worker);
+    if (kept === undefined) return;
+    this.draining.delete(worker);
+    clearTimeout(kept.pending.timer);
+    settle(kept.pending);
+    void worker.terminate();
+  }
+
+  private handleDrainingMessage(worker: WorldWorker, message: WorldWorkerResponse): void {
+    const kept = this.draining.get(worker);
+    if (kept === undefined || kept.id !== message.id) return;
+    if (!('ok' in message)) {
+      kept.pending.phase = message.phase;
+      return;
+    }
+    this.settleDraining(worker, (write) => {
+      if (message.ok) write.resolve(message.result as never);
+      else write.reject(new Error(message.error));
+    });
+  }
+
+  private handleDrainingDeath(worker: WorldWorker, error: Error): void {
+    this.settleDraining(worker, (write) => write.reject(new WorkerRequestError(
+      `The world worker died${describeRequest(write)} (${error.message})`, 'world-crashed',
+    )));
   }
 
   private startWorker(): void {
@@ -495,17 +566,26 @@ export class WorldService {
     // already been replaced would otherwise be taken as the death of its
     // successor: it rejects the fresh open, nulls the new reference (leaving
     // that worker running and unreachable) and reports a dead worker that is
-    // perfectly alive.
+    // perfectly alive. What a replaced worker may still do is answer — or die
+    // inside — the one write `close()` kept it alive for, and that settles
+    // only that write.
     const mine = (): boolean => this.worker === worker;
-    worker.on('error', (error) => { if (mine()) this.handleWorkerDeath(error); });
+    const died = (error: Error): void => {
+      if (mine()) this.handleWorkerDeath(error);
+      else this.handleDrainingDeath(worker, error);
+    };
+    worker.on('error', died);
     worker.on('exit', (code, signal) => {
       // A clean exit is a dead worker too: nothing in the worker calls
       // `process.exit`, but taking only non-zero codes as death would leave
       // every pending request waiting out the full timeout if anything ever
       // does.
-      if (mine()) this.handleWorkerDeath(new Error(`zenkit worker ${signal ? 'was' : 'exited with'} ${describeExit(code, signal ?? null)}`));
+      died(new Error(`zenkit worker ${signal ? 'was' : 'exited with'} ${describeExit(code, signal ?? null)}`));
     });
-    worker.on('message', (message) => { if (mine()) this.handleMessage(message); });
+    worker.on('message', (message) => {
+      if (mine()) this.handleMessage(message);
+      else this.handleDrainingMessage(worker, message);
+    });
     this.worker = worker;
   }
 
@@ -543,6 +623,7 @@ export class WorldService {
         resolve: resolve as (value: never) => void,
         reject,
         timer,
+        deadline: Date.now() + this.requestTimeoutMs,
         op,
         worldPath: requestedWorldPath,
         phase: op,
@@ -587,7 +668,9 @@ export class WorldService {
    * call (`loadWorld`, `saveWorld`, `commitOps`) where a thread's `terminate()`
    * could only wait for that call to return. A save killed mid-write can still
    * leave a `<target>.tmp` behind — the native writer replaces the target
-   * atomically, so the target itself is whole. `exit` arrives asynchronously,
+   * atomically, so the target itself is whole. That is the price of stopping a
+   * wedged worker, and why `close()` does not pay it for a save that is merely
+   * still running. `exit` arrives asynchronously,
    * after the next `openWorld` may already have started a successor, which is
    * why the handlers registered in `startWorker` are scoped to their own worker.
    */
@@ -610,11 +693,7 @@ export class WorldService {
     const inFlight = this.activeRequestId === null
       ? this.pending.values().next().value as Pending | undefined
       : this.pending.get(this.activeRequestId);
-    const context = inFlight === undefined
-      ? ''
-      : ` during ${inFlight.op}${inFlight.worldPath === null
-        ? ''
-        : ` for ${JSON.stringify(inFlight.worldPath)}`} at ${inFlight.phase}`;
+    const context = inFlight === undefined ? '' : describeRequest(inFlight);
     this.activeRequestId = null;
     this.failure = new WorkerRequestError(
       `The world worker died${context} (${error.message}) — reopen the world`, 'world-crashed',
@@ -635,6 +714,12 @@ export class WorldService {
     }
     this.pending.clear();
   }
+}
+
+/** Where a worker was when it died: the request, its world and its phase. */
+function describeRequest(request: Pending): string {
+  const world = request.worldPath === null ? '' : ` for ${JSON.stringify(request.worldPath)}`;
+  return ` during ${request.op}${world} at ${request.phase}`;
 }
 
 function resolveWorkerPath(override?: string): string {

@@ -158,3 +158,4 @@
 - #544: Opening a project skips links that lead outside its folder, so it lists no files the editor refuses to open
 - #561: Simplify the top bar with a project dropdown, a single theme menu, and compact project actions.
 - #564: The NPC editor shows routines as cards with a day timeline, starts a new routine directly, and groups fields as identity, routines, combat and appearance beside the preview, marking unsaved edits; Ctrl+S saves
+- #566: Closing a world or switching project while it is being saved lets the save finish instead of losing it
