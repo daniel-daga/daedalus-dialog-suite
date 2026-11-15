@@ -310,7 +310,12 @@ jobs:
     name: E2E Tests (real Electron)
     runs-on: ubuntu-latest
     steps:
+      # submodules: the addon below is built from vendor/ZenKit sources; without
+      # this it checks out as an uninitialized gitlink (see build-windows.yml's
+      # e2e-electron-windows, which pins the same two things for the same reason).
       - uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
@@ -323,8 +328,15 @@ jobs:
           node-version: '20'
           cache: pnpm
 
+      # ZENKIT_NODE_FORCE_BUILD: without it, zenkit-node/scripts/install.js
+      # skips the source build in CI. The 25 world specs then skip themselves
+      # for want of the addon, and the NPC editor's preview cannot mount assets
+      # (`world:ensureNpcPreviewAssets` → the worker dies, "No native build was
+      # found"). Same pin as build-windows.yml's e2e-electron-windows.
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+        env:
+          ZENKIT_NODE_FORCE_BUILD: '1'
 
       # Builds dist/main + dist/renderer, which the harness launches with
       # NODE_ENV=production. Electron itself comes from the pnpm install

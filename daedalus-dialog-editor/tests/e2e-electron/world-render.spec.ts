@@ -15,9 +15,9 @@ import { launchApp, seedProjectDir, type AppFixture } from './harness';
  * `scripts/verify-world-render.js` already uses against a real Gothic
  * install) to prove the mesh was actually drawn, not just fetched.
  *
- * Runs wherever the native addon is present for the dev build — this repo's
- * `e2e-electron-windows` job (build-windows.yml) sets
- * `ZENKIT_NODE_FORCE_BUILD=1` before `pnpm install` for exactly this spec.
+ * Runs wherever the native addon is present for the dev build — both of this
+ * repo's real-Electron jobs set `ZENKIT_NODE_FORCE_BUILD=1` before
+ * `pnpm install` for exactly this spec.
  */
 
 const FIXTURE_WORLD = path.resolve(
@@ -50,12 +50,11 @@ function writeProjectFile(projectDir: string, installDir: string): void {
   );
 }
 
-// The ubuntu `editor-e2e-electron` job runs this same testDir but never
-// force-builds the native addon (`zenkit-node/scripts/install.js` skips the
-// source build in CI unless `ZENKIT_NODE_FORCE_BUILD=1`, which only
-// `e2e-electron-windows` sets) — `WorldService` would just reject every open.
-// This checks the same thing that job's own runtime would, from the test
-// process, which is a pnpm-workspace sibling of the addon it is asking about.
+// Both real-Electron jobs force-build the native addon, so the skip is for a
+// local run without one (`zenkit-node/scripts/install.js` skips the source
+// build in CI unless `ZENKIT_NODE_FORCE_BUILD=1`). Without it `WorldService`
+// would just reject every open. This checks the same thing the job's own
+// runtime would, from the test process, a pnpm-workspace sibling of the addon.
 let addonAvailable = true;
 try {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
