@@ -27,7 +27,8 @@ test.describe('NPC editor (disk truth)', () => {
     await expect(page.getByText(NPC)).toBeVisible({ timeout: 20000 });
     await page.getByRole('button', { name: `Edit NPC ${NPC}` }).click();
 
-    const editor = page.getByRole('dialog', { name: `NPC ${NPC}` });
+    // #564: the header names the NPC, then instance, guild, level and file.
+    const editor = page.getByRole('dialog', { name: new RegExp(NPC) });
     await expect(editor).toBeVisible();
     await expect(editor.getByLabel('Level')).toHaveValue('20');
     await editor.getByLabel('Level').fill('25');

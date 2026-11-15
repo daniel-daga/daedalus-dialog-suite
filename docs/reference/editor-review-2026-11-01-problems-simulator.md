@@ -54,7 +54,7 @@ by one of them, not inferred. No repository file was edited except this report.
 | Rule | Test |
 |---|---|
 | a re-scan reuses the per-file facts of every model whose identity did not change | `tests/problemsStore.scanScheduling.test.ts:128`, `:160` |
-| a scan during ingestion is deferred to exactly one scan when ingestion ends, and debounced after that | `tests/problemsStore.scanScheduling.test.ts:60`, `:84`, `tests/ProblemsPanel.scanScheduling.test.tsx` |
+| a scan during ingestion is deferred to exactly one scan when ingestion ends, and debounced after that | `tests/problemsStore.scanScheduling.test.ts:60`, `:84` |
 | the world-dependent rules say nothing when no world is open | `tests/problemsWaypointNotInWorld.test.ts:32` |
 | a free point matches the way the engine matches one, the empty name matches nothing, and an ordinary waypoint does not fragment-match | `tests/problemsWaypointNotInWorld.test.ts:104`, `:115`, `:124`, `:138`, `:154` |
 | a rule fed by the index emits one row per site, not one per call | `tests/problemsWaypointNotInWorld.test.ts:81`, `tests/problemsDuplicateSpawn.test.ts:93` |

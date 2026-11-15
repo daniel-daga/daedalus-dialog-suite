@@ -414,8 +414,8 @@ findings below are in paths the doc does not cover.
   (the expensive per-file walks, `problems/domain/fileFacts.ts`, WeakMap on
   model identity), not rule output — every rule has cross-file inputs, so
   cross-file aggregation re-runs per scan and results stay byte-identical.
-  Guarded by `tests/problemsStore.scanScheduling.test.ts` and
-  `tests/ProblemsPanel.scanScheduling.test.tsx`; documented in
+  Guarded by `tests/problemsStore.scanScheduling.test.ts` (scheduling moved
+  from the panel's mount to `storeSync`, #563); documented in
   `docs/architecture/render-performance.md`. (F18 single-file-mode emptiness
   left as-is, per scope.)
 - ~~**`QuestList` is O(quests × all functions)** — still open, and now the

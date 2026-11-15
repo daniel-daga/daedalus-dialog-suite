@@ -386,8 +386,9 @@ a growing file set, O(n²) blocking work across the ingestion window. Now:
 
 Guarded by `tests/problemsStore.scanScheduling.test.ts` (scan-call counts
 across an ingestion window, debounce coalescing, extraction counts per model
-identity, changed-cross-file-input soundness) and
-`tests/ProblemsPanel.scanScheduling.test.tsx`.
+identity, changed-cross-file-input soundness). Scheduling is `storeSync`'s, not
+the panel's: `tests/ProblemsPanel.scanScheduling.test.tsx` covers only the
+manual Rescan button.
 
 ## QuestList: single-pass batch quest analysis (P1, 2026-08-23)
 

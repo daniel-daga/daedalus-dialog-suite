@@ -9,6 +9,8 @@ jest.mock('../src/renderer/hooks/useNavigation', () => ({
   useNavigation: () => ({ navigateToDialog: jest.fn(), navigateToSymbol: jest.fn() })
 }));
 
+// Scheduling belongs to storeSync, not to the panel's mount: see
+// problemsStore.scanScheduling.test.ts (#563).
 describe('ProblemsPanel scan scheduling', () => {
   const originalActions = {
     runScan: useProblemsStore.getState().runScan,
@@ -29,37 +31,6 @@ describe('ProblemsPanel scan scheduling', () => {
       useProblemsStore.setState(originalActions);
       useProblemsStore.getState().clear();
     });
-  });
-
-  it('requests a scheduled scan on mount and on every parseGeneration bump, never a direct scan', () => {
-    render(<ProblemsPanel />);
-    expect(requestScan).toHaveBeenCalledTimes(1);
-
-    act(() => {
-      useProjectStore.setState((s) => ({ parseGeneration: s.parseGeneration + 1 }));
-    });
-    expect(requestScan).toHaveBeenCalledTimes(2);
-
-    act(() => {
-      useProjectStore.setState((s) => ({ parseGeneration: s.parseGeneration + 1 }));
-    });
-    expect(requestScan).toHaveBeenCalledTimes(3);
-
-    // Generation bumps must go through the scheduler, not the immediate scan.
-    expect(runScan).not.toHaveBeenCalled();
-  });
-
-  it('requests a scan when ingestion completes even without a parseGeneration bump', () => {
-    render(<ProblemsPanel />);
-    act(() => {
-      useProjectStore.setState({ isIngesting: true });
-    });
-    const callsWhileIngesting = requestScan.mock.calls.length;
-
-    act(() => {
-      useProjectStore.setState({ isIngesting: false });
-    });
-    expect(requestScan.mock.calls.length).toBe(callsWhileIngesting + 1);
   });
 
   it('the manual Rescan button scans immediately', () => {
