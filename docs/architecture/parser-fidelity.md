@@ -41,9 +41,17 @@ selection. Files outside any list's directory subtree retain folder-scan
 behavior, as do projects without lists. Non-source entries such as the MDK's
 `_INTERN\SCRIPTBIN` header are ignored. Missing explicit `.d` entries are logged
 without undoing membership: a missing script cannot include other scripts.
-Unreadable lists, missing explicit `.src` entries or source paths outside the
-project cause a logged fallback to the full scan, not silent loss of diagnostics.
-Empty wildcard matches are allowed.
+A list governs its directory subtree, and a list whose membership is unknown
+falls back to the folder scan for that subtree only, with a logged warning; the
+other lists still apply (#569). Unknown means: the list is unreadable, or it
+names a nested `.src` that is missing or outside the project. A missing nested
+list also distrusts the folder it would have governed. A `.d` entry outside the
+project is skipped with a warning instead: it can only name files the project
+does not hold, so dropping it hides nothing. A leading `\` or `/` is read as
+relative to the list's directory, on the understanding that the engine appends
+the entry to that directory; this is not verified against an engine, and it is
+the reading that indexes more rather than less. Empty wildcard matches are
+allowed.
 This filters metadata, background ingestion and project diagnostics together;
 it does not relax parser validation or saving of directly opened files.
 Membership is refreshed by a full index build; `.src` edits require reopening

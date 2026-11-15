@@ -78,7 +78,7 @@ describe('SRC-backed project indexing (#559)', () => {
     } finally { warn.mockRestore(); }
   });
 
-  it.each(['..\\outside.src', '..\\*.d', 'Missing.src'])(
+  it.each(['..\\outside.src', 'Missing.src'])(
     'does not hide errors for an unresolved or unsafe compilation entry: %s', async entry => {
       write('Gothic.src', entry + '\n');
       const file = write('Broken.d', 'func int Broken() { return 0; };\n'.repeat(2));
@@ -90,4 +90,63 @@ describe('SRC-backed project indexing (#559)', () => {
         expect(warn).toHaveBeenCalled();
       } finally { warn.mockRestore(); }
     });
+
+  describe('scoped fallback (#569)', () => {
+    let warn: jest.SpyInstance;
+    beforeEach(() => { warn = jest.spyOn(console, 'warn').mockImplementation(() => {}); });
+    afterEach(() => { warn.mockRestore(); });
+
+    it('falls back only inside the scope of the list that cannot be resolved', async () => {
+      write('Content/Gothic.src', 'Missing.src\nStory\\Live.d\n');
+      const live = write('Content/Story/Live.d', 'func void Live() {};');
+      const unlisted = write('Content/Unlisted.d', 'func void Unlisted() {};');
+      write('System/Menu.src', 'Menu\\*.d\n');
+      const menu = write('System/Menu/Main.d', 'func void MenuFunction() {};');
+      write('System/Unused.d', 'func void UnusedSystem() {};');
+      const index = await new ProjectService().buildProjectIndex(root);
+      expect(index.allFiles).toEqual([live, unlisted, menu].sort());
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('Missing.src'));
+    });
+
+    it('keeps the outer list when a nested list cannot be resolved', async () => {
+      write('Content/Gothic.src', 'Story\\Sub.src\nAI\\Used.d\n');
+      write('Content/Story/Sub.src', '..\\..\\..\\outside.src\nLive.d\n');
+      const live = write('Content/Story/Live.d', 'func void Live() {};');
+      const storyUnlisted = write('Content/Story/Unlisted.d', 'func void StoryUnlisted() {};');
+      const used = write('Content/AI/Used.d', 'func void Used() {};');
+      write('Content/AI/Reference.d', 'func void Reference() {};');
+      const index = await new ProjectService().buildProjectIndex(root);
+      expect(index.allFiles).toEqual([used, live, storyUnlisted].sort());
+    });
+
+    it('also distrusts the folder a missing nested list would have governed', async () => {
+      write('Content/Gothic.src', '..\\System\\Extra.src\n');
+      const content = write('Content/Any.d', 'func void Any() {};');
+      write('System/Menu.src', 'Menu\\*.d\n');
+      const menu = write('System/Menu/Main.d', 'func void MenuFunction() {};');
+      const maybeExtra = write('System/Extra/Maybe.d', 'func void Maybe() {};');
+      const index = await new ProjectService().buildProjectIndex(root);
+      expect(index.allFiles).toEqual([content, maybeExtra, menu].sort());
+    });
+
+    it('reads a leading separator as relative to the list, as the engine concatenates paths', async () => {
+      write('Content/Gothic.src', '\\Story\\Live.d\n/Story/Other.d\n');
+      const live = write('Content/Story/Live.d', 'func void Live() {};');
+      const other = write('Content/Story/Other.d', 'func void Other() {};');
+      write('Content/Reference.d', 'func void Reference() {};');
+      const index = await new ProjectService().buildProjectIndex(root);
+      expect(index.allFiles).toEqual([live, other].sort());
+      expect(warn).not.toHaveBeenCalled();
+    });
+
+    it('skips a script entry outside the project and keeps the rest of its list', async () => {
+      write('Content/Gothic.src', '..\\..\\Elsewhere\\Shared.d\n..\\..\\*.d\nStory\\Live.d\n');
+      const live = write('Content/Story/Live.d', 'func void Live() {};');
+      write('Content/Reference.d', 'func void Reference() {};');
+      const index = await new ProjectService().buildProjectIndex(root);
+      expect(index.allFiles).toEqual([live]);
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('Shared.d'));
+      expect(warn.mock.calls.some(([message]) => String(message).includes('indexing all scripts'))).toBe(false);
+    });
+  });
 });
