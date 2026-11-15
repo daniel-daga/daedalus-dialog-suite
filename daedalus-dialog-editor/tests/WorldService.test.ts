@@ -1007,6 +1007,59 @@ describe('the op log', () => {
     service.close();
   });
 
+  // #566. The process-level half — that the write really lands — is in
+  // WorldService.process.test.ts; these pin the bookkeeping around it.
+  test('close waits for a save in flight instead of terminating under it', async () => {
+    const { worker, service } = await openedService();
+
+    const saved = service.saveWorld('C:/Gothic/NewWorld.zen');
+    await tick();
+    service.close();
+    expect(worker.terminated).toBe(false);
+
+    worker.replyLast('save', null);
+    await expect(saved).resolves.toBeUndefined();
+    expect(worker.terminated).toBe(true);
+  });
+
+  test('a save as that lands after close does not reopen the world under its name', async () => {
+    const { worker, service } = await openedService();
+
+    const saved = service.saveWorldAs('C:/Gothic/Copy.zen');
+    await tick();
+    service.close();
+    worker.replyLast('save', null);
+
+    await saved;
+    expect(() => service.openWorldPath()).toThrow(/no world is open/i);
+  });
+
+  test('a worker that dies inside the save it was kept for fails that save', async () => {
+    const { worker, service } = await openedService();
+
+    const saved = service.saveWorld('C:/Gothic/NewWorld.zen');
+    await tick();
+    worker.progress('save', 'save');
+    service.close();
+    worker.emit('exit', 1);
+
+    await expect(saved).rejects.toMatchObject({ kind: 'world-crashed' });
+    await expect(saved).rejects.toThrow('during save for "C:/Gothic/NewWorld.zen" at save');
+  });
+
+  test('close does not wait for a read, or for a save queued behind one', async () => {
+    const { worker, service } = await openedService();
+
+    const mesh = service.getWorldMesh();
+    const saved = service.saveWorld('C:/Gothic/NewWorld.zen');
+    await tick();
+    service.close();
+
+    expect(worker.terminated).toBe(true);
+    await expect(mesh).rejects.toMatchObject({ kind: 'world-closed' });
+    await expect(saved).rejects.toMatchObject({ kind: 'world-closed' });
+  });
+
   test('saving before a world is open is refused, not queued', async () => {
     const { service } = makeService();
     await expect(service.saveWorld('C:/out.zen')).rejects.toThrow(/no world is open/i);

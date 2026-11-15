@@ -207,6 +207,12 @@ against ~30 ms transferred, once per open. What it bought besides isolation:
 a timeout's `terminate()` is a SIGKILL that ends a wedged native call, where a
 thread's only interrupted JavaScript.
 
+The same SIGKILL is why `WorldService.close()` does not terminate under a save
+that is in flight (#566): a thread's `terminate()` let the synchronous native
+write finish, a process's does not. Close rejects everything queued, keeps that
+one request pending on the worker it has otherwise let go, and kills the worker
+when the save answers — or when the save's own timeout runs out.
+
 `utilityProcess` was the other option and was not taken: it exists only inside a
 ready Electron app, so every one of the pool-lifecycle tests would have had to
 mock it. `fork` runs identically under Jest, plain Node and Electron, which is
