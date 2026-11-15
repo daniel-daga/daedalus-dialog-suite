@@ -73,8 +73,15 @@ class ProjectService {
     }
     return entry.model;
   }
+  /** The project's `.d` scripts, or its `.src` compilation lists. */
+  async scanDirectory(rootPath: string, extension: '.d' | '.src' = '.d'): Promise<string[]> {
+    const { scripts, sourceLists } = await this.scanProject(rootPath);
+    return extension === '.d' ? scripts : sourceLists;
+  }
+
   /**
-   * Recursively scan directory for .d files (or .src compilation lists).
+   * Recursively scan a directory for .d files and .src compilation lists, in
+   * one walk (#573).
    *
    * Junctions and symlinks are followed only while their real path stays
    * inside the project root: `PathValidationService` refuses to read a path
@@ -85,13 +92,18 @@ class ProjectService {
    * cannot be read is logged and skipped so one bad folder does not hide the
    * rest of the project; the root itself failing is the caller's error.
    */
-  async scanDirectory(rootPath: string, extension: '.d' | '.src' = '.d'): Promise<string[]> {
-    const files: string[] = [];
+  async scanProject(rootPath: string): Promise<{ scripts: string[]; sourceLists: string[] }> {
+    const scripts: string[] = [];
+    const sourceLists: string[] = [];
     const visited = new Set<string>();
     const outsideLinks: string[] = [];
     const realRoot = await fs.realpath(rootPath);
 
-    const matchesExtension = (name: string) => path.extname(name).toLowerCase() === extension;
+    const collect = (filePath: string): void => {
+      const extension = path.extname(filePath).toLowerCase();
+      if (extension === '.d') scripts.push(filePath);
+      else if (extension === '.src') sourceLists.push(filePath);
+    };
 
     const scanRecursive = async (dir: string): Promise<void> => {
       const realDir = await fs.realpath(dir);
@@ -108,8 +120,8 @@ class ProjectService {
           promises.push(scanLink(fullPath));
         } else if (entry.isDirectory()) {
           promises.push(scanSubdirectory(fullPath));
-        } else if (entry.isFile() && matchesExtension(entry.name)) {
-          files.push(fullPath);
+        } else if (entry.isFile()) {
+          collect(fullPath);
         }
       }
 
@@ -139,8 +151,8 @@ class ProjectService {
       }
       if (stat.isDirectory()) {
         await scanSubdirectory(linkPath);
-      } else if (stat.isFile() && matchesExtension(linkPath)) {
-        files.push(linkPath);
+      } else if (stat.isFile()) {
+        collect(linkPath);
       }
     };
 
@@ -156,7 +168,7 @@ class ProjectService {
     // A path order, not an I/O-completion one: the index it feeds is
     // last-writer-wins, so an unstable order makes which file owns a name
     // declared twice differ between opens (#470).
-    return files.sort();
+    return { scripts: scripts.sort(), sourceLists: sourceLists.sort() };
   }
 
   /**
@@ -166,9 +178,7 @@ class ProjectService {
     // A reindex invalidates every previously primed model.
     this.primedModels.clear();
 
-    const [scripts, sourceLists] = await Promise.all([
-      this.scanDirectory(rootPath), this.scanDirectory(rootPath, '.src')
-    ]);
+    const { scripts, sourceLists } = await this.scanProject(rootPath);
     const allFiles = await selectSourceFiles(rootPath, scripts, sourceLists);
 
     // Map to store dialogs by NPC

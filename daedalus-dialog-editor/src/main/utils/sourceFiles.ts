@@ -3,6 +3,9 @@ import * as path from 'path';
 import { decodeBuffer } from './encodingUtils';
 import { isPathInside } from './pathContainment';
 
+/** Daedalus paths are case-insensitive and written with either separator. */
+const pathKey = (file: string): string => file.replace(/\\/g, '/').toLowerCase();
+
 /**
  * Every discovered SRC is a possible compilation entry point; keep their union.
  *
@@ -10,13 +13,26 @@ import { isPathInside } from './pathContainment';
  * diagnostics or declarations, so a list that cannot be resolved makes that
  * tree fall back to every script in it, while the other lists still apply
  * (#569).
+ *
+ * The answer is a predicate rather than a list so that each script costs one
+ * set lookup plus the wildcard lines of its own folder (#573).
  */
-export async function selectSourceFiles(rootPath: string, scripts: string[], sourceLists: string[]): Promise<string[]> {
-  if (sourceLists.length === 0) return scripts;
-  const included = new Set<string>();
+export async function resolveSourceMembership(
+  rootPath: string, scripts: string[], sourceLists: string[]
+): Promise<(file: string) => boolean> {
+  if (sourceLists.length === 0) return () => true;
   const scopes = sourceLists.map(file => path.dirname(file));
   const unknownScopes: string[] = [];
-  const candidates = [...scripts, ...sourceLists];
+  const known = new Set([...scripts, ...sourceLists].map(pathKey));
+  const literals = new Set<string>();
+  // Wildcard lines by the folder they name, matched against the file name.
+  const wildcards = new Map<string, RegExp[]>();
+  // A wildcard in a folder segment cannot be filed under one folder.
+  const pathWildcards: RegExp[] = [];
+  const toPattern = (text: string): RegExp => new RegExp('^' + text.split(/([*?])/).map(token =>
+    token === '*' ? '[^/]*' : token === '?' ? '[^/]' : token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  ).join('') + '$');
+
   for (const sourceList of sourceLists) {
     const listDir = path.dirname(sourceList);
     const distrust = (reason: string, ...also: string[]) => {
@@ -50,22 +66,43 @@ export async function selectSourceFiles(rootPath: string, scripts: string[], sou
         else console.warn(`[ProjectService] skipping script ${entry} outside the project in ${sourceList}`);
         continue;
       }
-      const pattern = absolute.replace(/\\/g, '/').split(/([*?])/).map(token =>
-        token === '*' ? '[^/]*' : token === '?' ? '[^/]' : token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-      ).join('');
-      const matcher = new RegExp(`^${pattern}$`, 'i');
-      const matches = candidates.filter(file => matcher.test(file.replace(/\\/g, '/')));
-      if (matches.length === 0 && !/[*?]/.test(entry)) {
-        // The missing list would have governed its own folder as well.
-        if (isList) distrust(`unresolved SRC entry ${entry}`, path.dirname(absolute));
-        else console.warn(`[ProjectService] missing script ${entry} in ${sourceList}`);
+      const key = pathKey(absolute);
+      if (!/[*?]/.test(key)) {
+        if (!known.has(key)) {
+          // The missing list would have governed its own folder as well.
+          if (isList) distrust(`unresolved SRC entry ${entry}`, path.dirname(absolute));
+          else console.warn(`[ProjectService] missing script ${entry} in ${sourceList}`);
+        }
+        // A nested list is read as an entry point of its own; only scripts are selected.
+        if (!isList) literals.add(key);
+        continue;
       }
-      for (const file of matches) included.add(file);
+      if (isList) continue;
+      const slash = key.lastIndexOf('/');
+      const folder = key.slice(0, slash);
+      if (/[*?]/.test(folder)) {
+        pathWildcards.push(toPattern(key));
+      } else {
+        const patterns = wildcards.get(folder) ?? [];
+        patterns.push(toPattern(key.slice(slash + 1)));
+        wildcards.set(folder, patterns);
+      }
     }
   }
-  return scripts.filter(file =>
-    included.has(file) ||
-    !scopes.some(scope => isPathInside(scope, file)) ||
-    unknownScopes.some(scope => isPathInside(scope, file))
-  );
+
+  return (file: string): boolean => {
+    const key = pathKey(file);
+    if (literals.has(key)) return true;
+    const slash = key.lastIndexOf('/');
+    const name = key.slice(slash + 1);
+    if (wildcards.get(key.slice(0, slash))?.some(pattern => pattern.test(name))) return true;
+    if (pathWildcards.some(pattern => pattern.test(key))) return true;
+    return !scopes.some(scope => isPathInside(scope, file)) ||
+      unknownScopes.some(scope => isPathInside(scope, file));
+  };
+}
+
+export async function selectSourceFiles(rootPath: string, scripts: string[], sourceLists: string[]): Promise<string[]> {
+  if (sourceLists.length === 0) return scripts;
+  return scripts.filter(await resolveSourceMembership(rootPath, scripts, sourceLists));
 }

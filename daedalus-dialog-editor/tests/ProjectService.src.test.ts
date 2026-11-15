@@ -149,4 +149,46 @@ describe('SRC-backed project indexing (#559)', () => {
       expect(warn.mock.calls.some(([message]) => String(message).includes('indexing all scripts'))).toBe(false);
     });
   });
+
+  describe('one walk, one lookup per literal entry (#573)', () => {
+    it('reads each directory once and reports an outside link once', async () => {
+      write('Content/Gothic.src', 'Story\\*.d\n');
+      const live = write('Content/Story/Live.d', 'func void Live() {};');
+      const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'project-src-outside-'));
+      fs.symlinkSync(outside, path.join(root, 'Linked'), 'dir');
+      const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+      const readdir = jest.spyOn(fs.promises, 'readdir');
+      try {
+        const index = await new ProjectService().buildProjectIndex(root);
+        expect(index.allFiles).toEqual([live]);
+        const read = readdir.mock.calls.map(([dir]) => String(dir)).sort();
+        expect(read).toEqual([root, path.join(root, 'Content'), path.join(root, 'Content', 'Story')].sort());
+        expect(warn.mock.calls.filter(([message]) => String(message).includes('outside the project folder'))).toHaveLength(1);
+      } finally {
+        readdir.mockRestore();
+        warn.mockRestore();
+        fs.rmSync(outside, { recursive: true, force: true });
+      }
+    });
+
+    it('does not compile a pattern for a literal entry', async () => {
+      const { resolveSourceMembership } = await import('../src/main/utils/sourceFiles');
+      const list = write('Gothic.src', 'A.d\nSub\\B.D\nSub\\C_*.d\n');
+      const files = ['A.d', 'Sub/b.d', 'Sub/C_1.d', 'Sub/Other.d'].map(name => write(name, ''));
+      const RealRegExp = RegExp;
+      const compiled: string[] = [];
+      const spy = jest.spyOn(global, 'RegExp').mockImplementation(((source: string, flags?: string) => {
+        compiled.push(String(source));
+        return new RealRegExp(source, flags);
+      }) as never);
+      try {
+        const isSource = await resolveSourceMembership(root, files, [list]);
+        expect(files.filter(isSource)).toEqual(files.slice(0, 3));
+        // A script that appears later is judged by the same lists.
+        expect(isSource(path.join(root, 'Sub', 'c_2.D'))).toBe(true);
+        expect(isSource(path.join(root, 'Sub', 'D.d'))).toBe(false);
+      } finally { spy.mockRestore(); }
+      expect(compiled).toHaveLength(1);
+    });
+  });
 });
