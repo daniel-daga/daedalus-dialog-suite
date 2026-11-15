@@ -199,6 +199,101 @@ shortcut does not also save the file behind it.
   the real app, checks the bytes on disk, and reparses them through the real
   parser.
 
+### 3.1. Planned layout revision — Character and Routines
+
+The current right column combines a 400px preview with eight appearance and
+equipment fields. Its independent scrollbar and narrow two-up selectors make
+appearance editing awkward. Replace that arrangement with two tabs on the left
+and a persistent, preview-only panel on the right.
+
+#### Layout and scope
+
+- Keep the existing header and fixed Save/Cancel footer, including the unsaved
+  count, validation message, changed-field outlines and Ctrl+S behavior.
+- Default to **Character**. Place the tabs above the left content only; the
+  preview remains visible on both tabs.
+- On Character, use two form columns at wide dialog sizes:
+  - First: Identity, then Combat (tactic, attributes, hit chances, protection).
+  - Second, directly beside the preview: Appearance and equipment.
+  - Give head mesh, face texture, body texture, armor and each weapon a full
+    form-column width. Gender and walk overlay may share a row only where the
+    available width makes their selected values readable.
+  - Keep Other statements collapsed below the form columns; no separate tab.
+- On **Routines**, give the existing routine cards the full left content width.
+  Preserve start-routine selection, creation, editing, variants and source/map
+  jumps, including the unsaved-edit guard on world navigation.
+- Right panel: existing interactive preview and its loading/error/asset notes,
+  without appearance controls. Keep the canvas mounted across tab switches so
+  its camera does not reset.
+- Use a bounded dialog body with one scrollable left content pane, not nested
+  form scrollbars or a scrolling preview card. At short heights, reduce the
+  canvas height; if diagnostics cannot fit, allow a single body-scroll fallback
+  rather than clipping them. Header and footer remain outside scrolling content.
+- At narrower widths, collapse Character's form columns first. Below the width
+  needed for a usable form plus preview, stack the preview and active form in
+  one scrolling body. Do not promise scroll-free editing at every window size.
+- Reuse MUI Tabs/Tab with labelled tab panels and keyboard navigation. Keep form
+  values and validation in the dialog; switching tabs must not save, discard or
+  re-extract the NPC. If validation refers to a hidden tab, expose that tab and
+  the error so a disabled Save is actionable.
+
+No new fields, preview rendering features, dependencies, persisted tab preference
+or per-tab change counters. Parser, IPC and save-pipeline behavior stay unchanged.
+The existing preview limitations tracked in #536 and #310 are outside this work.
+
+#### Implementation sequence
+
+1. **Write failing browser tests first.** Update
+   `daedalus-dialog-editor/tests/e2e/npc-editor.spec.ts`: replace the assertion
+   that Appearance is under the right-side preview with Character/Routines tab
+   and column assertions. At a wide viewport, assert the appearance controls are
+   left of the preview and the last equipment field is reachable without
+   scrolling at the agreed desktop test size. Add a populated-preview fixture
+   if the existing mock cannot exercise the real canvas-sized layout.
+2. **Restructure `NpcEditorDialog.tsx`.** Add local tab selection; move existing
+   section markup into the Character columns and Routines panel. Keep the
+   preview outside the panels and preserve all routine callbacks. Replace the
+   current sticky, independently scrolling appearance container with the scroll
+   arrangement above. Update the obsolete #564 layout comment.
+3. **Adjust `NpcVisualPreview.tsx` only as needed for sizing.** Retain a useful
+   default canvas size, but allow it to shrink with the available panel height.
+   Keep diagnostics visible and preserve the existing camera/update behavior;
+   do not rebuild the Three.js preview for this layout change.
+4. **Update affected callers in tests, not production APIs.** Search NPC editor
+   browser, Jest and real-Electron tests for routine controls or assumptions
+   that all sections are visible together. Select Routines explicitly where
+   required. No production caller, export or configuration change is expected.
+5. **Verify and document.** Run the focused checks below. When implementing,
+   replace the obsolete layout description in section 3 and the preview-panel
+   description in section 4 with the settled behavior. Update any affected user
+   guide instructions and append a release-note entry using the implementation
+   issue number. Remove this planning subsection after the behavior is recorded.
+
+#### Acceptance and verification
+
+- Browser interaction tests edit Character fields, switch to Routines and back,
+  and confirm values, changed outlines and the global unsaved count survive.
+- Save/Ctrl+S from Routines includes pending Character edits. An invalid hidden
+  field remains discoverable and still prevents saving. Routine world jumps
+  remain blocked while Character has unsaved changes.
+- With an actual mounted preview canvas, switching tabs retains the same canvas
+  node and does not request a new NPC body solely because of the tab change.
+  Existing preview tests continue covering camera preservation during edits.
+- Check a wide desktop layout (1920x1080), a typical laptop layout (1366x768),
+  and constrained space (960x640, plus manual 125–150% display-scaling checks).
+  Wide layout shows both Character columns and preview; constrained layouts
+  may scroll but must not overlap, clip fields/diagnostics or hide Save/Cancel.
+  Include many routine cards and long asset names; no horizontal body overflow.
+- Verify accessible tab names, selected state, linked panels and keyboard
+  switching. Routine create/edit/source actions still open their existing dialogs.
+- Run the touched browser spec and any other changed browser/Jest tests. Run
+  editor lint, `build:main`, `typecheck:renderer`, `typecheck:tests` separately,
+  and root `npm run docs:check`. Run the focused real-Electron NPC disk-truth
+  spec after building the editor if its workflow or assertions are changed.
+  Full suites remain CI work. #579 already reports a disk-truth failure;
+  distinguish that baseline from a new layout regression rather than claiming
+  a browser mock establishes real parser/disk behavior.
+
 ## 4. Phase 3 — the visual preview
 
 A bind-pose preview beside the form, reusing `VisualPreviewScene` (#298).
