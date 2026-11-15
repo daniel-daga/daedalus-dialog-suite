@@ -10,6 +10,8 @@ import {
   DialogContent,
   DialogTitle,
   MenuItem,
+  Tab,
+  Tabs,
   TextField,
   Typography,
 } from '@mui/material';
@@ -52,13 +54,22 @@ interface NpcEditorDialogProps {
   onClose: () => void;
 }
 
-// #564: the dialog reads in the order an NPC is worked on — who they are,
-// when they are where, how they fight — and the appearance fields sit beside
-// the preview they change.
+// #564, #580: the dialog reads in the order an NPC is worked on — who they
+// are, when they are where, how they fight. The form is two tabs: Character
+// (identity, combat, and the appearance fields beside the preview they change)
+// and Routines, which gets the whole left area for its cards. The preview stays
+// beside both, so a switch never costs the view the user framed.
 const fieldsOf = (group: NpcFormField['group'], except: readonly string[] = []) =>
   NPC_FORM_FIELDS.filter((field) => field.group === group && !except.includes(field.key));
 const IDENTITY_FIELDS = fieldsOf('main', ['dailyRoutine', 'fightTactic']);
 const APPEARANCE_FIELDS = [...fieldsOf('visual'), ...fieldsOf('equipment')];
+// Gender and the overlay name are short; every other appearance value is an
+// asset or item name that needs the column's full width to stay readable.
+const SHORT_APPEARANCE = ['gender', 'walkOverlay'];
+const APPEARANCE_ROWS: NpcFormField[][] = [
+  APPEARANCE_FIELDS.filter((field) => SHORT_APPEARANCE.includes(field.key)),
+  ...APPEARANCE_FIELDS.filter((field) => !SHORT_APPEARANCE.includes(field.key)).map((field) => [field]),
+];
 const COMBAT_ROWS: Array<{ title: string; fields: NpcFormField[]; wide?: boolean }> = [
   { title: 'Tactic', fields: NPC_FORM_FIELDS.filter((field) => field.key === 'fightTactic'), wide: true },
   { title: 'Attributes', fields: fieldsOf('attributes') },
@@ -127,6 +138,10 @@ const NpcEditorDialog: React.FC<NpcEditorDialogProps> = ({ npcName, filePath, on
   /** The routine the routine editor is open on; '' opens it on its "New routine" form. */
   const [editingRoutine, setEditingRoutine] = useState<string | null>(null);
   const [showOther, setShowOther] = useState(false);
+  /** Which of the dialog's two tabs is shown. A form value like any other:
+   *  it never touches the NPC, so switching cannot lose an edit. */
+  const [tab, setTab] = useState<'character' | 'routines'>('character');
+  const tabId = useId();
   const [assetEntries, setAssetEntries] = useState<{ heads: readonly VfsEntry[]; overlays: readonly VfsEntry[] }>({
     heads: [], overlays: [],
   });
@@ -396,78 +411,114 @@ const NpcEditorDialog: React.FC<NpcEditorDialogProps> = ({ npcName, filePath, on
         {definition && (
           <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'minmax(0, 1fr) 340px' }, gap: 3 }}>
             <Box sx={{ minWidth: 0 }}>
-              <Section title="Identity">
-                <Box sx={grid(170)}>{IDENTITY_FIELDS.map(renderField)}</Box>
-              </Section>
-              <NpcRoutinesSection
-                routines={routines}
-                startRoutine={values.dailyRoutine ?? ''}
-                onSetStart={(routine) => setValues((current) => ({ ...current, dailyRoutine: routine }))}
-                startField={renderField(DAILY_ROUTINE_FIELD)}
-                switchesOf={(state) => variantSwitches(exchangeSites ?? [], npcName, state)}
-                activityName={activityName}
-                onShowWaypoint={showWaypoint}
-                onShowSource={(routine, sourceFilePath, line) => setRoutineSource({ routine, filePath: sourceFilePath, line })}
-                waypointReason={(waypoint) => waypointJumpReason(waypoint, world)}
-                blockedReason={pendingEdits.length > 0
-                  ? 'Save or cancel your changes first'
-                  : null}
-                onEditRoutine={setEditingRoutine}
-                onCreateRoutine={() => setEditingRoutine('')}
-                onEditRoutineInWorld={editRoutineInWorld}
-              />
-              <Section title="Combat">
-                <Box sx={{ display: 'grid', gridTemplateColumns: '84px minmax(0, 1fr)', columnGap: 1.5, rowGap: 1, alignItems: 'center' }}>
-                  {COMBAT_ROWS.map((row) => (
-                    <React.Fragment key={row.title}>
-                      <Typography variant="caption" color="text.secondary">{row.title}</Typography>
-                      <Box sx={row.wide ? { display: 'grid', maxWidth: 320 } : grid(96)}>{row.fields.map(renderField)}</Box>
-                    </React.Fragment>
-                  ))}
-                </Box>
-              </Section>
-              {uncovered.length > 0 && (
-                <Box>
-                  <Button
-                    size="small"
-                    sx={{ px: 0.5, textTransform: 'none' }}
-                    aria-expanded={showOther}
-                    onClick={() => setShowOther((open) => !open)}
-                  >
-                    {`${showOther ? '▾' : '▸'} Other statements (${uncovered.length})`}
-                  </Button>
-                  <Typography variant="caption" color="text.secondary" sx={{ ml: 1 }}>
-                    Kept exactly as written; edit them in the script.
-                  </Typography>
-                  {showOther && (
-                    <Box component="pre" sx={{ m: 0, mt: 0.5, fontSize: 12, whiteSpace: 'pre-wrap' }}>
-                      {uncovered.map((statement) => statement.text).join('\n')}
+              <Tabs
+                value={tab}
+                onChange={(_event, next: 'character' | 'routines') => setTab(next)}
+                aria-label="NPC sections"
+                sx={{ minHeight: 36, borderBottom: 1, borderColor: 'divider', '& .MuiTab-root': { minHeight: 36, fontSize: 13 } }}
+              >
+                <Tab value="character" label="Character" id={`${tabId}-character-tab`} aria-controls={`${tabId}-character-panel`} />
+                <Tab value="routines" label="Routines" id={`${tabId}-routines-tab`} aria-controls={`${tabId}-routines-panel`} />
+              </Tabs>
+              <Box
+                role="tabpanel"
+                id={`${tabId}-character-panel`}
+                aria-labelledby={`${tabId}-character-tab`}
+                sx={{ pt: 2, display: tab === 'character' ? 'grid' : 'none', gap: 2.5,
+                  gridTemplateColumns: { xs: '1fr', lg: 'minmax(0, 1fr) minmax(0, 1fr)' } }}
+              >
+                <Box sx={{ minWidth: 0 }}>
+                  <Section title="Identity">
+                    <Box sx={grid(170)}>{IDENTITY_FIELDS.map(renderField)}</Box>
+                  </Section>
+                  <Section title="Combat">
+                    <Box sx={{ display: 'grid', gridTemplateColumns: '84px minmax(0, 1fr)', columnGap: 1.5, rowGap: 1, alignItems: 'center' }}>
+                      {COMBAT_ROWS.map((row) => (
+                        <React.Fragment key={row.title}>
+                          <Typography variant="caption" color="text.secondary">{row.title}</Typography>
+                          <Box sx={row.wide ? { display: 'grid', maxWidth: 320 } : grid(96)}>{row.fields.map(renderField)}</Box>
+                        </React.Fragment>
+                      ))}
                     </Box>
-                  )}
+                  </Section>
                 </Box>
-              )}
+                <Box sx={{ minWidth: 0 }}>
+                  <Section title="Appearance">
+                    <Box sx={{ display: 'grid', gap: 1 }}>
+                      {APPEARANCE_ROWS.map((row) => (
+                        <Box
+                          key={row.map((field) => field.key).join('-')}
+                          sx={{ display: 'grid', gap: 1, gridTemplateColumns: `repeat(${row.length}, minmax(0, 1fr))` }}
+                        >
+                          {row.map(renderField)}
+                        </Box>
+                      ))}
+                    </Box>
+                  </Section>
+                </Box>
+                {uncovered.length > 0 && (
+                  <Box sx={{ gridColumn: '1 / -1' }}>
+                    <Button
+                      size="small"
+                      sx={{ px: 0.5, textTransform: 'none' }}
+                      aria-expanded={showOther}
+                      onClick={() => setShowOther((open) => !open)}
+                    >
+                      {`${showOther ? '▾' : '▸'} Other statements (${uncovered.length})`}
+                    </Button>
+                    <Typography variant="caption" color="text.secondary" sx={{ ml: 1 }}>
+                      Kept exactly as written; edit them in the script.
+                    </Typography>
+                    {showOther && (
+                      <Box component="pre" sx={{ m: 0, mt: 0.5, fontSize: 12, whiteSpace: 'pre-wrap' }}>
+                        {uncovered.map((statement) => statement.text).join('\n')}
+                      </Box>
+                    )}
+                  </Box>
+                )}
+              </Box>
+              <Box
+                role="tabpanel"
+                id={`${tabId}-routines-panel`}
+                aria-labelledby={`${tabId}-routines-tab`}
+                sx={{ pt: 2, display: tab === 'routines' ? 'block' : 'none' }}
+              >
+                <NpcRoutinesSection
+                  routines={routines}
+                  startRoutine={values.dailyRoutine ?? ''}
+                  onSetStart={(routine) => setValues((current) => ({ ...current, dailyRoutine: routine }))}
+                  startField={renderField(DAILY_ROUTINE_FIELD)}
+                  switchesOf={(state) => variantSwitches(exchangeSites ?? [], npcName, state)}
+                  activityName={activityName}
+                  onShowWaypoint={showWaypoint}
+                  onShowSource={(routine, sourceFilePath, line) => setRoutineSource({ routine, filePath: sourceFilePath, line })}
+                  waypointReason={(waypoint) => waypointJumpReason(waypoint, world)}
+                  blockedReason={pendingEdits.length > 0
+                    ? 'Save or cancel your changes first'
+                    : null}
+                  onEditRoutine={setEditingRoutine}
+                  onCreateRoutine={() => setEditingRoutine('')}
+                  onEditRoutineInWorld={editRoutineInWorld}
+                />
+              </Box>
             </Box>
-            {/* Sticky, so the preview stays in view while the left column
-                scrolls; it scrolls on its own when taller than the dialog. */}
+            {/* Sticky, so the preview stays in view while the form scrolls. It
+                has no scroll of its own: one scrollbar for the dialog body. */}
             <Box
               sx={{
                 position: { md: 'sticky' }, top: 0, alignSelf: 'start', order: { xs: -1, md: 0 },
-                maxHeight: { md: 'calc(100vh - 200px)' }, overflowY: { md: 'auto' },
                 p: 1.5, borderRadius: 1, bgcolor: 'action.hover',
               }}
             >
-              <Section title="Appearance">
-                <NpcVisualPreview
-                  definition={definition}
-                  edits={pendingEdits}
-                  lookupConstant={lookupConstant}
-                  itemSource={itemSource}
-                  weapon={values.meleeWeapon ?? ''}
-                  assetsReady={previewAssetsReady}
-                  assetsError={previewAssetsError}
-                />
-                <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1 }}>{APPEARANCE_FIELDS.map(renderField)}</Box>
-              </Section>
+              <NpcVisualPreview
+                definition={definition}
+                edits={pendingEdits}
+                lookupConstant={lookupConstant}
+                itemSource={itemSource}
+                weapon={values.meleeWeapon ?? ''}
+                assetsReady={previewAssetsReady}
+                assetsError={previewAssetsError}
+              />
             </Box>
           </Box>
         )}

@@ -63,6 +63,12 @@ async function openEditor(page: Page) {
   return editor;
 }
 
+/** The Routines tab, where the routine cards and the start routine live. */
+async function showRoutines(editor: ReturnType<Page['getByRole']>) {
+  await editor.getByRole('tab', { name: 'Routines' }).click();
+  await expect(editor.getByRole('tab', { name: 'Routines' })).toHaveAttribute('aria-selected', 'true');
+}
+
 async function selectChoice(page: Page, editor: ReturnType<Page['getByRole']>, label: string, choice: string) {
   await editor.getByRole('combobox', { name: label }).click();
   await page.getByRole('option', { name: choice, exact: true }).click();
@@ -80,7 +86,9 @@ test.describe('NPC editor', () => {
     await expect(editor.getByLabel('Guild')).toHaveValue('GIL_BAU');
     await expect(editor.getByLabel('Level')).toHaveValue('20');
     // The start routine is marked on its card, not repeated in a field.
+    await showRoutines(editor);
     await expect(editor.getByRole('group', { name: 'Routine RTN_START_900' })).toContainText('Start routine');
+    await editor.getByRole('tab', { name: 'Character' }).click();
     await expect(editor.getByLabel('Head mesh')).toHaveValue('Hum_Head_Fatbald');
     await expect(editor.getByLabel('Armor')).toHaveValue('ITAR_Vlk_H');
     await expect(editor.getByLabel('Melee weapon')).toHaveValue('ItMw_1h_Bau_Mace');
@@ -184,6 +192,7 @@ test.describe('NPC editor', () => {
     await expect(editor).toBeVisible();
     await expect(editor.getByLabel('Name', { exact: true })).toHaveValue('Harald');
     await expect(editor.getByLabel('Melee weapon')).toHaveValue('ItMw_1h_Bau_Mace');
+    await showRoutines(editor);
     await expect(editor.getByLabel('Start routine', { exact: true })).toHaveValue('');
     await editor.getByRole('button', { name: 'Cancel' }).click();
 
@@ -258,6 +267,7 @@ test.describe('NPC editor: routine jumps', () => {
 
   test('lists the routine and says why a waypoint cannot be shown while no world is open', async ({ page }) => {
     const editor = await openEditor(page);
+    await showRoutines(editor);
     const daily = editor.getByRole('list', { name: 'Activities of RTN_START_900' });
     await expect(daily).toContainText('08:00–20:00');
     await expect(daily.getByTitle('TA_STAND_ARMSCROSSED')).toHaveText(/^Stand arms ?crossed$/i);
@@ -270,6 +280,7 @@ test.describe('NPC editor: routine jumps', () => {
 
   test('opens the routine source at the indexed TA line', async ({ page }) => {
     const editor = await openEditor(page);
+    await showRoutines(editor);
     await editor.getByRole('button', { name: 'Show source for RTN_START_900 at line 3' }).click();
 
     const source = page.getByRole('dialog', { name: 'Routine source: RTN_START_900' });
@@ -281,6 +292,8 @@ test.describe('NPC editor: routine jumps', () => {
   test('waits for unsaved changes before leaving the editor', async ({ page }) => {
     const editor = await openEditor(page);
     await editor.getByLabel('Level').fill('30');
+    await showRoutines(editor);
+    // The edit made on the Character tab still holds the map jumps.
     await expect(editor.getByTitle('Save or cancel your changes first').first()).toBeVisible();
   });
 });
@@ -401,10 +414,11 @@ test.describe('NPC editor: start routine', () => {
     await page.getByRole('button', { name: 'Edit NPC BAU_901_Bauer' }).click();
     const editor = page.getByRole('dialog', { name: /BAU_901_Bauer/ });
     await expect(editor).toBeVisible();
+    await showRoutines(editor);
 
     // Below the list, because the routine it names does not exist yet.
     await expect(editor.getByLabel('Start routine', { exact: true })).toHaveValue('');
-    const routines = (await editor.getByText('Routines', { exact: true }).boundingBox())!;
+    const routines = (await editor.getByRole('region', { name: 'Routines' }).boundingBox())!;
     const field = (await editor.getByLabel('Start routine', { exact: true }).boundingBox())!;
     expect(field.y).toBeGreaterThan(routines.y);
 
@@ -444,9 +458,11 @@ test.describe('NPC editor: start routine', () => {
   });
 });
 
-// #564: the dialog reads in the order the NPC is worked on — who, when, how
-// they fight — with the appearance fields beside the preview they change, a
-// header that names the NPC, and edits that say they are edits.
+// #564, #580: the dialog reads in the order the NPC is worked on — who, when,
+// how they fight — with the appearance fields beside the preview they change,
+// a header that names the NPC, and edits that say they are edits. The form is
+// split into a Character tab (identity, combat, appearance) and a Routines tab
+// that gets the whole left area; the preview stays beside both.
 test.describe('NPC editor: layout', () => {
   test.beforeEach(async ({ page }) => {
     await openProject(page, { 'Choices.d': CHOICES_FILE });
@@ -459,20 +475,53 @@ test.describe('NPC editor: layout', () => {
     await expect(header).toContainText('BAU_900_Onar · GIL_BAU · Level 20 · NPC/BAU_900_Onar.d');
   });
 
-  test('orders identity, routines and combat, with appearance beside the preview', async ({ page }) => {
+  test('puts the form on two tabs, with appearance in a column beside identity and the preview on the right', async ({ page }) => {
     const editor = await openEditor(page);
+    await expect(editor.getByRole('tab', { name: 'Character' })).toHaveAttribute('aria-selected', 'true');
+    await expect(editor.getByRole('tab', { name: 'Routines' })).toHaveAttribute('aria-selected', 'false');
+
     const top = async (name: string) => (await editor.getByRole('region', { name }).boundingBox())!;
     const identity = await top('Identity');
-    const routines = await top('Routines');
     const combat = await top('Combat');
-    expect(identity.y).toBeLessThan(routines.y);
-    expect(routines.y).toBeLessThan(combat.y);
+    const appearance = await top('Appearance');
+    const preview = (await editor.getByTestId('npc-preview').boundingBox())!;
+    expect(identity.y).toBeLessThan(combat.y);
+    // Appearance is its own column, not stacked under the preview.
+    expect(appearance.x).toBeGreaterThan(identity.x + identity.width - 1);
+    expect(preview.x).toBeGreaterThan(appearance.x + appearance.width - 1);
+    await expect(editor.getByRole('region', { name: 'Appearance' }).getByLabel('Melee weapon')).toBeVisible();
+  });
 
-    const appearance = editor.getByRole('region', { name: 'Appearance' });
-    await expect(appearance.getByTestId('npc-preview')).toBeVisible();
-    await expect(appearance.getByLabel('Head mesh')).toBeVisible();
-    await expect(appearance.getByLabel('Melee weapon')).toBeVisible();
-    expect((await appearance.boundingBox())!.x).toBeGreaterThan(identity.x + identity.width - 1);
+  test('gives the routines the whole left area, and keeps the preview mounted', async ({ page }) => {
+    const editor = await openEditor(page);
+    const identity = (await editor.getByRole('region', { name: 'Identity' }).boundingBox())!;
+    await editor.getByTestId('npc-preview').evaluate((el) => el.setAttribute('data-probe', 'kept'));
+
+    await showRoutines(editor);
+    await expect(editor.getByRole('region', { name: 'Identity' })).toHaveCount(0);
+    const routines = (await editor.getByRole('region', { name: 'Routines' }).boundingBox())!;
+    expect(routines.x).toBeLessThan(identity.x + identity.width);
+    expect(routines.width).toBeGreaterThan(identity.width);
+    // The same preview node, so its camera is not reframed by a tab switch.
+    await expect(editor.locator('[data-probe="kept"]')).toBeVisible();
+  });
+
+  test('keeps edits made on one tab when the other is shown, and saves them from either', async ({ page }) => {
+    const editor = await openEditor(page);
+    const status = editor.getByTestId('npc-editor-changes');
+    await editor.getByLabel('Level').fill('25');
+
+    await showRoutines(editor);
+    await expect(status).toHaveText('1 unsaved change');
+    await editor.getByRole('tab', { name: 'Character' }).click();
+    await expect(editor.getByLabel('Level')).toHaveValue('25');
+    await expect(editor.locator('[data-changed="true"]').getByLabel('Level')).toBeVisible();
+
+    await showRoutines(editor);
+    await editor.getByRole('button', { name: 'Save' }).click();
+    await expect(editor).toBeHidden();
+    const written = await page.evaluate(() => localStorage.getItem('mockapi_file_project/NPC/BAU_900_Onar.d'));
+    expect(written).toContain('level = 25;');
   });
 
   test('marks an edited field and counts the unsaved changes', async ({ page }) => {

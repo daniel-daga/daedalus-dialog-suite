@@ -114,7 +114,7 @@ const NpcVisualPreview: React.FC<NpcVisualPreviewProps> = (
           ref={canvasRef}
           data-testid="npc-preview-canvas"
           style={{
-            width: '100%', maxWidth: 320, height: 400, display: 'block', marginTop: 4,
+            width: '100%', maxWidth: 320, height: 'min(400px, 42vh)', display: 'block', marginTop: 4,
             border: '1px solid rgba(128,128,128,0.4)', touchAction: 'none',
           }}
         />

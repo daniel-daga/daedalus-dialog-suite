@@ -49,6 +49,7 @@ it('re-indexes the file it saved, so a changed daily routine is current', async 
   await useEditorStore.getState().openFile('test.d');
   render(<NpcEditorDialog npcName="NPC_TEST" filePath="test.d" onClose={jest.fn()} />);
 
+  fireEvent.click(await screen.findByRole('tab', { name: 'Routines' }));
   fireEvent.click(await screen.findByRole('button', { name: 'Set RTN_FARM_11 as start routine' }));
   expect(within(screen.getByRole('group', { name: 'Routine RTN_FARM_11' })).getByText('Start routine')).toBeInTheDocument();
 
