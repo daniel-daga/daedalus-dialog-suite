@@ -11,7 +11,8 @@
 
 import { watch, type FSWatcher } from 'chokidar';
 import type { BrowserWindow } from 'electron';
-import { realpathSync, statSync } from 'fs';
+import { lstatSync, readdirSync, realpathSync, statSync } from 'fs';
+import * as path from 'path';
 import { canonicalPathKey } from '../utils/pathKey';
 import { isPathInside } from '../utils/pathContainment';
 
@@ -42,6 +43,111 @@ interface SelfWriteToken {
 interface PendingFileEvent {
   event: FileChangeEvent;
   observedSignature?: SelfWriteSignature;
+}
+
+/**
+ * The scan's rule (#544): a link whose real path leaves the project root is
+ * not part of the project, so it is neither indexed nor watched. A root that
+ * cannot be resolved leaves the rule off rather than ignoring everything.
+ *
+ * chokidar asks about every path, twice, on the main process, so the answer
+ * must not cost a syscall per path (#572). Only a symlink or junction can
+ * leave the root, and a directory listing says which entries are links: each
+ * folder is listed once, only links are resolved, and each link once. A file
+ * behind a linked folder has no link bit of its own, so a path is also outside
+ * when one of its folders is; chokidar does not descend into an ignored folder,
+ * but the answer does not rely on it.
+ *
+ * A name the listing does not hold was created after it and is asked about by
+ * itself. A removed path is forgotten, so whatever takes its place is judged
+ * afresh. A file swapped for a link with no unlink event in between keeps its
+ * old answer until then; reads of it are still refused by
+ * `PathValidationService`.
+ */
+function createLinkContainment(projectPath: string): {
+  resolvesOutsideRoot(filePath: string): boolean;
+  forget(filePath: string, isDirectory: boolean): void;
+} {
+  let realRoot: string | null = null;
+  try {
+    realRoot = realpathSync.native(projectPath);
+  } catch {
+    realRoot = null;
+  }
+  const rootKey = path.resolve(projectPath);
+  // Folder → entry name → whether it is a link; null for an unreadable folder.
+  const listings = new Map<string, Map<string, boolean> | null>();
+  const folderVerdicts = new Map<string, boolean>();
+  const linkVerdicts = new Map<string, boolean>();
+
+  const isLink = (key: string): boolean => {
+    const folder = path.dirname(key);
+    let listing = listings.get(folder);
+    if (listing === undefined) {
+      try {
+        listing = new Map(readdirSync(folder, { withFileTypes: true })
+          .map((entry): [string, boolean] => [entry.name, entry.isSymbolicLink()]));
+      } catch {
+        listing = null;
+      }
+      listings.set(folder, listing);
+    }
+    const name = path.basename(key);
+    const known = listing?.get(name);
+    if (known !== undefined) return known;
+    try {
+      // `isSymbolicLink` is true for a Windows junction as well.
+      const link = lstatSync(key).isSymbolicLink();
+      listing?.set(name, link);
+      return link;
+    } catch {
+      return false; // vanished: chokidar reports it as it sees it
+    }
+  };
+
+  const linkLeavesRoot = (key: string): boolean => {
+    if (!realRoot || !isLink(key)) return false;
+    const cached = linkVerdicts.get(key);
+    if (cached !== undefined) return cached;
+    try {
+      const outside = !isPathInside(realRoot, realpathSync.native(key));
+      linkVerdicts.set(key, outside);
+      return outside;
+    } catch {
+      return false; // dangling: chokidar reports it as it sees it
+    }
+  };
+
+  const folderLeavesRoot = (folder: string): boolean => {
+    const parent = path.dirname(folder);
+    if (folder === rootKey || parent === folder) return false;
+    const cached = folderVerdicts.get(folder);
+    if (cached !== undefined) return cached;
+    const outside = folderLeavesRoot(parent) || linkLeavesRoot(folder);
+    folderVerdicts.set(folder, outside);
+    return outside;
+  };
+
+  return {
+    resolvesOutsideRoot(filePath) {
+      if (!realRoot) return false;
+      const key = path.resolve(filePath);
+      if (key === rootKey) return false;
+      return folderLeavesRoot(path.dirname(key)) || linkLeavesRoot(key);
+    },
+    forget(filePath, isDirectory) {
+      const key = path.resolve(filePath);
+      listings.get(path.dirname(key))?.delete(path.basename(key));
+      linkVerdicts.delete(key);
+      if (!isDirectory) return;
+      const below = key + path.sep;
+      for (const cache of [listings, folderVerdicts, linkVerdicts]) {
+        for (const cached of cache.keys()) {
+          if (cached === key || cached.startsWith(below)) cache.delete(cached);
+        }
+      }
+    },
+  };
 }
 
 export class FileWatcherService {
@@ -120,24 +226,7 @@ export class FileWatcherService {
 
     this.watchedPath = projectPath;
 
-    // The scan's rule (#544): a link whose real path leaves the project root
-    // is not part of the project, so it is neither indexed nor watched. A
-    // root that cannot be resolved leaves the rule off rather than ignoring
-    // everything.
-    let realRoot: string | null = null;
-    try {
-      realRoot = realpathSync.native(projectPath);
-    } catch {
-      realRoot = null;
-    }
-    const resolvesOutsideRoot = (filePath: string): boolean => {
-      if (!realRoot) return false;
-      try {
-        return !isPathInside(realRoot, realpathSync.native(filePath));
-      } catch {
-        return false; // vanished or dangling: chokidar reports it as it sees it
-      }
-    };
+    const links = createLinkContainment(projectPath);
 
     this.watcher = watch(projectPath, {
       // Only watch .d files (Daedalus source files) and the .src lists that
@@ -149,7 +238,7 @@ export class FileWatcherService {
         // dotted directory (e.g. "Mod.bak/") from a file, so we do NOT ignore
         // — chokidar will re-evaluate with stats on the next pass.
         if (stats && !stats.isDirectory() && !/\.(d|src)$/i.test(filePath)) return true;
-        return resolvesOutsideRoot(filePath);
+        return links.resolvesOutsideRoot(filePath);
       },
       persistent: true,
       ignoreInitial: true,
@@ -163,7 +252,11 @@ export class FileWatcherService {
     const generation = this.generation;
     this.watcher.on('change', (filePath: string) => this.receiveEvent('change', filePath, generation));
     this.watcher.on('add', (filePath: string) => this.receiveEvent('add', filePath, generation));
-    this.watcher.on('unlink', (filePath: string) => this.receiveEvent('unlink', filePath, generation));
+    this.watcher.on('unlink', (filePath: string) => {
+      links.forget(filePath, false);
+      this.receiveEvent('unlink', filePath, generation);
+    });
+    this.watcher.on('unlinkDir', (dirPath: string) => links.forget(dirPath, true));
 
     this.watcher.on('error', (error: unknown) => {
       console.error('[FileWatcher] Error:', error instanceof Error ? error.message : error);

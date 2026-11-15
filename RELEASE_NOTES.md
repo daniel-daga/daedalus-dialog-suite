@@ -160,3 +160,4 @@
 - #564: The NPC editor shows routines as cards with a day timeline, starts a new routine directly, and groups fields as identity, routines, combat and appearance beside the preview, marking unsaved edits; Ctrl+S saves
 - #569: A compilation list the editor cannot resolve no longer makes every other list's excluded scripts reappear
 - #568: Scripts a .src list excludes stay out of the project when they change on disk, and editing a .src re-indexes
+- #572: Watching a large project no longer resolves every file's real path on the main process

@@ -48,7 +48,11 @@ folder. The project scan and the file watcher apply the same rule
 (#544): a link whose real path leaves the root is neither indexed nor watched,
 so the index never lists a file `file:read` would refuse, and a link to a drive
 root cannot make a project open walk the disk. The scan logs the skipped links
-once per open. A manual Windows pass on this UX is in the
+once per open. The watcher decides it without a realpath per path (#572): it
+lists each folder once, resolves only the entries that are links, and treats a
+path as outside when one of its folders is. A removed path is judged again; a
+file swapped for a link with no unlink event keeps its answer until then, and
+`file:read` still refuses it. A manual Windows pass on this UX is in the
 [release checklist](../release-checklist.md#4-manual-desktop--packaged-qa).
 
 ## IPC boundary hardening
