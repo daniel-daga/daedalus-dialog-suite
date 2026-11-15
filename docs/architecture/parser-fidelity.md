@@ -29,13 +29,13 @@ and its 1-based `line`; an extension block carries neither.
 
 Still not seen in an overload body: rules that read projected actions in the
 renderer (`voice-id-*`, `output-unit-*`, `knowsinfo-dangling`,
-`choice-no-clearchoices`), since `callSites` stops at the IPC boundary.
+`choice-no-clearchoices`), since `callSites` stops at the IPC boundary (#574).
 
 Problems reports each overload as a `function-overload` hint, so a
 redeclaration with an accidentally changed parameter list is visible without
 blocking a save. Renaming a dialog refuses when any raw entry's source names a
 renamed identifier, which includes an overload of a renamed function; the
-choice-target `renameFunction` path does not check raw entries.
+choice-target `renameFunction` path does not check raw entries (#574).
 
 Dialog deletion removes only dialog/function order entries, never raw entries
 with matching names. Its existing conservative reference check also scans raw
