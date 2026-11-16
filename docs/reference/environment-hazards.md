@@ -162,13 +162,18 @@ trusting master for a release, not after.
   ```ts
   // playwright.local.config.ts — delete it when you are done
   import base from './playwright.config';
-  export default { ...base, projects: (base.projects ?? []).map((p) => ({
+  export default { ...base, globalSetup: undefined, projects: (base.projects ?? []).map((p) => ({
     ...p, use: { ...p.use, launchOptions: { executablePath: '/opt/pw-browsers/chromium' } },
   })) };
   ```
 
   `pnpm exec playwright test -c playwright.local.config.ts`. Verified
-  2026-09-11: 177 passed.
+  2026-09-11: 177 passed. **`globalSetup: undefined` is needed since #524**:
+  `playwright.globalSetup.ts` warms the app with its own `chromium.launch()`,
+  which `launchOptions` never reaches, so without it the run dies in setup
+  with the same *"Executable doesn't exist"* before any spec starts (seen
+  2026-11-16; the image then shipped build 1243). Dropping the warm-up only
+  costs the first spec a cold page.
 - **The real-Electron World specs need software GL in a container.** With no
   GPU, Chromium blocklists WebGL2 outright (`ContextResult::kFatalFailure:
   WebGL2 blocklisted`) and every spec that opens a world times out waiting for
