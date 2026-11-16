@@ -6,6 +6,8 @@ import { collectDialogLineActions, mapChoiceTargetFunctions } from '../component
 import {
   computeDialogDeletionSet,
   planDialogRename,
+  hasRawOverload,
+  RENAME_OVERLOADED_FUNCTION_ERROR,
   resolveFunctionRef
 } from '../components/dialogUtils';
 import { firstLineText, followFirstLine } from '../components/descriptionSync';
@@ -559,6 +561,10 @@ export const useFileStore = create<FileStore>()(immer((set, get) => ({
       const existingFunction = fileState.semanticModel.functions[oldFunctionName];
       if (!existingFunction) {
         return;
+      }
+      // The choice field validates this first; the store refuses regardless.
+      if (hasRawOverload(fileState.semanticModel, oldFunctionName)) {
+        throw new Error(`Cannot rename function: ${RENAME_OVERLOADED_FUNCTION_ERROR}`);
       }
 
       const updatedFunctions = { ...fileState.semanticModel.functions };

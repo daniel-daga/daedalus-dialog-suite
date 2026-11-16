@@ -1,4 +1,5 @@
-import type { FunctionFacts, LintRule, Problem, ProjectView } from '../types';
+import type { FunctionEntry, FunctionFacts, LintRule, Problem, ProjectView } from '../types';
+import { bodyKey } from '../fileFacts';
 
 /**
  * `choice-no-clearchoices`: flags an info function that opens a choice menu with
@@ -12,13 +13,20 @@ import type { FunctionFacts, LintRule, Problem, ProjectView } from '../types';
 export const choiceNoClearChoicesRule: LintRule = (view: ProjectView): Problem[] => {
   const problems: Problem[] = [];
 
-  for (const [, entry] of view.functionsByKey) {
+  // A name resolves to its first signature, so that is what choice targets
+  // reach; a raw overload (#574) is only ever a start of its own.
+  const starts: FunctionEntry[] = [...view.functionsByKey.values()];
+  for (const { filePath, facts } of view.fileFacts) {
+    for (const func of facts.overloads || []) starts.push({ func, filePath });
+  }
+
+  for (const entry of starts) {
     if (!entry.func.hasChoice) {
       continue;
     }
     if (!reachableClears(entry.func, view)) {
       problems.push({
-        id: `choice-no-clearchoices:${entry.filePath}:${entry.func.name}`,
+        id: `choice-no-clearchoices:${entry.filePath}:${bodyKey(entry.func)}`,
         rule: 'choice-no-clearchoices',
         severity: 'warning',
         message: `Function "${entry.func.name}" opens a choice menu (Info_AddChoice) with no Info_ClearChoices in any reachable choice target.`,
@@ -40,7 +48,8 @@ function reachableClears(start: FunctionFacts, view: ProjectView): boolean {
   const stack: FunctionFacts[] = [];
 
   const enqueue = (func: FunctionFacts): void => {
-    const nextKey = func.name.trim().toLowerCase();
+    // An overload shares its first signature's name, not its body (#574).
+    const nextKey = bodyKey(func).trim().toLowerCase();
     if (visited.has(nextKey)) {
       return;
     }

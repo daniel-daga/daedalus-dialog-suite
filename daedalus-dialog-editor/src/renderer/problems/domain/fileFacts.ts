@@ -1,4 +1,4 @@
-import type { DialogLineAction, SemanticModel } from '../../../shared/types';
+import type { DialogAction, DialogCondition, DialogLineAction, SemanticModel } from '../../../shared/types';
 import type { DialogFacts, FileFacts, FunctionFacts } from './types';
 import { forEachAction } from './walk';
 
@@ -29,61 +29,8 @@ export function extractFileFacts(model: SemanticModel): FileFacts {
     conditionRef: refName(dialog.properties?.condition)
   }));
 
-  const functions: FunctionFacts[] = Object.values(model.functions || {}).map((func) => {
-    let hasChoice = false;
-    let hasClearChoices = false;
-    const choiceTargets: string[] = [];
-    const voiceIds: Array<{ id: string; text: string; line?: number }> = [];
-    const knowsInfoRefs: FunctionFacts['knowsInfoRefs'] = [];
-    const scanKnowsInfo = (text: string | undefined, line?: number) => {
-      for (const [, , dialogRef] of (text || '').matchAll(KNOWS_INFO_CALL)) {
-        const ref = dialogRef.trim();
-        if (ref.length > 0) {
-          knowsInfoRefs.push({ dialogRef: ref, line });
-        }
-      }
-    };
-    forEachAction(func.actions, (action) => {
-      if (action.type === 'Choice') {
-        hasChoice = true;
-        choiceTargets.push(action.targetFunction);
-      } else if (action.type === 'ClearChoicesAction') {
-        hasClearChoices = true;
-      } else if (action.type === 'DialogLine') {
-        const dialogLine = action as DialogLineAction;
-        if (typeof dialogLine.id === 'string' && dialogLine.id.trim() !== '' && !dialogLine.idIsExpression) {
-          voiceIds.push({ id: dialogLine.id, text: dialogLine.text ?? '', line: action.line });
-        }
-      } else if (action.type === 'ConditionalAction') {
-        scanKnowsInfo(action.condition, action.line);
-      } else if (action.type === 'Action') {
-        scanKnowsInfo(action.action, action.line);
-      }
-    });
-
-    // `conditions` is guaranteed by the native parser but may be absent on
-    // partial/error models or the browser-harness mock — tolerate that.
-    (func.conditions || []).forEach((condition) => {
-      if (condition.type === 'NpcKnowsInfoCondition') {
-        if (condition.dialogRef.length > 0) {
-          knowsInfoRefs.push({ dialogRef: condition.dialogRef, line: condition.line });
-        }
-      } else if (condition.type === 'Condition' || condition.type === 'GenericCondition') {
-        scanKnowsInfo(condition.condition, condition.line);
-      }
-    });
-
-    return {
-      name: func.name,
-      line: func.line,
-      hasChoice,
-      hasClearChoices,
-      choiceTargets,
-      calls: func.calls || [],
-      knowsInfoRefs,
-      voiceIds
-    };
-  });
+  const functions: FunctionFacts[] = Object.values(model.functions || {}).map((func) =>
+    extractFunctionFacts(func.name, func.line, func.actions, func.conditions, func.calls || []));
 
   const npcNames: string[] = [];
   // Only `daily_routine` is a modelled field, so the rest of an instance body's
@@ -104,9 +51,87 @@ export function extractFileFacts(model: SemanticModel): FileFacts {
   }
 
   // Only an overload carries `overloadOf`; an extension block is `raw` too.
-  const overloads = (model.declarationOrder || [])
-    .filter((entry) => entry.type === 'raw' && entry.overloadOf !== undefined)
-    .map((entry) => ({ name: entry.overloadOf as string, line: entry.line }));
+  // Its body is the parser's read-only projection (#574), read here like any
+  // function's and attributed to the overload by its own lines. Its calls are
+  // already on the first signature's `calls` (#567), so none are repeated.
+  const overloads: FunctionFacts[] = [];
+  for (const entry of model.declarationOrder || []) {
+    if (entry.type !== 'raw' || entry.overloadOf === undefined) continue;
+    overloads.push({
+      ...extractFunctionFacts(entry.overloadOf, entry.line, entry.overloadBody?.actions, entry.overloadBody?.conditions, []),
+      overload: overloads.length
+    });
+  }
 
   return { dialogs, functions, npcNames, instanceRefs: [...instanceRefs], overloads };
+}
+
+/**
+ * Every function body a file's facts hold — its functions, then its raw
+ * overloads (#574) — for the rules that read bodies rather than resolve names.
+ * `overloads` may be absent on facts cached or built before the field.
+ */
+export const functionBodies = (facts: FileFacts): FunctionFacts[] =>
+  facts.overloads?.length ? [...facts.functions, ...facts.overloads] : facts.functions;
+
+/** A finding-id segment for one body: an overload's differs from its first signature's. */
+export const bodyKey = (func: FunctionFacts): string =>
+  func.overload === undefined ? func.name : `${func.name}#overload${func.overload}`;
+
+/**
+ * One function body's facts, by a single walk over its (possibly nested)
+ * actions and its conditions — a declared function's, or an overload's
+ * read-only projection (#574).
+ */
+function extractFunctionFacts(
+  name: string,
+  line: number | undefined,
+  actions: DialogAction[] | undefined,
+  conditions: DialogCondition[] | undefined,
+  calls: string[]
+): FunctionFacts {
+  let hasChoice = false;
+  let hasClearChoices = false;
+  const choiceTargets: string[] = [];
+  const voiceIds: Array<{ id: string; text: string; line?: number }> = [];
+  const knowsInfoRefs: FunctionFacts['knowsInfoRefs'] = [];
+  const scanKnowsInfo = (text: string | undefined, at?: number) => {
+    for (const [, , dialogRef] of (text || '').matchAll(KNOWS_INFO_CALL)) {
+      const ref = dialogRef.trim();
+      if (ref.length > 0) {
+        knowsInfoRefs.push({ dialogRef: ref, line: at });
+      }
+    }
+  };
+  forEachAction(actions, (action) => {
+    if (action.type === 'Choice') {
+      hasChoice = true;
+      choiceTargets.push(action.targetFunction);
+    } else if (action.type === 'ClearChoicesAction') {
+      hasClearChoices = true;
+    } else if (action.type === 'DialogLine') {
+      const dialogLine = action as DialogLineAction;
+      if (typeof dialogLine.id === 'string' && dialogLine.id.trim() !== '' && !dialogLine.idIsExpression) {
+        voiceIds.push({ id: dialogLine.id, text: dialogLine.text ?? '', line: action.line });
+      }
+    } else if (action.type === 'ConditionalAction') {
+      scanKnowsInfo(action.condition, action.line);
+    } else if (action.type === 'Action') {
+      scanKnowsInfo(action.action, action.line);
+    }
+  });
+
+  // `conditions` is guaranteed by the native parser but may be absent on
+  // partial/error models or the browser-harness mock — tolerate that.
+  (conditions || []).forEach((condition) => {
+    if (condition.type === 'NpcKnowsInfoCondition') {
+      if (condition.dialogRef.length > 0) {
+        knowsInfoRefs.push({ dialogRef: condition.dialogRef, line: condition.line });
+      }
+    } else if (condition.type === 'Condition' || condition.type === 'GenericCondition') {
+      scanKnowsInfo(condition.condition, condition.line);
+    }
+  });
+
+  return { name, line, hasChoice, hasClearChoices, choiceTargets, calls, knowsInfoRefs, voiceIds };
 }

@@ -1,4 +1,5 @@
 import type { LintRule, Problem } from '../types';
+import { bodyKey, functionBodies } from '../fileFacts';
 
 /**
  * `output-unit-stale` / `output-unit-missing`: every `AI_Output` line in the
@@ -25,7 +26,7 @@ export const outputUnitDriftRule: LintRule = (view): Problem[] => {
   const problems: Problem[] = [];
 
   for (const file of view.fileFacts) {
-    for (const func of file.facts.functions) {
+    for (const func of functionBodies(file.facts)) {
       for (const [ordinal, { id, text: comment, line }] of func.voiceIds.entries()) {
         // Ids are matched case-insensitively because Daedalus is and the OU
         // writer upper-cases; the subtitle is compared verbatim because it is
@@ -37,7 +38,7 @@ export const outputUnitDriftRule: LintRule = (view): Problem[] => {
 
         if (recorded === undefined) {
           problems.push({
-            id: `output-unit-missing:${file.filePath}:${func.name}:${id.toUpperCase()}:${ordinal}`,
+            id: `output-unit-missing:${file.filePath}:${bodyKey(func)}:${id.toUpperCase()}:${ordinal}`,
             rule: 'output-unit-missing',
             severity: 'warning',
             message:
@@ -48,7 +49,7 @@ export const outputUnitDriftRule: LintRule = (view): Problem[] => {
           });
         } else if (recorded !== text) {
           problems.push({
-            id: `output-unit-stale:${file.filePath}:${func.name}:${id.toUpperCase()}:${ordinal}`,
+            id: `output-unit-stale:${file.filePath}:${bodyKey(func)}:${id.toUpperCase()}:${ordinal}`,
             rule: 'output-unit-stale',
             severity: 'warning',
             message:
@@ -76,7 +77,7 @@ export function outputUnitAgreement(view: Parameters<LintRule>[0]): { compared: 
   let compared = 0;
   let stale = 0;
   for (const file of view.fileFacts) {
-    for (const func of file.facts.functions) {
+    for (const func of functionBodies(file.facts)) {
       for (const { id, text } of func.voiceIds) {
         const recorded = units.get(id.trim().toUpperCase());
         if (recorded === undefined) continue;

@@ -29,6 +29,7 @@ import { parseLiteralOrIdentifier } from '../parsers/literal-parsing';
 import { captureAssignmentSource } from '../action-source';
 import { createNameRecord } from '../name-utils';
 import { referenceIdentifier } from '../reference-expression';
+import type { OverloadRecord } from './declaration-visitor';
 
 /**
  * Stamp a parsed action or condition with the 1-based line of the node it came
@@ -88,13 +89,13 @@ export class LinkingVisitor {
   private callArgs: Map<number, ParsedArg[]>;
   private conditionalDepth = 0;
 
-  /** Start index of each accepted additional overload → the first signature's key (#567). */
-  private overloadOwners: Map<number, string>;
+  /** Start index of each accepted additional overload → its owner and raw entry (#567, #574). */
+  private overloadOwners: Map<number, OverloadRecord>;
 
   constructor(
     semanticModel: SemanticModel,
     functionNameMap: Map<string, string>,
-    overloadOwners: Map<number, string> = new Map()
+    overloadOwners: Map<number, OverloadRecord> = new Map()
   ) {
     this.overloadOwners = overloadOwners;
     this.dialogs = semanticModel.dialogs;
@@ -163,9 +164,10 @@ export class LinkingVisitor {
     const type = cursor.nodeType;
 
     if (type === 'function_declaration' && this.overloadOwners.size > 0) {
-      const owner = this.functions[this.overloadOwners.get(cursor.startIndex) ?? ''];
-      if (owner) {
-        this.indexOverloadBody(cursor, owner);
+      const record = this.overloadOwners.get(cursor.startIndex);
+      const owner = record && this.functions[record.owner];
+      if (record && owner) {
+        this.indexOverloadBody(cursor, owner, record);
         return;
       }
     }
@@ -196,21 +198,31 @@ export class LinkingVisitor {
   }
 
   /**
-   * An additional overload stays a `raw` declaration (#557): nothing of its
-   * body is projected, and its source is what a save writes. Its calls still
-   * happen, so they are indexed under the first signature's name (#567) —
-   * `calls` for reference checks, `callSites` marked `overload` for the
-   * project index — and never reach that function's actions or conditions.
-   * The walk runs against a detached function so it shares the one sweep.
+   * An additional overload stays a `raw` declaration (#557): its source is
+   * what a save writes, and nothing of its body reaches the first signature.
+   * Its calls still happen, so they are indexed under the first signature's
+   * name (#567) — `calls` for reference checks, `callSites` marked `overload`
+   * for the project index. Its body is projected onto the raw entry (#574),
+   * read-only, for the analysis that reads actions and conditions.
+   *
+   * The body is walked exactly as a function's is, against a detached
+   * function that shares the owner's name — so an overload of a condition
+   * function is read in condition mode — and that one walk is the sweep.
    */
-  private indexOverloadBody(cursor: TreeCursor, owner: DialogFunction): void {
+  private indexOverloadBody(cursor: TreeCursor, owner: DialogFunction, record: OverloadRecord): void {
     const detached = new DialogFunction(owner.name, owner.returnType);
     this.currentFunction = detached;
-    this.recordCallSitesInSubtree(cursor);
-    this.currentFunction = null;
-    this.callArgs.clear();
+    const skipChildren = this.shouldSkipChildren(cursor.nodeType, cursor);
+    if (!skipChildren && cursor.gotoFirstChild()) {
+      do {
+        this.analyzeNodeRecursively(cursor);
+      } while (cursor.gotoNextSibling());
+      cursor.gotoParent();
+    }
+    this.leaveDeclarationContext(cursor.nodeType);
     owner.calls.push(...detached.calls);
     for (const site of detached.callSites) owner.callSites.push({ ...site, overload: true });
+    record.entry.overloadBody = { actions: detached.actions, conditions: detached.conditions };
   }
 
   private enterDeclarationContext(type: string, cursor: TreeCursor): void {

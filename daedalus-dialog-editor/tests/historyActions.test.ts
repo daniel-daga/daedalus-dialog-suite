@@ -2,6 +2,7 @@ import { useFileStore } from '../src/renderer/store/fileStore';
 import { useHistoryStore } from '../src/renderer/store/historyStore';
 import * as historyActions from '../src/renderer/store/historyActions';
 import type { SemanticModel } from '../src/renderer/types/global';
+import { RENAME_OVERLOADED_FUNCTION_ERROR, validateChoiceFunctionName } from '../src/renderer/components/dialogUtils';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -198,6 +199,27 @@ describe('historyActions – renameFunction', () => {
     historyActions.renameFunction(filePath, 'DIA_Test_Info', 'DIA_Test_Info_Renamed');
     useHistoryStore.getState().undo(filePath);
 
+    expect(getModel()?.functions['DIA_Test_Info']).toBeDefined();
+    expect(getModel()?.functions['DIA_Test_Info_Renamed']).toBeUndefined();
+  });
+
+  it('refuses a rename that would leave a raw overload under the old name (#574)', () => {
+    useFileStore.setState((state) => {
+      const fileState = state.openFiles.get(filePath)!;
+      fileState.semanticModel = {
+        ...fileState.semanticModel,
+        declarationOrder: [
+          { type: 'function', name: 'DIA_Test_Info' },
+          {
+            type: 'raw', name: 'dia_test_info', overloadOf: 'DIA_Test_Info',
+            sourceText: 'func void dia_test_info(var int x) {};',
+          },
+        ],
+      } as any;
+    });
+
+    expect(() => historyActions.renameFunction(filePath, 'DIA_Test_Info', 'DIA_Test_Info_Renamed'))
+      .toThrow(/another signature/i);
     expect(getModel()?.functions['DIA_Test_Info']).toBeDefined();
     expect(getModel()?.functions['DIA_Test_Info_Renamed']).toBeUndefined();
   });
@@ -770,5 +792,22 @@ describe('historyActions – renameDialog', () => {
       { type: 'dialog', name: 'DIA_Npc_Greeting' },
       { type: 'function', name: 'DIA_Npc_Greeting_Info' },
     ]);
+  });
+});
+
+describe('validateChoiceFunctionName – raw overloads (#574)', () => {
+  const model = {
+    functions: { DIA_Test_Choice_1: { name: 'DIA_Test_Choice_1' } },
+    declarationOrder: [{ type: 'raw', name: 'dia_test_choice_1', overloadOf: 'DIA_Test_Choice_1' }],
+  } as any;
+
+  it('refuses to rename a choice target that has a raw overload', () => {
+    expect(validateChoiceFunctionName('DIA_Test_Choice_2', 'DIA_Test', model, 'DIA_Test_Choice_1'))
+      .toBe(RENAME_OVERLOADED_FUNCTION_ERROR);
+  });
+
+  it('still accepts the unchanged name and a target without an overload', () => {
+    expect(validateChoiceFunctionName('DIA_Test_Choice_1', 'DIA_Test', model, 'DIA_Test_Choice_1')).toBeNull();
+    expect(validateChoiceFunctionName('DIA_Test_Other', 'DIA_Test', model, 'DIA_Test_Choice_3')).toBeNull();
   });
 });

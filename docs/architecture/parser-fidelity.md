@@ -27,15 +27,26 @@ sites, and the main-process voice-id index reads an overload's `AI_Output`
 ids from them. The raw entry carries `overloadOf` (the first signature's key)
 and its 1-based `line`; an extension block carries neither.
 
-Still not seen in an overload body: rules that read projected actions in the
-renderer (`voice-id-*`, `output-unit-*`, `knowsinfo-dangling`,
-`choice-no-clearchoices`), since `callSites` stops at the IPC boundary (#574).
+`callSites` stops at the IPC boundary, so the renderer reads an overload's
+body from the raw entry instead (#574): `overloadBody` holds its `actions` and
+`conditions`, projected by the same walk as any function's (an overload of a
+condition function in condition mode). It is read-only — never merged into the
+first signature, never editable, never generated from; a save still writes
+`sourceText`. Problems turns each into facts of its own (`FileFacts.overloads`),
+named by the first signature and located by the overload's own lines, which
+the body-reading rules (`voice-id-*`, `output-unit-*`, `knowsinfo-dangling`)
+walk beside `functions`. `choice-no-clearchoices` starts from an overload too,
+but a choice target still resolves by name to the first signature only, so an
+overload is never reached through one. Finding ids carry the overload's index,
+so a line repeated in both bodies yields two findings, not one id twice.
 
 Problems reports each overload as a `function-overload` hint, so a
 redeclaration with an accidentally changed parameter list is visible without
-blocking a save. Renaming a dialog refuses when any raw entry's source names a
-renamed identifier, which includes an overload of a renamed function; the
-choice-target `renameFunction` path does not check raw entries (#574).
+blocking a save. Neither rename rewrites raw source, so both refuse: renaming
+a dialog when any raw entry's source names a renamed identifier (which
+includes an overload of a renamed function), and renaming a choice target
+(`renameFunction`) when it has an overload — the choice field validates this
+and puts the old name back.
 
 Dialog deletion removes only dialog/function order entries, never raw entries
 with matching names. Its existing conservative reference check also scans raw

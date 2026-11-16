@@ -1,10 +1,13 @@
 import type { LintRule, Problem } from '../types';
+import { bodyKey, functionBodies } from '../fileFacts';
 
 /** One literal, non-empty voice id and where it was written. */
 interface VoiceIdOccurrence {
   id: string;
   filePath: string;
   functionName: string;
+  /** `functionName`, or an overload's own key (#574): what finding ids use. */
+  bodyKey: string;
   /** The `AI_Output` line itself — a function holds many, and they differ. */
   line?: number;
   /** Its position among the function's lines: two can carry the same id. */
@@ -32,9 +35,9 @@ export const voiceIdRule: LintRule = (view): Problem[] => {
   const occurrences: VoiceIdOccurrence[] = [];
 
   for (const file of view.fileFacts) {
-    for (const func of file.facts.functions) {
+    for (const func of functionBodies(file.facts)) {
       for (const [ordinal, { id, line }] of func.voiceIds.entries()) {
-        occurrences.push({ id, filePath: file.filePath, functionName: func.name, line, ordinal });
+        occurrences.push({ id, filePath: file.filePath, functionName: func.name, bodyKey: bodyKey(func), line, ordinal });
       }
     }
   }
@@ -58,7 +61,7 @@ export const voiceIdRule: LintRule = (view): Problem[] => {
     }
     for (const occ of group) {
       problems.push({
-        id: `voice-id-duplicate:${occ.filePath}:${occ.functionName}:${upper}:${occ.ordinal}`,
+        id: `voice-id-duplicate:${occ.filePath}:${occ.bodyKey}:${upper}:${occ.ordinal}`,
         rule: 'voice-id-duplicate',
         severity: 'warning',
         message: `Voice ID "${occ.id}" is used ${group.length} times across the project.`,
@@ -72,7 +75,7 @@ export const voiceIdRule: LintRule = (view): Problem[] => {
       continue;
     }
     problems.push({
-      id: `voice-id-malformed:${occ.filePath}:${occ.functionName}:${occ.id.toUpperCase()}:${occ.ordinal}`,
+      id: `voice-id-malformed:${occ.filePath}:${occ.bodyKey}:${occ.id.toUpperCase()}:${occ.ordinal}`,
       rule: 'voice-id-malformed',
       severity: 'warning',
       message: `Voice ID "${occ.id}" does not match the expected naming pattern (…_<number>_<number>, or …_<number> for a trialogue).`,

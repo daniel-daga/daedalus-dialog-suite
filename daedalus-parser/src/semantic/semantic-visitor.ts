@@ -5,15 +5,15 @@ import {
   SemanticModel,
 } from './semantic-model';
 import { ErrorVisitor } from './visitors/error-visitor';
-import { DeclarationVisitor } from './visitors/declaration-visitor';
+import { DeclarationVisitor, type OverloadRecord } from './visitors/declaration-visitor';
 import { LinkingVisitor, NestingTooDeepError, MAX_NESTING_DEPTH } from './visitors/linking-visitor';
 import { createNameRecord } from './name-utils';
 
 export class SemanticModelBuilderVisitor {
   public semanticModel: SemanticModel;
   private functionNameMap: Map<string, string>; // Maps lowercase name -> original name
-  /** Pass 1 → pass 2: start index of each additional overload → first signature's key (#567). */
-  private overloadOwners = new Map<number, string>();
+  /** Pass 1 → pass 2: start index of each additional overload → its owner and raw entry (#567, #574). */
+  private overloadOwners = new Map<number, OverloadRecord>();
 
   constructor() {
     this.semanticModel = {

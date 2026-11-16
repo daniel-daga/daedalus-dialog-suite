@@ -870,6 +870,9 @@ export interface SemanticModel {
     overloadOf?: string;
     /** 1-based line a `raw` function overload starts on (#567). */
     line?: number;
+    /** On a `raw` function overload only (#574): its body, projected for
+     *  analysis. Read-only: never edited, merged or generated from. */
+    overloadBody?: { actions: DialogAction[]; conditions: DialogCondition[] };
     leadingComments?: string[];
     /** Blank lines before the declaration and its leading comments, as parsed (#286) */
     blankLinesBefore?: number;

@@ -61,7 +61,7 @@ scans the condition/action text the parser left unstructured:
 | `knowsinfo-dangling` | error | a `Npc_KnowsInfo` dialog ref names no known dialog, whether the parser structured it or left it in raw body/guard text |
 | `choice-no-clearchoices` | warning | an `Info_AddChoice` with no `Info_ClearChoices` reachable via the choice-target chain |
 | `orphaned-function` | warning | function referenced by no dialog property, choice target, or `calls` entry |
-| `function-overload` | hint | a function name declared again in one file with a different parameter list; the parser keeps the additional signature as raw source (#567), so an accidental one is otherwise silent |
+| `function-overload` | hint | a function name declared again in one file with a different parameter list; the parser keeps the additional signature as raw source (#567), so an accidental one is otherwise silent. Its body is still checked by the body-reading rules, from a read-only projection (#574) |
 | `voice-id-duplicate` / `voice-id-malformed` | warning | a voice id used cross-file, or not matching `…_<n>_<n>` |
 | `output-unit-stale` / `output-unit-missing` | warning | the OutputUnit database holds different text for an `AI_Output` line, or no entry at all; these two rows carry the line the panel's **Update OUs** writes, and are silent when no database was found |
 | `waypoint-not-in-world` | warning | a script site names a waypoint the open world's waynet has no point for; silent when no world is open, and free points are matched by prefix because the engine matches them that way |

@@ -1280,6 +1280,15 @@ export interface SyntaxError {
   text: string;
 }
 
+/** A raw function overload's body as analysis reads it (#574). */
+export interface OverloadBody {
+  actions: DialogAction[];
+  conditions: DialogCondition[];
+}
+
+/** One `declarationOrder` entry. */
+export type DeclarationOrderEntry = NonNullable<SemanticModel['declarationOrder']>[number];
+
 export interface SemanticModel {
   dialogs: { [key: string]: Dialog };
   functions: { [key: string]: DialogFunction };
@@ -1299,6 +1308,13 @@ export interface SemanticModel {
     overloadOf?: string;
     /** 1-based line a `raw` function overload starts on (#567). */
     line?: number;
+    /**
+     * On a `raw` function overload only (#574): its body, projected the way a
+     * function's is, so analysis can read it. **Read-only**: it is never
+     * merged into the first signature, never edited, and never generated from
+     * — `sourceText` is what a save writes. Plain JSON after hydration.
+     */
+    overloadBody?: OverloadBody;
     leadingComments?: string[];
     /** Blank lines before the declaration and its leading comments, as parsed (#286) */
     blankLinesBefore?: number;

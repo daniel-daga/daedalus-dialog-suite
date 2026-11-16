@@ -111,3 +111,62 @@ describe('function-overload rule (#567)', () => {
     expect(functionOverloadRule(buildProjectView({ files: [], knownNpcNames: [] }))).toEqual([]);
   });
 });
+
+describe('renderer rules read a raw overload body (#574)', () => {
+  // Every finding below is in the overload, on its own line, and named by the
+  // function the overload shares a name with — never merged into the first.
+  const source = [
+    'instance DIA_Foo (C_INFO) { npc = Npc_Foo; information = DIA_Foo_Info; };',
+    'func void DIA_Foo_Info()',
+    '{',
+    '\tAI_Output (self, other, "DIA_Foo_15_00"); //First',
+    '};',
+    '',
+    'func void DIA_Foo_Info(var int x)',
+    '{',
+    '\tAI_Output (self, other, "DIA_Foo_15_00"); //First',
+    '\tAI_Output (self, other, "Malformed"); //Odd',
+    '\tif (Npc_KnowsInfo (other, DIA_Missing)) { B_Say (self, other, "$X"); };',
+    '\tInfo_AddChoice (DIA_Foo, "Go", DIA_Foo_Go);',
+    '};',
+    'func void DIA_Foo_Go() {};',
+    '',
+  ].join('\n');
+  const model = withoutCallSites(extractFileMetadataFromSource(source, FILE).semanticModel!) as SemanticModel;
+  const scan = (outputUnits?: { name: string; text: string; wav: string }[]) =>
+    scanProject({ files: [{ filePath: FILE, model }], knownNpcNames: ['Npc_Foo'], outputUnits }).problems;
+  const byRule = (problems: ReturnType<typeof scan>, rule: string) =>
+    problems.filter((problem) => problem.rule === rule);
+  const at = (line: number) => ({ kind: 'script', filePath: FILE, functionName: 'DIA_Foo_Info', line });
+  const loci = (problems: ReturnType<typeof scan>) =>
+    problems.map(({ locus }) => (locus.kind === 'script'
+      ? { kind: locus.kind, filePath: locus.filePath, functionName: locus.functionName, line: locus.line }
+      : locus));
+
+  it('crosses the IPC boundary with the projection and without merging it', () => {
+    expect(model.functions.DIA_Foo_Info.actions).toHaveLength(1);
+    const raw = model.declarationOrder!.find((entry) => entry.overloadOf === 'DIA_Foo_Info');
+    expect(raw?.overloadBody?.actions.map((action) => action.type))
+      .toEqual(['DialogLine', 'DialogLine', 'ConditionalAction', 'Choice']);
+  });
+
+  it('sees a duplicate and a malformed voice id in the overload', () => {
+    const problems = scan();
+    const duplicates = byRule(problems, 'voice-id-duplicate');
+    expect(loci(duplicates)).toEqual([at(4), at(9)]);
+    expect(new Set(duplicates.map((problem) => problem.id)).size).toBe(2);
+    expect(loci(byRule(problems, 'voice-id-malformed'))).toEqual([at(10)]);
+  });
+
+  it('sees an overload\'s lines against the OutputUnit database', () => {
+    const problems = scan([{ name: 'DIA_FOO_15_00', text: 'First', wav: '' }]);
+    expect(byRule(problems, 'output-unit-missing').map((problem) => problem.locus.kind === 'script' && problem.locus.line))
+      .toEqual([10]);
+  });
+
+  it('sees a dangling KnowsInfo and an uncleared choice in the overload', () => {
+    const problems = scan();
+    expect(loci(byRule(problems, 'knowsinfo-dangling'))).toEqual([at(11)]);
+    expect(loci(byRule(problems, 'choice-no-clearchoices'))).toEqual([at(7)]);
+  });
+});

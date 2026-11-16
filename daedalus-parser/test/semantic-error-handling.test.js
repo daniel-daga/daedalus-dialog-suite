@@ -676,3 +676,51 @@ test('a rejected duplicate signature and an extension block are not indexed as o
   assert.deepEqual(model.functions.B_Foo.calls, ['First']);
   assert.ok(model.declarationOrder.every(entry => entry.overloadOf === undefined));
 });
+
+// ===================================================================
+// A READ-ONLY PROJECTION OF A RAW OVERLOAD BODY (#574)
+// ===================================================================
+
+test('a raw overload carries its own read-only projection of its body (#574)', () => {
+  const model = parseSemanticModel(OVERLOAD_SOURCE);
+  const raw = model.declarationOrder.find(entry => entry.overloadOf === 'B_Foo');
+  assert.ok(raw.overloadBody, 'the overload body is projected onto its raw entry');
+  const { actions, conditions } = raw.overloadBody;
+  assert.deepEqual(conditions, []);
+  assert.equal(actions[0].type, 'DialogLine');
+  assert.equal(actions[0].id, 'DIA_Foo_15_01');
+  assert.equal(actions[0].text, 'Second');
+  assert.equal(actions[0].line, 8);
+  assert.equal(actions[1].type, 'ConditionalAction');
+  assert.equal(actions[1].line, 9);
+
+  // Still never merged into the first signature, nor made a function.
+  assert.deepEqual(Object.keys(model.functions), ['B_Foo']);
+  assert.equal(model.functions.B_Foo.actions.length, 1);
+  assert.equal(model.functions.B_Foo.callSites.filter(site => site.overload).length, 5);
+});
+
+test('a raw overload projection survives JSON and does not change generation (#574)', () => {
+  const { deserializeSemanticModel } = require('../dist/semantic/semantic-model');
+  const { SemanticCodeGenerator } = require('../dist/codegen/generator');
+  const json = JSON.parse(JSON.stringify(parseSemanticModel(OVERLOAD_SOURCE)));
+  const raw = json.declarationOrder.find(entry => entry.overloadOf === 'B_Foo');
+  assert.equal(raw.overloadBody.actions[0].id, 'DIA_Foo_15_01');
+  // A projection edited by mistake must still not reach the saved source.
+  raw.overloadBody.actions[0].id = 'CHANGED';
+  const model = deserializeSemanticModel(json);
+  assert.equal(new SemanticCodeGenerator().generateSemanticModel(model), OVERLOAD_SOURCE);
+});
+
+test('an overload of a condition function is projected as conditions (#574)', () => {
+  const model = parseSemanticModel([
+    'instance DIA_X (C_INFO) { condition = DIA_X_Condition; };',
+    'func int DIA_X_Condition() { if (Npc_KnowsInfo(other, DIA_Y)) { return TRUE; }; };',
+    'func int DIA_X_Condition(var int a) { if (Npc_KnowsInfo(other, DIA_Z)) { return TRUE; }; };',
+    ''
+  ].join('\n'));
+  assert.ok(!model.hasErrors, JSON.stringify(model.errors));
+  const raw = model.declarationOrder.find(entry => entry.overloadOf === 'DIA_X_Condition');
+  assert.deepEqual(raw.overloadBody.conditions.map(c => c.dialogRef), ['DIA_Z']);
+  assert.deepEqual(model.functions.DIA_X_Condition.conditions.map(c => c.dialogRef), ['DIA_Y']);
+});

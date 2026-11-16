@@ -59,7 +59,31 @@ export const validateChoiceFunctionName = (
     return 'Function name already exists';
   }
 
+  if (originalFunctionName && functionName !== originalFunctionName &&
+      hasRawOverload(semanticModel, originalFunctionName)) {
+    return RENAME_OVERLOADED_FUNCTION_ERROR;
+  }
+
   return null;
+};
+
+/** Why a function with a raw overload is not renamed (#574). */
+export const RENAME_OVERLOADED_FUNCTION_ERROR =
+  'This function has another signature kept as written; renaming it here would leave that one under the old name';
+
+/**
+ * Whether `functionName` has an additional signature kept as raw source
+ * (#557). Renaming the editable one alone would leave the overload behind
+ * under the old name (#574), and its source is not rewritten.
+ */
+export const hasRawOverload = (
+  semanticModel: Pick<SemanticModel, 'declarationOrder'> | undefined,
+  functionName: string
+): boolean => {
+  const key = functionName.toLowerCase();
+  return (semanticModel?.declarationOrder || []).some(
+    (entry) => entry.type === 'raw' && entry.overloadOf?.toLowerCase() === key
+  );
 };
 
 /**

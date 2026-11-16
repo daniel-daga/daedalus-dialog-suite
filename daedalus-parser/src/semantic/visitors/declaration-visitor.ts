@@ -14,6 +14,14 @@ import {
 import { parseLiteralOrIdentifier } from '../parsers/literal-parsing';
 import { createNameRecord } from '../name-utils';
 import { captureDeclarationHeader, captureDeclarationSuffix, parameterKeyword } from '../declaration-source';
+import type { DeclarationOrderEntry } from '../semantic-model';
+
+/** An accepted additional overload (#567): the first signature's key in
+ *  `functions`, and the raw entry pass 2 projects the body onto (#574). */
+export interface OverloadRecord {
+  owner: string;
+  entry: DeclarationOrderEntry;
+}
 
 export class DeclarationVisitor {
   private semanticModel: SemanticModel;
@@ -21,13 +29,13 @@ export class DeclarationVisitor {
   private declaredNames: Record<string, Record<string, true>>;
   private pendingLeadingComments: string[];
 
-  /** Start index of each accepted additional overload → the first signature's key (#567). */
-  private overloadOwners: Map<number, string>;
+  /** Start index of each accepted additional overload → its owner and raw entry (#567, #574). */
+  private overloadOwners: Map<number, OverloadRecord>;
 
   constructor(
     semanticModel: SemanticModel,
     functionNameMap: Map<string, string>,
-    overloadOwners: Map<number, string> = new Map()
+    overloadOwners: Map<number, OverloadRecord> = new Map()
   ) {
     this.overloadOwners = overloadOwners;
     this.semanticModel = semanticModel;
@@ -138,16 +146,18 @@ export class DeclarationVisitor {
         const firstSignature = this.functionNameMap.get(nameNode.text.toLowerCase());
         if (firstSignature !== undefined) {
           // shortcut: name-based consumers use the first signature; preserve other overloads until signature-aware editing exists.
-          this.semanticModel.declarationOrder?.push({
+          const entry: DeclarationOrderEntry = {
             type: 'raw',
             name: nameNode.text,
             sourceText: node.text,
             leadingComments: [...this.pendingLeadingComments],
             overloadOf: firstSignature,
             line: node.startPosition.row + 1
-          });
-          // #567: pass 2 indexes this body's calls under the first signature.
-          this.overloadOwners.set(node.startIndex, firstSignature);
+          };
+          this.semanticModel.declarationOrder?.push(entry);
+          // #567: pass 2 indexes this body's calls under the first signature,
+          // and (#574) projects the body onto this entry, read-only.
+          this.overloadOwners.set(node.startIndex, { owner: firstSignature, entry });
           return;
         }
         const func = new DialogFunction(nameNode.text, typeNode.text);

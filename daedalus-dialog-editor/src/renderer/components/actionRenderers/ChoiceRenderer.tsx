@@ -112,10 +112,11 @@ const ChoiceRenderer: React.FC<BaseActionRendererProps> = ({
             handleUpdate({ ...typedAction, targetFunction: newName });
           }}
           onBlur={() => {
-            flushUpdate();
             const originalName = originalFunctionNameRef.current;
             const newName = localTargetFunction;
-            if (dialogContextName && onRenameFunction && originalName && newName !== originalName) {
+            if (!(dialogContextName && onRenameFunction && originalName && newName !== originalName)) {
+              flushUpdate();
+            } else {
               // Read the model imperatively at validation time (event handler,
               // not render) so ChoiceRenderer never subscribes to the whole
               // model. File-first mirrors the editor's own resolution order.
@@ -127,10 +128,16 @@ const ChoiceRenderer: React.FC<BaseActionRendererProps> = ({
                 newName, dialogContextName, validationModel, originalName
               );
               if (validationError) {
+                // Validated before anything is flushed, and the revert is
+                // flushed at once (#574): left to the debounce, the refused
+                // name the typing already committed re-syncs over it first,
+                // and the choice keeps pointing at the refused name.
                 setLocalTargetFunction(originalName);
                 handleUpdate({ ...typedAction, targetFunction: originalName });
+                flushUpdate();
                 setFunctionNameError(validationError);
               } else {
+                flushUpdate();
                 setFunctionNameError(null);
                 onRenameFunction(originalName, newName);
               }

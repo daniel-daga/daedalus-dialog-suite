@@ -157,6 +157,12 @@ export interface FunctionFacts {
   /** Literal, non-empty voice ids, each with the subtitle written beside it —
    *  the text is what `output-unit-stale` compares against the OU database. */
   voiceIds: Array<{ id: string; text: string; line?: number }>;
+  /**
+   * Set on a raw overload's facts only (#574): its position among the file's
+   * overloads. `name` is then the first signature's, which is how a finding
+   * addresses it, and this is what keeps the finding ids of the two apart.
+   */
+  overload?: number;
 }
 
 /**
@@ -177,10 +183,12 @@ export interface FileFacts {
    */
   instanceRefs: string[];
   /**
-   * Additional signatures of a function this file already declares (#567):
-   * the first signature's name and the line the overload starts on.
+   * Additional signatures of a function this file already declares (#567),
+   * each with the facts of its body's read-only projection (#574): `name` is
+   * the first signature's and `line` the overload's own. Never in `functions`
+   * or `functionsByKey`, which a name resolves to the first signature through.
    */
-  overloads: Array<{ name: string; line?: number }>;
+  overloads: FunctionFacts[];
 }
 
 /** One file's facts together with its path. */

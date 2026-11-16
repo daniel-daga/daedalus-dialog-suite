@@ -165,3 +165,4 @@
 - #569: A compilation list the editor cannot resolve no longer makes every other list's excluded scripts reappear
 - #568: Scripts a .src list excludes stay out of the project when they change on disk, and editing a .src re-indexes
 - #572: Watching a large project no longer resolves every file's real path on the main process
+- #574: Problems checks a function overload's voice ids, subtitles, KnowsInfo and choices; renaming a choice target with an overload is refused, and a refused choice-target name is put back
