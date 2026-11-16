@@ -16,7 +16,7 @@ import { viteFsUrl } from '../viteFsUrl';
  * remaining rendering rules.
  */
 
-async function openWorldView(page: Page) {
+async function openWorldView(page: Page, prepare?: () => Promise<void>) {
   await page.goto('/');
   await expect(page.getByText('Welcome to Dandelion')).toBeVisible();
 
@@ -35,6 +35,9 @@ async function openWorldView(page: Page) {
   });
   await page.getByRole('button', { name: /Open Project/i }).first().click();
 
+  // Before the first visit, because the surface scans the project's worlds as
+  // soon as it mounts with none open.
+  if (prepare) await prepare();
   await page.getByTestId('world-toggle').click();
 }
 
@@ -478,6 +481,42 @@ test.describe('World surface', () => {
 
   // The worlds the project's asset sources hold, listed instead of a native
   // file dialog aimed at one install (level-editor.md §16.31).
+  test('lists the project`s own worlds before one is open, so opening takes one click', async ({ page }) => {
+    await openWorldView(page, () => page.evaluate(async (fixturePath) => {
+      const { SUMMARY, vobIndex } = await import(/* @vite-ignore */ fixturePath);
+      const api = (window as unknown as { editorAPI: Record<string, unknown> }).editorAPI;
+      api.listWorlds = async () => [
+        {
+          path: 'C:/beppo/thirdparty/Worlds/BURGDORF.ZEN',
+          name: 'BURGDORF.ZEN',
+          source: 'C:/beppo/thirdparty',
+          isDefault: false,
+        },
+      ];
+      api.openWorld = async () => ({
+        ...SUMMARY, assetSources: [], vobIndex: vobIndex([[0, 0, 0]], 'zCVob', undefined, ['BARREL'], ['']),
+      });
+      api.getWorldMesh = async () => ({ groups: [], bbox: SUMMARY.bbox });
+      api.getWorldVisuals = async () => ({ visuals: [], decals: { groups: [], count: 0 }, stats: {
+        visualsSeen: 0, visualsResolved: 0, vobsPlaced: 0, instancedDrawGroups: 0,
+        levelCompos: 0, unresolvedByType: {}, unresolved: [],
+      } });
+      api.getWorldItemInstances = async () => ({ vobs: [], instances: [] });
+      api.getWorldPortalFindings = async () => [];
+      api.getVobFolders = async () => ({ folders: [] });
+      api.getWorldHistoryDepth = async () => ({ undo: 0, redo: 0 });
+    }, viteFsUrl(resolve(__dirname, '../worldFixtures.ts'))));
+
+    // No dialog, no "Open world" click: the list is the empty state.
+    await expect(page.getByTestId('world-picker')).toHaveCount(0);
+    await expect(page.getByTestId('world-home-entry-BURGDORF.ZEN')).toBeVisible();
+
+    await page.getByTestId('world-home-entry-BURGDORF.ZEN').click();
+
+    await expect(page.getByTestId('world-viewport')).toBeVisible();
+    await expect(page.getByTestId('world-picker')).toHaveCount(0);
+  });
+
   test('lists the project`s own worlds and opens the one picked', async ({ page }) => {
     await openWorldView(page);
 

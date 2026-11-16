@@ -676,6 +676,9 @@ describe('a focus request from outside the surface', () => {
     };
 
     it('opens that world, then makes the jump in it', async () => {
+      // Twice: the idle surface scans on mount (§16.31's list is on screen
+      // before it is asked for) and the jump's own resolution scans again.
+      api.listWorlds.mockResolvedValueOnce(WORLDS as never);
       api.listWorlds.mockResolvedValueOnce(WORLDS as never);
       stubOpen();
       render(<WorldSurface />);
@@ -699,6 +702,7 @@ describe('a focus request from outside the surface', () => {
 
     it('says so and opens nothing when the project has no such world', async () => {
       api.listWorlds.mockResolvedValueOnce([WORLDS[0]] as never);
+      api.listWorlds.mockResolvedValueOnce([WORLDS[0]] as never);
       render(<WorldSurface />);
 
       await act(async () => {
@@ -715,6 +719,7 @@ describe('a focus request from outside the surface', () => {
     });
 
     it('reports a scan that failed rather than leaving the click unanswered', async () => {
+      api.listWorlds.mockRejectedValueOnce(new Error('sources unreadable') as never);
       api.listWorlds.mockRejectedValueOnce(new Error('sources unreadable') as never);
       render(<WorldSurface />);
 
@@ -733,6 +738,7 @@ describe('a focus request from outside the surface', () => {
     it('makes no jump when the open itself failed', async () => {
       // A refused open replaces the whole surface with its own error, and
       // there is no world left to fly through.
+      api.listWorlds.mockResolvedValueOnce(WORLDS as never);
       api.listWorlds.mockResolvedValueOnce(WORLDS as never);
       api.openWorld.mockRejectedValueOnce(new Error('no asset source') as never);
       render(<WorldSurface />);

@@ -2,6 +2,7 @@
 
 ## One line per change, newest on top, `- #123: Short description` (120 characters max). A build ships only the lines added since the last one, and CHANGELOG.md keeps them; old lines may be pruned at any time.
 
+- World editor lists the project's worlds before one is open, so opening a world is one click
 - #580: The NPC editor splits into Character and Routines tabs, with appearance in its own column beside the preview
 - #553: A project's script analysis walks each function body once, reusing the call it projects
 - #562: Problems Kind options show finding counts, respecting the search, type and location filters

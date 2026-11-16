@@ -4243,6 +4243,14 @@ loose files: nothing downstream can open a world that has no filesystem path,
 so one still inside `Worlds.vdf` would be an entry that fails on click, and
 "Browse…" stays in the dialog for everything the scan does not reach.
 
+With no world open the surface scans the same list on mount and shows it in
+place of the empty state's prose, so the first thing a user sees is the worlds
+they can open rather than a button that opens a dialog holding the same list.
+The dialog stays for the routine flow and for switching worlds, and re-scans
+when it opens: a project's asset sources can change under a mounted surface,
+and the mount-time list is not re-read for that. The two lists are one
+component (`WorldPickerList`) because they are one thing.
+
 The project file is committed project state. Other machine-local state (window
 layout and recent-project metadata) remains in `SettingsService`. Target
 version is per-project and explicit (brief §7); the binding refuses to load

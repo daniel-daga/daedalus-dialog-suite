@@ -66,7 +66,11 @@ async function openWorld() {
   api.getWorldMesh.mockResolvedValueOnce({ groups: [], bbox: summary.bbox } as never);
   api.getWorldVisuals.mockResolvedValueOnce({ visuals: [], stats: { vobsPlaced: 0 } } as never);
   // Open world lists the project's worlds first (level-editor.md §16.31); the
-  // toolbar's own flow starts at picking one.
+  // toolbar's own flow starts at picking one. Two answers: the idle surface
+  // scans on mount, and the picker scans again when it opens.
+  api.listWorlds.mockResolvedValueOnce([{
+    path: 'C:/Gothic/NewWorld.zen', name: 'NewWorld.zen', source: 'C:/Gothic', isDefault: false,
+  }] as never);
   api.listWorlds.mockResolvedValueOnce([{
     path: 'C:/Gothic/NewWorld.zen', name: 'NewWorld.zen', source: 'C:/Gothic', isDefault: false,
   }] as never);

@@ -71,7 +71,7 @@ import { OUTLINE_MODE_ORDER } from './toolbar/WorldViewControls';
 import WorldStatusStats from './toolbar/WorldStatusStats';
 import type { OutlineMode } from '../../world/VobOutline';
 import type { CameraSlotOutcome } from '../../world/cameraSlots';
-import WorldPickerDialog from './WorldPickerDialog';
+import WorldPickerDialog, { WorldPickerList } from './WorldPickerDialog';
 import InsertNpcDialog from './InsertNpcDialog';
 import ErrorBoundary from '../ErrorBoundary';
 
@@ -768,12 +768,12 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
   /**
    * The world picker (level-editor.md §16.31): the worlds the project's own
    * asset sources hold, listed instead of a native file dialog pointed at one
-   * install. The scan runs on open, not on mount — a project's sources change
-   * under the dialog, and a list nobody is looking at is a directory walk
-   * nobody asked for.
+   * install. The scan is the dialog's and the empty state's both, and they run
+   * it at different times: the surface on mount, because with nothing open the
+   * list is what it has to show, and the dialog again when it opens, because a
+   * project's sources change under a mounted surface.
    */
-  const openPicker = useCallback(async () => {
-    setPickerOpen(true);
+  const scanWorlds = useCallback(async () => {
     setPickerError(null);
     setPickerLoading(true);
     try {
@@ -785,6 +785,19 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
       setPickerLoading(false);
     }
   }, []);
+
+  const openPicker = useCallback(async () => {
+    setPickerOpen(true);
+    await scanWorlds();
+  }, [scanWorlds]);
+
+  // With no world open the list is what the surface has to offer, so it is
+  // scanned rather than waiting behind the toolbar's button — one click fewer
+  // to the thing the user came for. Once per mount: the button re-scans for a
+  // project whose asset sources changed under it.
+  useEffect(() => {
+    if (status === 'idle') void scanWorlds();
+  }, [status, scanWorlds]);
 
   /**
    * Textures the VFS could not decode (level-editor.md §16.31). Said out loud,
@@ -2825,13 +2838,33 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
       </Dialog>
 
       {status === 'idle' && (
-        <Box sx={{ p: 3 }}>
+        <Box sx={{ p: 3, maxWidth: 720, minHeight: 0, overflowY: 'auto' }}>
           <Typography variant="body2" color="text.secondary">
             Open a ZenGin <code>.zen</code> world to view and edit it: move,
             turn, place, duplicate and delete VOBs, edit the waynet, and start a
             GMBT test run over what you have. Configure at least one available
             asset source in the active project first.
           </Typography>
+          {/* The worlds the project's sources hold, listed here rather than
+              only behind "Open world" (§16.31): with nothing open, the list is
+              the answer to the only question this surface can be asked. */}
+          <Box sx={{ mt: 2 }}>
+            <WorldPickerList
+              worlds={discoveredWorlds}
+              loading={pickerLoading}
+              error={pickerError}
+              onPick={pickWorld}
+              testIdPrefix="world-home-entry"
+            />
+          </Box>
+          <Button
+            size="small"
+            sx={{ mt: 1 }}
+            onClick={() => void browseForWorld()}
+            data-testid="world-home-browse"
+          >
+            Browse for a world…
+          </Button>
           <Typography variant="caption" color="text.secondary" component="div" sx={{ mt: 1.5 }}>
             {/* The shortcuts were once listed here by hand, and the list
                 drifted (it never learned Ctrl+D). The sheet is generated from
