@@ -60,9 +60,16 @@ async function openProject(page: Page, extraFiles: Record<string, string> = {}, 
   await expect(page.getByTestId('project-opening-overlay')).toBeHidden({ timeout: 15000 });
 }
 
+/** Opens the NPC editor on its Routines tab, where the routine cards live. */
+async function openNpcRoutines(page: Page, npc: string) {
+  await page.getByRole('button', { name: `Edit NPC ${npc}` }).click();
+  const npcEditor = page.getByRole('dialog', { name: new RegExp(npc) });
+  await npcEditor.getByRole('tab', { name: 'Routines' }).click();
+  return npcEditor;
+}
+
 async function openRoutineEditor(page: Page) {
-  await page.getByRole('button', { name: 'Edit NPC BAU_900_Onar' }).click();
-  const npcEditor = page.getByRole('dialog', { name: /BAU_900_Onar/ });
+  const npcEditor = await openNpcRoutines(page, 'BAU_900_Onar');
   await npcEditor.getByRole('button', { name: 'Edit routine RTN_START_900', exact: true }).click();
   const editor = page.getByRole('dialog', { name: 'Routines of BAU_900_Onar' });
   await expect(editor).toBeVisible();
@@ -168,8 +175,7 @@ test.describe('Routine editor', () => {
     // (tests/e2e/README.md) and Onar has no STARTUP_ spawn here, so this is
     // the fallback: the World view, with its picker open. The auto-open is
     // tests/e2e-electron/routine-in-world.spec.ts.
-    await page.getByRole('button', { name: 'Edit NPC BAU_900_Onar' }).click();
-    const npcEditor = page.getByRole('dialog', { name: /BAU_900_Onar/ });
+    const npcEditor = await openNpcRoutines(page, 'BAU_900_Onar');
     await npcEditor.getByRole('button', { name: 'Edit routine RTN_START_900 in the world' }).click();
 
     await expect(npcEditor).toBeHidden();
@@ -265,8 +271,7 @@ const FARMER_FILE = `INSTANCE BAU_901_Bauer (C_NPC)
 test.describe('Routine editor: creating routines', () => {
   test('creates a daily routine for an NPC that has none, and declares it', async ({ page }) => {
     await openProject(page, { 'NPC/BAU_901_Bauer.d': FARMER_FILE });
-    await page.getByRole('button', { name: 'Edit NPC BAU_901_Bauer' }).click();
-    const npcEditor = page.getByRole('dialog', { name: /BAU_901_Bauer/ });
+    const npcEditor = await openNpcRoutines(page, 'BAU_901_Bauer');
     await npcEditor.getByRole('button', { name: 'Create routine' }).click();
     const editor = page.getByRole('dialog', { name: 'Routines of BAU_901_Bauer' });
 

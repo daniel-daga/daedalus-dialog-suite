@@ -348,8 +348,14 @@ jobs:
           VITE_WHAT_CHANGED: '[{"issue":123,"description":"E2E release note fixture"}]'
         run: pnpm --filter daedalus-dialog-editor run build
 
+      # DDE_E2E_SOFTWARE_GL: the runner has no GPU, so Chromium blocklists
+      # WebGL2 and every spec that opens a world times out waiting for a
+      # viewport that never mounts (environment-hazards.md). Swiftshader gives
+      # it a GL. The Windows job keeps the real driver on purpose.
       - name: Run real-Electron E2E suite
         working-directory: daedalus-dialog-editor
+        env:
+          DDE_E2E_SOFTWARE_GL: '1'
         run: xvfb-run --auto-servernum pnpm exec playwright test -c playwright.electron.config.ts
 
       - name: Upload Electron E2E report

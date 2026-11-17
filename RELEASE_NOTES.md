@@ -2,7 +2,7 @@
 
 ## One line per change, newest on top, `- #123: Short description` (120 characters max). A build ships only the lines added since the last one, and CHANGELOG.md keeps them; old lines may be pruned at any time.
 
-- World editor lists the project's worlds before one is open, so opening a world is one click
+- #581: World editor lists the project's worlds before one is open, so opening a world is one click
 - #580: The NPC editor splits into Character and Routines tabs, with appearance in its own column beside the preview
 - #553: A project's script analysis walks each function body once, reusing the call it projects
 - #562: Problems Kind options show finding counts, respecting the search, type and location filters
@@ -166,4 +166,5 @@
 - #569: A compilation list the editor cannot resolve no longer makes every other list's excluded scripts reappear
 - #568: Scripts a .src list excludes stay out of the project when they change on disk, and editing a .src re-indexes
 - #572: Watching a large project no longer resolves every file's real path on the main process
-- #574: Problems checks a function overload's voice ids, subtitles, KnowsInfo and choices; renaming a choice target with an overload is refused, and a refused choice-target name is put back
+- #574: Problems checks a function overload's voice ids, subtitles, KnowsInfo and choices
+- #574: Renaming a choice target that has an overload is refused, and the refused name is put back

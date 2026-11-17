@@ -155,6 +155,8 @@ test.describe('Routine editing in the World surface', () => {
     await page.getByRole('button', { name: 'Dialog Editor' }).click();
     await page.getByRole('button', { name: `Edit NPC ${NPC}` }).click();
     const npcEditor = page.getByRole('dialog', { name: new RegExp(NPC) });
+    // Routine cards live on the Routines tab (#580).
+    await npcEditor.getByRole('tab', { name: 'Routines' }).click();
     await npcEditor.getByRole('button', { name: 'Edit routine RTN_START_900 in the world' }).click();
   }
 
