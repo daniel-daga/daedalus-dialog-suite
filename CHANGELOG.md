@@ -4,6 +4,25 @@ What each published Windows build changed, newest first. Build Windows adds a
 build here when it publishes it; write new notes in `RELEASE_NOTES.md`, not here.
 Builds before 31 had no release notes.
 
+## Build 47 — 2026-11-18
+
+- #581: World editor lists the project's worlds before one is open, so opening a world is one click
+- #580: The NPC editor splits into Character and Routines tabs, with appearance in its own column beside the preview
+- #553: A project's script analysis walks each function body once, reusing the call it projects
+- #562: Problems Kind options show finding counts, respecting the search, type and location filters
+- #559: SRC headers and missing scripts no longer reintroduce unused reference files into project diagnostics
+- #560: All findings open details inside Problems; large lists render 50 rows per page without rescanning on tab entry
+- #561: Simplify the top bar with a project dropdown, a single theme menu, and compact project actions.
+- #564: The NPC editor groups fields as identity, routines, combat and appearance, shows routines as cards, and Ctrl+S saves
+- #566: Closing a world or switching project while it is being saved lets the save finish instead of losing it
+- #565: World findings in Problems show their location, and Show in World jumps to them in the World Editor
+- #567: A function overload's body is indexed (spawns, routines, voice ids, calls) and listed in Problems as a hint
+- #569: A compilation list the editor cannot resolve no longer makes every other list's excluded scripts reappear
+- #568: Scripts a .src list excludes stay out of the project when they change on disk, and editing a .src re-indexes
+- #572: Watching a large project no longer resolves every file's real path on the main process
+- #574: Problems checks a function overload's voice ids, subtitles, KnowsInfo and choices
+- #574: Renaming a choice target that has an overload is refused, and the refused name is put back
+
 ## Build 46 — 2026-11-14
 
 - #559: Project indexing respects SRC lists so unused reference scripts no longer cause project errors
